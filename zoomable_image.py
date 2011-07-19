@@ -38,7 +38,7 @@ class ZoomableImage(Frame):
   def scroll_h(self):
     return (float)(self.canvas_h) / self.image_h / self.zoom
 
-  def update_image(self):
+  def update_canvas(self):
     if self.image_num:
       self.canvas.delete(self.image_num)
   
@@ -67,24 +67,24 @@ class ZoomableImage(Frame):
   def xview(self, arg1, arg2=None, arg3=None):
     if arg1 == 'moveto':
       self.scroll_x = float(arg2)
-      self.update_image()
+      self.update_canvas()
     elif arg1 == 'scroll':
       if arg3 == 'pages':
         self.scroll_x += int(arg2) * self.scroll_w()
       elif arg3 == 'units':
         self.scroll_x += float(arg2) * 50 / self.zoom / self.image_w
-      self.update_image()
+      self.update_canvas()
     else:
       print ('unknown command to xview', arg1, arg2, arg3)
   def yview(self, arg1, arg2=None, arg3=None):
     if arg1 == 'moveto':
       self.scroll_y = float(arg2)
-      self.update_image()
+      self.update_canvas()
     elif arg1 == 'scroll':
       if arg3 == 'pages':
         self.scroll_y += int(arg2) * self.scroll_h()
       elif arg3 == 'units':
         self.scroll_y += float(arg2) * 50 / self.zoom / self.image_h
-      self.update_image()
+      self.update_canvas()
     else:
       print ('unknown command to yview', arg1, arg2, arg3)

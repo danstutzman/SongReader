@@ -4,7 +4,7 @@ import numpy
 from Tkinter import *
 import PIL.Image
 import PIL.ImageTk
-from zoomable_image import ZoomableImage
+from annotated_image import AnnotatedImage
 
 # matrix.size = 691200 = 720 x 960print 
 matrix = scipy.misc.imread('photo.jpeg', flatten=True)
@@ -36,12 +36,12 @@ root = Tk()
 size = (matrix.shape[1], matrix.shape[0])
 image = PIL.Image.fromstring('L', size, matrix.astype('b').tostring())
 
-frame2 = ZoomableImage(root, image, 500, 500)
+frame2 = AnnotatedImage(root, image, 500, 500)
 frame2.pack(side=LEFT)
 
 def scale_changed(multiplier):
   frame2.zoom = int(multiplier)
-  frame2.update_image()
+  frame2.update_canvas()
 
 frame3 = Frame(root).pack(side=LEFT)
 Label(frame3, text='Zoom').pack()
