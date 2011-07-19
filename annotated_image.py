@@ -4,9 +4,10 @@ class Annotation:
   radius = 5
   last_x, last_y = None, None
   def __init__(self, canvas, x, y):
+    self.canvas = canvas
     self.x = x
     self.y = y
-    self.canvas = canvas
+
     self.num_on_canvas = self.canvas.create_rectangle(\
       self.x - self.radius, self.y - self.radius,
       self.x + self.radius, self.y + self.radius,
@@ -23,11 +24,16 @@ class Annotation:
 
 class AnnotatedImage(ZoomableImage):
   points = []
-  def __init__(self, root, pil_image, canvas_w, canvas_h):
-    ZoomableImage.__init__(self, root, pil_image, canvas_w, canvas_h)
-    self.points.append(Annotation(self.canvas, 50, 50))
-    self.points.append(Annotation(self.canvas, 60, 50))
-    #self.canvas.bind('<Button-1>', self.left)
+  def __init__(self, root, pil_image, canvas_w, canvas_h, all_settings):
+    ZoomableImage.__init__(self,
+      root, pil_image, canvas_w, canvas_h, all_settings)
+
+    settings = all_settings.get('AnnotatedImage', {})
+    default_points = [{'x':50, 'y':50}, {'x':70, 'y':50}]
+    for point_dict in settings.get('points', default_points):
+      annotation = Annotation(self.canvas, point_dict['x'], point_dict['y'])
+      self.points.append(annotation)
+
     self.canvas.bind('<1>', self.drag_start)
     self.canvas.bind('<B1-Motion>', self.drag_continue)
     self.canvas.bind('<ButtonRelease-1>', self.drag_continue)
@@ -55,3 +61,11 @@ class AnnotatedImage(ZoomableImage):
     if self.dragged_point:
       self.dragged_point.move_to(event.x, event.y)
       self.dragged_point.update_canvas()    
+
+  def get_all_settings(self):
+    all_settings = ZoomableImage.get_all_settings(self)
+    points_list = []
+    for point in self.points:
+      points_list.append({'x': point.x, 'y': point.y})
+    all_settings['AnnotatedImage'] = {'points': points_list}
+    return all_settings

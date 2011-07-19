@@ -6,12 +6,14 @@ import PIL.Image
 import PIL.ImageTk
 
 class ZoomableImage(Frame):
-  def __init__(self, root, pil_image, canvas_w, canvas_h):
+  def __init__(self, root, pil_image, canvas_w, canvas_h, all_settings):
     Frame.__init__(self, root, bd=2, relief=SUNKEN)
+    self.pil_image = pil_image
     self.canvas_w = canvas_w
     self.canvas_h = canvas_h
-    self.zoom = 1
-    self.pil_image = pil_image
+    settings = all_settings.get('ZoomableImage', {})
+
+    self.zoom = settings.get('zoom', 1)
     self.image_w, self.image_h = pil_image.size
     self.image_num = None
 
@@ -24,7 +26,8 @@ class ZoomableImage(Frame):
     self.canvas = Canvas(self,
       width=self.canvas_w, height=self.canvas_h,
       scrollregion=(0, 0, self.image_w, self.image_h))
-    self.scroll_x, self.scroll_y = 0.0, 0.0
+    self.scroll_x = settings.get('scroll_x', 0.0)
+    self.scroll_y = settings.get('scroll_y', 0.0)
 
     self.canvas.grid(row=0, column=0, sticky=N+S+E+W)
     self.canvas.config(yscrollcommand=self.yscrollbar.set)
@@ -88,3 +91,10 @@ class ZoomableImage(Frame):
       self.update_canvas()
     else:
       print ('unknown command to yview', arg1, arg2, arg3)
+
+  def get_all_settings(self):
+    return { 'ZoomableImage': {
+      'zoom': self.zoom,
+      'scroll_x': self.scroll_x,
+      'scroll_y': self.scroll_y,
+    } }

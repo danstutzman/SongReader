@@ -4,6 +4,8 @@ import numpy
 from Tkinter import *
 import PIL.Image
 import PIL.ImageTk
+import yaml
+import os.path
 from annotated_image import AnnotatedImage
 
 # matrix.size = 691200 = 720 x 960print 
@@ -36,7 +38,14 @@ root = Tk()
 size = (matrix.shape[1], matrix.shape[0])
 image = PIL.Image.fromstring('L', size, matrix.astype('b').tostring())
 
-frame2 = AnnotatedImage(root, image, 500, 500)
+
+settings = {}
+if os.path.exists('settings.yaml'):
+  with open('settings.yaml', 'r') as file:
+    settings = yaml.load(file)
+    if not settings:
+      settings = {}
+frame2 = AnnotatedImage(root, image, 500, 500, settings)
 frame2.pack(side=LEFT)
 
 def scale_changed(multiplier):
@@ -45,7 +54,13 @@ def scale_changed(multiplier):
 
 frame3 = Frame(root).pack(side=LEFT)
 Label(frame3, text='Zoom').pack()
-Scale(frame3, orient=HORIZONTAL, command=scale_changed, from_=1, to=5).pack()
+
+scale = Scale(frame3, orient=HORIZONTAL, command=scale_changed, from_=1, to=5)
+scale.pack()
+scale.set(frame2.zoom)
 
 root.update()
 root.mainloop()
+
+with open('settings.yaml', 'w') as file:
+  yaml.dump(frame2.get_all_settings(), file)
