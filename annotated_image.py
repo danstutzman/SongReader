@@ -1,6 +1,6 @@
 from zoomable_image import ZoomableImage
 
-class Annotation:
+class PointAnnotation:
   radius = 5
   def __init__(self, canvas, parent, world_x, world_y):
     self.canvas = canvas
@@ -34,6 +34,7 @@ class Annotation:
 class AnnotatedImage(ZoomableImage):
   points = []
   dragged_point = None
+  line_num_on_canvas = None
   def __init__(self, root, pil_image, canvas_w, canvas_h, all_settings):
     ZoomableImage.__init__(self,
       root, pil_image, canvas_w, canvas_h, all_settings)
@@ -41,9 +42,13 @@ class AnnotatedImage(ZoomableImage):
     settings = all_settings.get('AnnotatedImage', {})
     default_points = [{'x':50, 'y':50}, {'x':70, 'y':50}]
     for point_dict in settings.get('points', default_points):
-      annotation = Annotation( \
+      annotation = PointAnnotation( \
         self.canvas, self, point_dict['x'], point_dict['y'])
       self.points.append(annotation)
+
+    self.line_num_on_canvas = self.canvas.create_line(
+      self.points[0].canvas_x(), self.points[0].canvas_y(),
+      self.points[1].canvas_x(), self.points[1].canvas_y())
 
     self.canvas.bind('<1>', self.drag_start)
     self.canvas.bind('<B1-Motion>', self.drag_continue)
@@ -53,6 +58,12 @@ class AnnotatedImage(ZoomableImage):
     ZoomableImage.update_canvas(self)
     for point in self.points:
       point.update_canvas()
+    self.update_line_on_canvas()
+  def update_line_on_canvas(self):
+    self.canvas.coords(self.line_num_on_canvas,
+      self.points[0].canvas_x(), self.points[0].canvas_y(),
+      self.points[1].canvas_x(), self.points[1].canvas_y())
+    self.canvas.tag_raise(self.line_num_on_canvas)
 
   def drag_start(self, event):
     min_distance = None
@@ -71,8 +82,11 @@ class AnnotatedImage(ZoomableImage):
     self.drag_continue(event)
   def drag_continue(self, event):
     if self.dragged_point:
-      self.dragged_point.move_to(event.x, event.y)
+      world_x = event.x / self.zoom + self.scroll_x * self.image_w
+      world_y = event.y / self.zoom + self.scroll_y * self.image_h
+      self.dragged_point.move_to(world_x, world_y)
       self.dragged_point.update_canvas()    
+      self.update_line_on_canvas()
 
   def get_all_settings(self):
     all_settings = ZoomableImage.get_all_settings(self)
