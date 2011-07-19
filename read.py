@@ -83,12 +83,18 @@ world_x0 = big_image.points[0].world_x
 world_y0 = big_image.points[0].world_y
 world_x1 = big_image.points[1].world_x
 world_y1 = big_image.points[1].world_y
+chart_matrix = numpy.zeros((500, 100, 3))
 for chart_x in xrange(0, 500):
   progress = chart_x / 500.0
   world_x = int((world_x0 * progress) + (world_x1 * (1 - progress)))
   world_y = int((world_y0 * progress) + (world_y1 * (1 - progress)))
   darkness = matrix[world_y][world_x] * 100 / 255
-  chart.create_line((chart_x, darkness, chart_x, 100))
+  chart_matrix[chart_x][darkness] = (50, 50, 100)
+chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
+chart_image = \
+  PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
+chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
+chart.create_image(0, 0, image=chart_photo, anchor=NW)
 
 root.update()
 root.mainloop()
