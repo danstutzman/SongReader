@@ -2,28 +2,38 @@ from zoomable_image import ZoomableImage
 
 class Annotation:
   radius = 5
-  last_x, last_y = None, None
-  def __init__(self, canvas, x, y):
+  def __init__(self, canvas, parent, world_x, world_y):
     self.canvas = canvas
-    self.x = x
-    self.y = y
-
+    self.parent = parent
+    self.world_x = world_x
+    self.world_y = world_y
     self.num_on_canvas = self.canvas.create_rectangle(\
-      self.x - self.radius, self.y - self.radius,
-      self.x + self.radius, self.y + self.radius,
+      -self.radius, -self.radius, self.radius, self.radius,
       fill='yellow')
-    self.last_x = x
-    self.last_y = y
-  def move_to(self, x, y):
-    self.x, self.y = x, y
-    self.canvas.move(self.num_on_canvas, x - self.last_x, y - self.last_y)
-    self.last_x, self.last_y = self.x, self.y
+    self.last_canvas_x = 0
+    self.last_canvas_y = 0
+    self.move_to(world_x, world_y)
+  def canvas_x(self):
+    return (self.world_x - (self.parent.image_w * self.parent.scroll_x)) * \
+      self.parent.zoom
+  def canvas_y(self):
+    return (self.world_y - (self.parent.image_h * self.parent.scroll_y)) * \
+      self.parent.zoom
+  def move_to(self, world_x, world_y):
+    self.world_x, self.world_y = world_x, world_y
+    self.canvas.move(self.num_on_canvas,
+      self.canvas_x() - self.last_canvas_x,
+      self.canvas_y() - self.last_canvas_y)
+    self.last_canvas_x, self.last_canvas_y = self.canvas_x(), self.canvas_y()
   def update_canvas(self):
+    # have to move the point if zoom or scrolling changed
+    self.move_to(self.world_x, self.world_y)
     # have to keep adding it to the top
     self.canvas.tag_raise(self.num_on_canvas)
 
 class AnnotatedImage(ZoomableImage):
   points = []
+  dragged_point = None
   def __init__(self, root, pil_image, canvas_w, canvas_h, all_settings):
     ZoomableImage.__init__(self,
       root, pil_image, canvas_w, canvas_h, all_settings)
@@ -31,7 +41,8 @@ class AnnotatedImage(ZoomableImage):
     settings = all_settings.get('AnnotatedImage', {})
     default_points = [{'x':50, 'y':50}, {'x':70, 'y':50}]
     for point_dict in settings.get('points', default_points):
-      annotation = Annotation(self.canvas, point_dict['x'], point_dict['y'])
+      annotation = Annotation( \
+        self.canvas, self, point_dict['x'], point_dict['y'])
       self.points.append(annotation)
 
     self.canvas.bind('<1>', self.drag_start)
@@ -47,7 +58,8 @@ class AnnotatedImage(ZoomableImage):
     min_distance = None
     closest_point = None
     for point in self.points:
-      distance = abs(point.x - event.x) + abs(point.y - event.y)
+      distance = abs(point.canvas_x() - event.x) + \
+                 abs(point.canvas_y() - event.y)
       if min_distance == None or distance < min_distance:
         min_distance = distance
         closest_point = point
@@ -66,6 +78,6 @@ class AnnotatedImage(ZoomableImage):
     all_settings = ZoomableImage.get_all_settings(self)
     points_list = []
     for point in self.points:
-      points_list.append({'x': point.x, 'y': point.y})
+      points_list.append({'x': point.world_x, 'y': point.world_y})
     all_settings['AnnotatedImage'] = {'points': points_list}
     return all_settings
