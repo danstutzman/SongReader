@@ -45,22 +45,53 @@ if os.path.exists('settings.yaml'):
     settings = yaml.load(file)
     if not settings:
       settings = {}
-frame2 = AnnotatedImage(root, image, 500, 500, settings)
-frame2.pack(side=LEFT)
+big_image_and_chart = Frame(root)
+big_image = AnnotatedImage(big_image_and_chart, image, 500, 500, settings)
+big_image.pack(side=TOP)
+chart = Canvas(big_image_and_chart, width=500, height=100)
+chart.pack()
+big_image_and_chart.pack(side=LEFT)
 
 def scale_changed(multiplier):
-  frame2.zoom = int(multiplier)
-  frame2.update_canvas()
+  big_image.zoom = int(multiplier)
+  big_image.update_canvas()
 
 frame3 = Frame(root).pack(side=LEFT)
 Label(frame3, text='Zoom').pack()
 
 scale = Scale(frame3, orient=HORIZONTAL, command=scale_changed, from_=1, to=5)
 scale.pack()
-scale.set(frame2.zoom)
+scale.set(big_image.zoom)
+
+def scan():
+  pass # unimplemented
+
+button = Button(frame3, text='Scan', command=scan)
+button.pack(pady=30)
+
+Label(frame3, text='Note Cam').pack()
+note_cam = Canvas(frame3, width=100, height=100)
+note_cam.pack()
+crop_x = int(big_image.points[0].world_x)
+crop_y = int(big_image.points[0].world_y)
+note_image = image.crop((crop_x - 10, crop_y - 10, crop_x + 10, crop_y + 10))
+note_image = note_image.resize((100, 100))
+note_photo = PIL.ImageTk.PhotoImage(image=note_image)
+cam_image_num = note_cam.create_image(0, 0, image=note_photo, anchor=NW)
+
+world_x0 = big_image.points[0].world_x
+world_y0 = big_image.points[0].world_y
+world_x1 = big_image.points[1].world_x
+world_y1 = big_image.points[1].world_y
+for chart_x in xrange(0, 500):
+  progress = chart_x / 500.0
+  world_x = int((world_x0 * progress) + (world_x1 * (1 - progress)))
+  world_y = int((world_y0 * progress) + (world_y1 * (1 - progress)))
+  darkness = matrix[world_y][world_x] * 100 / 255
+  chart.create_line((chart_x, darkness, chart_x, 100))
 
 root.update()
 root.mainloop()
 
 with open('settings.yaml', 'w') as file:
-  yaml.dump(frame2.get_all_settings(), file)
+  yaml.dump(big_image.get_all_settings(), file)
