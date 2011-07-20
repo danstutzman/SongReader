@@ -101,3 +101,21 @@ class AnnotatedImage(ZoomableImage):
       points_list.append({'x': point.world_x, 'y': point.world_y})
     all_settings['AnnotatedImage'] = {'points': points_list}
     return all_settings
+
+  def draw_tick_marks(self, chart_x, wave_length):
+    progress = chart_x / 500.0
+    spacing = wave_length / 500.0
+    progress += spacing / 2 # mark the lines instead of between them
+    world_x0 = self.points[0].world_x
+    world_y0 = self.points[0].world_y
+    world_x1 = self.points[1].world_x
+    world_y1 = self.points[1].world_y
+    while progress < 1.0:
+      if progress > 0.0:
+        world_x = int((world_x0 * progress) + (world_x1 * (1 - progress)))
+        world_y = int((world_y0 * progress) + (world_y1 * (1 - progress)))
+        canvas_x = (world_x - (self.image_w * self.scroll_x)) * self.zoom
+        canvas_y = (world_y - (self.image_h * self.scroll_y)) * self.zoom
+        self.canvas.create_line(\
+          canvas_x - 2, canvas_y, canvas_x + 2, canvas_y, fill='white')
+      progress += spacing

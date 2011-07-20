@@ -102,7 +102,7 @@ def wavelen_and_first_peak(array):
 
   num_cycles = numpy.fft.fftfreq(fft_num_buckets)[best_bucket] * len(array)
   wave_length = len(array) / num_cycles
-  print 'wave_lenth', wave_length
+  print 'wave_length', wave_length
 
   phase = (numpy.angle(fft[best_bucket]) / numpy.pi / 2) + 0.5
   phase += 0.75
@@ -139,6 +139,7 @@ def update_chart():
     histogram[darkness] += 1
 
   chart_x, wave_length = wavelen_and_first_peak(darknesses)
+  big_image.draw_tick_marks(chart_x, wave_length)
   while chart_x < 500:
     if chart_x >= 0:
       for y in xrange(0, 100):
