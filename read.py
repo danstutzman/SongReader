@@ -78,7 +78,7 @@ button = Button(frame3, text='Scan', command=scan)
 button.pack(pady=30)
 
 Label(frame3, text='Note Cam').pack()
-note_cam = Canvas(frame3, width=100, height=100)
+note_cam = Canvas(frame3, width=100, height=400)
 note_cam.pack()
 crop_x = int(big_image.points[0].world_x)
 crop_y = int(big_image.points[0].world_y)
@@ -88,7 +88,7 @@ note_photo = PIL.ImageTk.PhotoImage(image=note_image)
 cam_image_num = note_cam.create_image(0, 0, image=note_photo, anchor=NW)
 
 def wavelen_and_first_peak(array):
-  fft_num_buckets = 2048
+  fft_num_buckets = 512
   array = array * numpy.hamming(len(array))
   fft = numpy.fft.fft(array, fft_num_buckets)
 
@@ -98,11 +98,11 @@ def wavelen_and_first_peak(array):
     if max == None or abs(fft[x]) > max:
       max = abs(fft[x])
       best_bucket = x
-  print 'best_bucket', best_bucket
+  #print 'best_bucket', best_bucket
 
   num_cycles = numpy.fft.fftfreq(fft_num_buckets)[best_bucket] * len(array)
   wave_length = len(array) / num_cycles
-  print 'wave_length', wave_length
+  #print 'wave_length', wave_length
 
   phase = (numpy.angle(fft[best_bucket]) / numpy.pi / 2) + 0.5
   phase += 0.75
@@ -113,7 +113,8 @@ def wavelen_and_first_peak(array):
   return x, wave_length
 
 def update_chart():
-  global chart_photo
+  global chart_photo, note_photo
+  global cam_image_num
 
   world_x0 = big_image.points[0].world_x
   world_y0 = big_image.points[0].world_y
@@ -189,7 +190,70 @@ def update_chart():
     PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
   chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
   chart.create_image(0, 0, image=chart_photo, anchor=NW)
-  
+
+  point0 = int(big_image.points[0].world_x), int(big_image.points[0].world_y)
+  point1 = int(big_image.points[1].world_x), int(big_image.points[1].world_y)
+  if point0[0] > point1[0]: # order them left to right
+    point0, point1 = point1, point0
+  cam_matrix = []
+  wavelens = []
+  centered_xs = []
+  for world_x in xrange(point0[0], point1[0]):
+    progress = (world_x - point0[0]) / float(point1[0] - point0[0])
+    world_y = int((point0[1] * progress) + (point1[1] * (1 - progress)))
+    #vertical_slice = matrix[world_x, (world_y - 100):(world_y + 100)]
+    vertical_slice = matrix[(world_y-50):(world_y+50),world_x]
+    vertical_slice = numpy.copy(vertical_slice)
+
+    x, wavelen = wavelen_and_first_peak(vertical_slice)
+
+    centered_x = x
+    while centered_x < 50.0:
+      centered_x += wavelen
+    centered_xs.append(int(centered_x))
+
+    wavelens.append(wavelen)
+    while x < 0:
+      x += wavelen
+    while x < len(vertical_slice):
+      vertical_slice[x] = 0
+      x += wavelen
+    vertical_slice[int(centered_x)] = 200
+
+    cam_matrix.append(vertical_slice)
+    #print centered_xs
+
+  median_wavelen = int(scipy.stats.scoreatpercentile(wavelens, 50))
+  print 'median_wavelen', median_wavelen
+  dampened_average = numpy.array(centered_xs).mean()
+  adjustment = 0 # always a multiple of median_wavelen
+  new_xs = []
+  for x in centered_xs:
+    old_x = x
+    while x > dampened_average + (median_wavelen * 2 / 3):
+      x -= median_wavelen
+    while x < dampened_average - (median_wavelen * 2 / 3):
+      x += median_wavelen
+    print old_x, x, dampened_average
+    dampened_average = (dampened_average * 1/2) + (x * 1/2)
+    new_xs.append(int(dampened_average))
+
+  new_xs = numpy.array(new_xs)
+  y = 0
+  for x in new_xs:
+    if x > 0 and x < 100:
+      cam_matrix[y][x] = 255
+    y += 1
+
+  cam_matrix = numpy.array(cam_matrix)
+  size = (cam_matrix.shape[1], cam_matrix.shape[0])
+  cam_matrix = scipy.flipud(cam_matrix)
+  cam_image = PIL.Image.fromstring('L', size, cam_matrix.astype('b').tostring())
+  #note_image = cam_image.resize((100, 100))
+  note_photo = PIL.ImageTk.PhotoImage(image=cam_image)
+  note_cam.delete(cam_image_num)
+  cam_image_num = note_cam.create_image(0, 0, image=note_photo, anchor=NW)
+
 update_chart()
 big_image.callback = update_chart
 
