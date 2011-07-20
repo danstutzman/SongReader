@@ -52,7 +52,7 @@ class AnnotatedImage(ZoomableImage):
 
     self.canvas.bind('<1>', self.drag_start)
     self.canvas.bind('<B1-Motion>', self.drag_continue)
-    self.canvas.bind('<ButtonRelease-1>', self.drag_continue)
+    self.canvas.bind('<ButtonRelease-1>', self.drag_end)
 
   def update_canvas(self):
     ZoomableImage.update_canvas(self)
@@ -80,6 +80,7 @@ class AnnotatedImage(ZoomableImage):
       self.dragged_point = None
 
     self.drag_continue(event)
+
   def drag_continue(self, event):
     if self.dragged_point:
       world_x = event.x / self.zoom + self.scroll_x * self.image_w
@@ -87,6 +88,11 @@ class AnnotatedImage(ZoomableImage):
       self.dragged_point.move_to(world_x, world_y)
       self.dragged_point.update_canvas()    
       self.update_line_on_canvas()
+
+  def drag_end(self, event):
+    self.drag_continue(event)
+    if self.callback:
+      self.callback()
 
   def get_all_settings(self):
     all_settings = ZoomableImage.get_all_settings(self)
