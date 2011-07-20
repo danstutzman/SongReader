@@ -1,34 +1,35 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-t = np.arange(256)
-st = np.sin((t + 20) / 256.0 * 2 * np.pi * 4.0)
-sp = np.fft.fft(st)
-#plt.plot(freq, sp.real, freq, sp.imag)
-#plt.plot(st)
-#plt.show()
+def wavelen_and_first_peak(array):
+  fft_num_buckets = 2048
+  fft = np.fft.fft(array, fft_num_buckets)
 
-max = None
-best_bucket = None
-for x in range(128):
-  if max == None or abs(sp[x]) > max:
-    max = abs(sp[x])
-    best_bucket = x
-print 'best_bucket', best_bucket 
-num_cycles = np.fft.fftfreq(256)[best_bucket] * 256
-print 'num cycles', num_cycles
-wave_length = 256 / num_cycles
-print 'wave len', wave_length
+  max = None
+  best_bucket = None
+  for x in range(fft_num_buckets / 2):
+    if max == None or abs(fft[x]) > max:
+      max = abs(fft[x])
+      best_bucket = x
 
-phase = (np.angle(sp[best_bucket]) / np.pi / 2) + 0.5
-phase += 0.75
-if phase >= 1.0:
-  phase -= 1.0
-print 'phase', phase
+  num_cycles = np.fft.fftfreq(fft_num_buckets)[best_bucket] * len(array)
+  wave_length = len(array) / num_cycles
 
-x = ((-phase - 0.75) * wave_length)
-while x < 255:
-  st[int(x)] += 1
+  phase = (np.angle(fft[best_bucket]) / np.pi / 2) + 0.5
+  phase += 0.75
+  if phase >= 1.0:
+    phase -= 1.0
+  x = ((-phase - 0.75) * wave_length)
+
+  return x, wave_length
+
+t = np.arange(150)
+st = np.sin((t - 160) / 220.0 * 2 * np.pi * 4.0)
+
+x, wave_length = wavelen_and_first_peak(st)
+while x < 150:
+  if x >= 0:
+    st[int(x)] += 0.5 
   x += wave_length
 plt.plot(st)
 plt.show()
