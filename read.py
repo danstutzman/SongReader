@@ -112,6 +112,17 @@ def wavelen_and_first_peak(array):
 
   return x, wave_length
 
+def threshold_array(array, cutoff):
+  vertical_slice4 = numpy.copy(array)
+  vertical_slice4 -= cutoff
+  vertical_slice4 += abs(vertical_slice4)
+  vertical_slice4 += 100
+  vertical_slice4 = 255 - vertical_slice4
+  vertical_slice4 -= (254 - cutoff)
+  vertical_slice4 += abs(vertical_slice4)
+  vertical_slice4 *= 255 / vertical_slice4.max()
+  return vertical_slice4
+
 def update_chart():
   global chart_photo, note_photo
   global cam_image_num
@@ -238,7 +249,38 @@ def update_chart():
     vertical_slice3 += abs(vertical_slice3)
     vertical_slice3 *= 2
     #vertical_slice3 += 128
-    vertical_slice4 = vertical_slice + vertical_slice3 * 0.6
+    #vertical_slice4 = vertical_slice3
+    #vertical_slice4 = vertical_slice + vertical_slice3 * 0.2
+
+    vertical_slice3 = \
+      numpy.roll(vertical_slice3, -4) + \
+      numpy.roll(vertical_slice3, -3) + \
+      numpy.roll(vertical_slice3, -2) + \
+      numpy.roll(vertical_slice3, -1) + \
+      numpy.roll(vertical_slice3,  0) + \
+      numpy.roll(vertical_slice3,  1) + \
+      numpy.roll(vertical_slice3,  2) + \
+      numpy.roll(vertical_slice3,  3) + \
+      numpy.roll(vertical_slice3,  4)
+    #vertical_slice3 = 200 - vertical_slice3
+    #vertical_slice3 += abs(vertical_slice3)
+    #vertical_slice3 = 200 - vertical_slice3
+    #vertical_slice3 = threshold_array(vertical_slice3, 100)
+
+    vertical_slice5 = 130 - vertical_slice
+    vertical_slice5 += abs(vertical_slice5)
+    vertical_slice5 /= 1
+
+    #vertical_slice4 = \
+    #  threshold_array(vertical_slice, 105) * \
+    #  threshold_array(vertical_slice3, 100) 
+    vertical_slice4 = \
+      vertical_slice5 * \
+      threshold_array(vertical_slice3, 100) 
+    vertical_slice4 /= 255
+    #vertical_slice4 = vertical_slice3
+    #vertical_slice4 = threshold_array(vertical_slice, 120)
+    #vertical_slice4 = vertical_slice5
 
     x, wavelen = wavelen_and_first_peak(vertical_slice)
 
