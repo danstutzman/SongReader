@@ -112,6 +112,7 @@ def wavelen_and_first_peak(array):
 
   return x, wave_length
 
+# everything above cutoff is white; everything below is black
 def threshold_array(array, cutoff):
   vertical_slice4 = numpy.copy(array)
   vertical_slice4 -= cutoff
@@ -120,8 +121,16 @@ def threshold_array(array, cutoff):
   vertical_slice4 = 255 - vertical_slice4
   vertical_slice4 -= (254 - cutoff)
   vertical_slice4 += abs(vertical_slice4)
-  vertical_slice4 *= 255 / vertical_slice4.max()
+  vertical_slice4 *= 255 / (vertical_slice4.max() + 1) # avoid div by 0
   return vertical_slice4
+
+def make_white_pure_white(array):
+  array = numpy.copy(array)
+  array = 130 - array
+  array += abs(array)
+  array /= 2
+  array = 255 - array
+  return array
 
 def update_chart():
   global chart_photo, note_photo
@@ -211,67 +220,53 @@ def update_chart():
   wavelens = []
   centered_xs = []
   best_center_xs = []
-  slice3_threshold = 220
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
-    #vertical_slice = matrix[world_x, (world_y - 100):(world_y + 100)]
     vertical_slice = matrix[(world_y-50):(world_y+50),world_x]
-    vertical_slice = numpy.copy(vertical_slice)
-    vertical_slice2 = numpy.zeros(len(vertical_slice))
-    vertical_slice3 = (numpy.roll(vertical_slice, 1) + \
-      numpy.roll(vertical_slice, 0) +
-      numpy.roll(vertical_slice, -1)) / 3
-    vertical_slice3 -= 80
-    vertical_slice3 *= -1
-    vertical_slice3 += abs(vertical_slice3)
-    vertical_slice3 *= 2
 
-    vertical_slice3 = \
-      numpy.roll(vertical_slice3, -4) + \
-      numpy.roll(vertical_slice3, -3) + \
-      numpy.roll(vertical_slice3, -2) + \
-      numpy.roll(vertical_slice3, -1) + \
-      numpy.roll(vertical_slice3,  0) + \
-      numpy.roll(vertical_slice3,  1) + \
-      numpy.roll(vertical_slice3,  2) + \
-      numpy.roll(vertical_slice3,  3) + \
-      numpy.roll(vertical_slice3,  4)
+    binary = numpy.array([1 if x > 130 else 0 for x in vertical_slice])
+    
+    pure_white = make_white_pure_white(vertical_slice)
+    blurred = (numpy.roll(pure_white, 1) + \
+      numpy.roll(pure_white, 0) +
+      numpy.roll(pure_white, -1)) / 3
+    binary_non_staff = numpy.array([1 if x >= 200 else 0 for x in blurred])
 
-    vertical_slice5 = 130 - vertical_slice
-    vertical_slice5 += abs(vertical_slice5)
-    vertical_slice5 /= 1
+    blurred_binary_non_staff = \
+      numpy.roll(binary_non_staff, -4) + \
+      numpy.roll(binary_non_staff, -3) + \
+      numpy.roll(binary_non_staff, -2) + \
+      numpy.roll(binary_non_staff, -1) + \
+      numpy.roll(binary_non_staff,  0) + \
+      numpy.roll(binary_non_staff,  1) + \
+      numpy.roll(binary_non_staff,  2) + \
+      numpy.roll(binary_non_staff,  3) + \
+      numpy.roll(binary_non_staff,  4)
+    augmented_binary_non_staff = \
+      numpy.array([1 if x == 9 else 0 for x in blurred_binary_non_staff])
 
-    vertical_slice4 = \
-      vertical_slice5 * \
-      threshold_array(vertical_slice3, 100) 
-    vertical_slice4 /= 255
-    vertical_slice4 = vertical_slice
+    partially_erased_pure_white = \
+      255 - ((255 - pure_white) * augmented_binary_non_staff)
+    vertical_slice = partially_erased_pure_white
+
+    binary_partially_erased = \
+      numpy.array([1 if x > 240 else 0 for x in partially_erased_pure_white])
 
     x, wavelen = wavelen_and_first_peak(vertical_slice)
-
-    slice3_x = x - (wavelen / 2)
-    total_slice3 = 0
-    while slice3_x < len(vertical_slice):
-      if int(slice3_x) >= 0:
-        total_slice3 += vertical_slice3[int(slice3_x)]
-      slice3_x += wavelen
 
     dark_x = x - (wavelen / 2)
     dark_xs = []
     corresponding_darkness = []
     while dark_x < len(vertical_slice):
       if int(dark_x) >= 0:
-        if wavelen < 20 and total_slice3 < slice3_threshold:
-          #vertical_slice2[int(dark_x)] = 250 if vertical_slice3[int(dark_x)] > 130 or vertical_slice3[int(dark_x) - 1] > 130 else 50
-          pass #vertical_slice2[int(dark_x)] = \
-            #250 if vertical_slice[int(dark_x)] > 130 else 50
-          #vertical_slice2[int(dark_x)] = \
-          #  255 - vertical_slice3[int(dark_x)]
+        #if wavelen < 12:
+        #  vertical_slice[int(dark_x)] = 120
         dark_xs.append(int(dark_x))
         #darkness = 255 - vertical_slice[int(dark_x)]
         #corresponding_darkness.append(darkness)
         edge_score = 255 - vertical_slice[int(dark_x)]
+        #edge_score = -binary_partially_erased[int(dark_x)]
         #if int(dark_x) > 0:
         #  edge_score -= vertical_slice[int(dark_x) - 1] / 2
         #if int(dark_x) < len(vertical_slice) - 1:
@@ -285,66 +280,25 @@ def update_chart():
     #   -4 -3 (-2) -1 |  0
     # 2 or higher means all 5 staff lines are visible, unless it's too high
     #                 |  0 1 (2) 3 4
-    best_center_position = None
-    second_best_center_position = None
+    best_center_positions = []
     max_score = None
-    second_best_score = None
     for center_position in xrange(2, len(dark_xs) - 2):
       five_darknesses = \
         corresponding_darkness[(center_position - 2):(center_position + 3)]
       total_score = five_darknesses[0] + five_darknesses[1] + \
         five_darknesses[2] + five_darknesses[3] + five_darknesses[4]
-      if best_center_position == None or total_score > max_score:
-        second_best_center_position = best_center_position
-        second_best_score = max_score
-        best_center_position = center_position
-        max_score = total_score
-    if best_center_position != None:
+      if best_center_positions == [] or total_score >= max_score:
+        if best_center_positions == [] or total_score > max_score:
+          best_center_positions = [center_position]
+          max_score = total_score
+        else:
+          best_center_positions.append(center_position)
+
+    for best_center_position in best_center_positions:
       best_center_x = dark_xs[best_center_position]
-      #if second_best_score and max_score - second_best_score > 20:
-      if wavelen < 20 and total_slice3 < slice3_threshold:
-        vertical_slice2[best_center_x] = 120
+      vertical_slice[int(best_center_x)] = 0
 
-    centered_x = x
-    while centered_x < 50.0:
-      centered_x += wavelen
-    centered_xs.append(int(centered_x))
-
-    wavelens.append(wavelen)
-    while x < 0:
-      x += wavelen
-    while x < len(vertical_slice):
-      #vertical_slice[x] = 0
-      x += wavelen
-    #vertical_slice[int(centered_x)] = 200
-
-    #cam_matrix.append(vertical_slice)
-    #cam_matrix.append(vertical_slice2)
-    #cam_matrix.append(vertical_slice3)
-    cam_matrix.append(vertical_slice4)
-    #print centered_xs
-
-#  median_wavelen = int(scipy.stats.scoreatpercentile(wavelens, 50))
-#  print 'median_wavelen', median_wavelen
-#  dampened_average = numpy.array(centered_xs).mean()
-#  adjustment = 0 # always a multiple of median_wavelen
-#  new_xs = []
-#  for x in centered_xs:
-#    old_x = x
-#    while x > dampened_average + (median_wavelen * 2 / 3):
-#      x -= median_wavelen
-#    while x < dampened_average - (median_wavelen * 2 / 3):
-#      x += median_wavelen
-#    print old_x, x, dampened_average
-#    dampened_average = (dampened_average * 1/2) + (x * 1/2)
-#    new_xs.append(int(dampened_average))
-#
-#  new_xs = numpy.array(new_xs)
-#  y = 0
-#  for x in new_xs:
-#    if x > 0 and x < 100:
-#      pass #cam_matrix[y][x] = 255
-#    y += 1
+    cam_matrix.append(vertical_slice)
 
   cam_matrix = numpy.array(cam_matrix)
   size = (cam_matrix.shape[1], cam_matrix.shape[0])
