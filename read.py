@@ -214,43 +214,18 @@ def update_chart():
   slice3_threshold = 220
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
-    world_y = int((point0[1] * progress) + (point1[1] * (1 - progress)))
+    world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
     #vertical_slice = matrix[world_x, (world_y - 100):(world_y + 100)]
     vertical_slice = matrix[(world_y-50):(world_y+50),world_x]
     vertical_slice = numpy.copy(vertical_slice)
     vertical_slice2 = numpy.zeros(len(vertical_slice))
-    #vertical_slice3 = \
-    #vertical_slice3 = \
-    #  -1 * matrix[(world_y-49):(world_y+51),world_x-1] + \
-    #  -2 * matrix[(world_y-49):(world_y+51),world_x  ] + \
-    #  -1 * matrix[(world_y-49):(world_y+51),world_x+1] + \
-    #   1 * matrix[(world_y-51):(world_y+49),world_x-1] + \
-    #   2 * matrix[(world_y-51):(world_y+49),world_x  ] + \
-    #   1 * matrix[(world_y-51):(world_y+49),world_x+1]
-    #vertical_slice3 = \
-    #   0 * matrix[(world_y-49):(world_y+51),world_x-1] + \
-    #   2 * matrix[(world_y-49):(world_y+51),world_x  ] + \
-    #   0 * matrix[(world_y-49):(world_y+51),world_x+1] + \
-    #   0 * matrix[(world_y-50):(world_y+50),world_x-1] + \
-    #   4 * matrix[(world_y-50):(world_y+50),world_x  ] + \
-    #   0 * matrix[(world_y-50):(world_y+50),world_x+1] + \
-    #   0 * matrix[(world_y-51):(world_y+49),world_x-1] + \
-    #   2 * matrix[(world_y-51):(world_y+49),world_x  ] + \
-    #   0 * matrix[(world_y-51):(world_y+49),world_x+1]
-    #vertical_slice3 = numpy.copy(vertical_slice)
     vertical_slice3 = (numpy.roll(vertical_slice, 1) + \
       numpy.roll(vertical_slice, 0) +
       numpy.roll(vertical_slice, -1)) / 3
-    #vertical_slice3 *= -1
-    #vertical_slice3 += abs(vertical_slice3)
-    #vertical_slice3 /= 8
     vertical_slice3 -= 80
     vertical_slice3 *= -1
     vertical_slice3 += abs(vertical_slice3)
     vertical_slice3 *= 2
-    #vertical_slice3 += 128
-    #vertical_slice4 = vertical_slice3
-    #vertical_slice4 = vertical_slice + vertical_slice3 * 0.2
 
     vertical_slice3 = \
       numpy.roll(vertical_slice3, -4) + \
@@ -262,25 +237,16 @@ def update_chart():
       numpy.roll(vertical_slice3,  2) + \
       numpy.roll(vertical_slice3,  3) + \
       numpy.roll(vertical_slice3,  4)
-    #vertical_slice3 = 200 - vertical_slice3
-    #vertical_slice3 += abs(vertical_slice3)
-    #vertical_slice3 = 200 - vertical_slice3
-    #vertical_slice3 = threshold_array(vertical_slice3, 100)
 
     vertical_slice5 = 130 - vertical_slice
     vertical_slice5 += abs(vertical_slice5)
     vertical_slice5 /= 1
 
-    #vertical_slice4 = \
-    #  threshold_array(vertical_slice, 105) * \
-    #  threshold_array(vertical_slice3, 100) 
     vertical_slice4 = \
       vertical_slice5 * \
       threshold_array(vertical_slice3, 100) 
     vertical_slice4 /= 255
-    #vertical_slice4 = vertical_slice3
-    #vertical_slice4 = threshold_array(vertical_slice, 120)
-    #vertical_slice4 = vertical_slice5
+    vertical_slice4 = vertical_slice
 
     x, wavelen = wavelen_and_first_peak(vertical_slice)
 
