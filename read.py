@@ -256,13 +256,15 @@ def update_chart():
         closest_train = {
           'length':0,
           'last_y':best_center_y,
-          'sequence':[-1] * (point1[0] - point0[0])
+          'center_ys':[-1] * (point1[0] - point0[0]),
+          'widths':[-1] * (point1[0] - point0[0])
         }
         trains.append(closest_train)
       closest_train['last_y'] = \
         closest_train['last_y'] * 0.75 + best_center_y * 0.25
-      closest_train['sequence'][world_x - point0[0]] = best_center_y
+      closest_train['center_ys'][world_x - point0[0]] = best_center_y
       closest_train['length'] += 1
+      closest_train['widths'][world_x - point0[0]] = wavelen * 2
 
     cam_matrix.append(vertical_slice)
 
@@ -274,8 +276,8 @@ def update_chart():
       longest_train = train
   last_train_y = None
   last_train_x = None
-  for x in xrange(len(longest_train['sequence'])):
-    y = longest_train['sequence'][x]
+  for x in xrange(len(longest_train['center_ys'])):
+    y = longest_train['center_ys'][x]
     if y > -1:
       if last_train_x and last_train_y:
         for x2 in xrange(last_train_x, x):
@@ -284,6 +286,8 @@ def update_chart():
           cam_matrix[x2][y2] = 0 
       for bold in [-1, 0, 1]:
         cam_matrix[x][y + bold] = 0 
+      cam_matrix[x][y - longest_train['widths'][x]] = 0
+      cam_matrix[x][y + longest_train['widths'][x]] = 0
       last_train_x = x
       last_train_y = y
 
