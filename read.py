@@ -160,6 +160,7 @@ def update_chart():
   trains = [] # as in: trains on train racks
   binary_non_staff_matrix = []
   partially_erased_pure_white_matrix = []
+  augmented_binary_non_staff_matrix = []
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
@@ -263,6 +264,7 @@ def update_chart():
     #cam_matrix.append(binary_non_staff * 255)
     binary_non_staff_matrix.append(binary_non_staff)
     partially_erased_pure_white_matrix.append(partially_erased_pure_white)
+    augmented_binary_non_staff_matrix.append(augmented_binary_non_staff)
 
   min_lightness = 255
   max_lightness = 0
@@ -302,12 +304,16 @@ def update_chart():
   i = 0
   while skew <= width * 0.1:
     sum_slice = numpy.zeros(100)
+    denominator = numpy.zeros(100)
     for x in xrange(width):
       progress = x / float(width)
-      slice = numpy.roll(partially_erased_pure_white_matrix[x],
+      #slice = numpy.roll(cam_matrix[x],
+      slice = numpy.roll(partially_erased_pure_white_matrix[x] * \
+        augmented_binary_non_staff_matrix[x],
         -int(progress * skew))
+      denominator += numpy.roll(augmented_binary_non_staff_matrix[x], -int(progress * skew))
       sum_slice += slice
-    sum_slice /= width
+    sum_slice /= denominator
     blur_matrix.append(sum_slice)
 
     the_range = sum_slice.max() - sum_slice.min()
@@ -320,21 +326,48 @@ def update_chart():
     i += 1
 
   best_sum_slice = blur_matrix[best_i]
-  first_peak, wave_len = wavelen_and_first_peak(best_sum_slice)
+  first_peak, wavelen = wavelen_and_first_peak(best_sum_slice)
+
+  blur_matrix = numpy.array(blur_matrix)
+  blur_matrix = 255 - blur_matrix 
+  blur_matrix *= (255 / blur_matrix.max())
+  blur_matrix = 255 - blur_matrix 
+
+  dark_y = first_peak - (wavelen / 2)
+  dark_ys = []
+  corresponding_darkness = []
+  while dark_y < len(vertical_slice):
+    if int(dark_y) >= 0:
+      dark_ys.append(int(dark_y))
+      edge_score = 255 - best_sum_slice[int(dark_y)]
+      corresponding_darkness.append(edge_score)
+    dark_y += wavelen
+
+  # 0 corresponds to the first predicted_y being the center,
+  #           -2 -1 | (0) 1 2
+  # so -2 corresponds to only one line being visible in the window
+  #   -4 -3 (-2) -1 |  0
+  # 2 or higher means all 5 staff lines are visible, unless it's too high
+  #                 |  0 1 (2) 3 4
+  best_center_position = None
+  max_score = None
+  for center_position in xrange(2, len(dark_ys) - 2):
+    five_darknesses = \
+      corresponding_darkness[(center_position - 2):(center_position + 3)]
+    total_score = five_darknesses[0] + five_darknesses[1] + \
+      five_darknesses[2] + five_darknesses[3] + five_darknesses[4]
+    if best_center_position == None or total_score > max_score:
+      best_center_position = center_position
+      max_score = total_score
+  best_center_y = dark_ys[best_center_position]
+  best_first_y = best_center_y - wavelen * 2
 
   for x in xrange(width):
-    y = first_peak - (wave_len / 2)
+    y = best_first_y
     y += x / float(width) * best_skew
-    while y < 100:
-      if y > 0:
-        cam_matrix_annotated[x][y] = 255
-      y += wave_len
-
-  #blur_matrix = numpy.array(blur_matrix)
-  #blur_matrix = 255 - blur_matrix 
-  #blur_matrix *= (255 / blur_matrix.max())
-  #blur_matrix = 255 - blur_matrix 
-
+    for i in xrange(5):
+      cam_matrix_annotated[x][y] = 255
+      y += wavelen
 
   chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
   chart_matrix = numpy.fliplr(chart_matrix)
@@ -439,6 +472,10 @@ def update_chart():
     #  cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
     #  cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
 
+  #augmented_binary_non_staff_matrix = \
+  #  numpy.array(augmented_binary_non_staff_matrix)
+  #cam_matrix = numpy.array(augmented_binary_non_staff_matrix * 255)
+  #cam_matrix = numpy.array(partially_erased_pure_white_matrix)
   #cam_matrix = numpy.array(blur_matrix)
   cam_matrix = numpy.array(cam_matrix_annotated)
   #cam_matrix = numpy.array(cam_matrix)
