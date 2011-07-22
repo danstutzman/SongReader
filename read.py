@@ -159,6 +159,7 @@ def update_chart():
   best_center_ys = []
   trains = [] # as in: trains on train racks
   binary_non_staff_matrix = []
+  partially_erased_pure_white_matrix = []
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
@@ -196,8 +197,8 @@ def update_chart():
     corresponding_darkness = []
     while dark_y < len(vertical_slice):
       if int(dark_y) >= 0:
-        #if wavelen < 12:
-        #  vertical_slice[int(dark_y)] = 120
+        #if wavelen < 16:
+        #vertical_slice_annotated[int(dark_y)] = 255
         dark_ys.append(int(dark_y))
         #darkness = 255 - vertical_slice[int(dark_y)]
         #corresponding_darkness.append(darkness)
@@ -231,7 +232,7 @@ def update_chart():
 
     for best_center_position in best_center_positions:
       best_center_y = dark_ys[best_center_position]
-      vertical_slice_annotated[int(best_center_y)] = 0
+      #vertical_slice_annotated[int(best_center_y)] = 0
 
       closest_train = None
       min_distance = None
@@ -261,6 +262,7 @@ def update_chart():
     cam_matrix.append(vertical_slice)
     #cam_matrix.append(binary_non_staff * 255)
     binary_non_staff_matrix.append(binary_non_staff)
+    partially_erased_pure_white_matrix.append(partially_erased_pure_white)
 
   min_lightness = 255
   max_lightness = 0
@@ -290,6 +292,50 @@ def update_chart():
       adjusted_lightness = 99
     chart_matrix[y * 5][adjusted_lightness] = (0, 255, 0)
 
+  blur_matrix = []
+  best_skew = None
+  best_i = None
+  max_range = None
+  width = len(partially_erased_pure_white_matrix)
+  #width = 100
+  skew = width * -0.1
+  i = 0
+  while skew <= width * 0.1:
+    sum_slice = numpy.zeros(100)
+    for x in xrange(width):
+      progress = x / float(width)
+      slice = numpy.roll(partially_erased_pure_white_matrix[x],
+        -int(progress * skew))
+      sum_slice += slice
+    sum_slice /= width
+    blur_matrix.append(sum_slice)
+
+    the_range = sum_slice.max() - sum_slice.min()
+    if max_range == None or the_range > max_range:
+      max_range = the_range
+      best_skew = skew
+      best_i = i
+
+    skew += 0.2
+    i += 1
+
+  best_sum_slice = blur_matrix[best_i]
+  first_peak, wave_len = wavelen_and_first_peak(best_sum_slice)
+
+  for x in xrange(width):
+    y = first_peak - (wave_len / 2)
+    y += x / float(width) * best_skew
+    while y < 100:
+      if y > 0:
+        cam_matrix_annotated[x][y] = 255
+      y += wave_len
+
+  #blur_matrix = numpy.array(blur_matrix)
+  #blur_matrix = 255 - blur_matrix 
+  #blur_matrix *= (255 / blur_matrix.max())
+  #blur_matrix = 255 - blur_matrix 
+
+
   chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
   chart_matrix = numpy.fliplr(chart_matrix)
   chart_image = \
@@ -314,11 +360,11 @@ def update_chart():
         for x2 in xrange(last_train_x, x):
           progress = (x2 - last_train_x) / float(x - last_train_x)
           y2 = int(progress * y + (1 - progress) * last_train_y)
-          cam_matrix_annotated[x2][y2] = 0 
+          #cam_matrix_annotated[x2][y2] = 0 
           center_track.append(y2)
       else:
-        for bold in [-1, 0, 1]:
-          cam_matrix_annotated[x][y + bold] = 0 
+        pass #for bold in [-1, 0, 1]:
+        #  cam_matrix_annotated[x][y + bold] = 0 
       #cam_matrix[x][y - longest_train['widths'][x]] = 0
       #cam_matrix[x][y + longest_train['widths'][x]] = 0
       last_train_x = x
@@ -393,6 +439,7 @@ def update_chart():
     #  cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
     #  cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
 
+  #cam_matrix = numpy.array(blur_matrix)
   cam_matrix = numpy.array(cam_matrix_annotated)
   #cam_matrix = numpy.array(cam_matrix)
   size = (cam_matrix.shape[1], cam_matrix.shape[0])
