@@ -290,7 +290,7 @@ def update_chart():
       last_train_x = x
       last_train_y = y
 
-  object2segments = []
+  object2segment_lists = []
   recent_object_indexes = []
   for x in xrange(len(binary_non_staff_matrix)):
     slice = binary_non_staff_matrix[x]
@@ -312,34 +312,37 @@ def update_chart():
     for segment in segments:
       matching_object = None
       for possible_object_index in recent_object_indexes:
-        possible_object = object2segments[possible_object_index]
-        last_segment = possible_object[-1]
-        if segment[1] < last_segment[2] and \
-           segment[2] > last_segment[1]:
-          matching_object = possible_object
-          matched_object_indexes[possible_object_index] = True
-          break
+        possible_object = object2segment_lists[possible_object_index]
+        last_segments = possible_object[-1]
+        for last_segment in last_segments:
+          if segment[1] < last_segment[2] and \
+             segment[2] > last_segment[1]:
+            matching_object = possible_object
+            matched_object_indexes[possible_object_index] = True
+            break
+        if matching_object:
+          break # break out of both loops
       if matching_object:
-        matching_object.append(segment)
+        matching_object[-1].append(segment)
       else:
-        object2segments.append([segment])
-        matched_object_indexes[len(object2segments) - 1] = True
+        object2segment_lists.append([[segment]])
+        matched_object_indexes[len(object2segment_lists) - 1] = True
     recent_object_indexes = matched_object_indexes.keys()
 
   object2bounds = []
-  for segments in object2segments:
+  for segment_lists in object2segment_lists:
     min_x, max_x, min_y, max_y = None, None, None, None
-    for segment in segments:
-      x, y0, y1 = segment
-      if min_x == None:
-        min_x = x
-      max_x = x
-      if min_y == None or y0 < min_y:
-        min_y = y0
-      if max_y == None or y1 > max_y:
-        max_y = y1
+    for segments in segment_lists:
+      for segment in segments:
+        x, y0, y1 = segment
+        if min_x == None:
+          min_x = x
+        max_x = x
+        if min_y == None or y0 < min_y:
+          min_y = y0
+        if max_y == None or y1 > max_y:
+          max_y = y1
     object2bounds.append((min_x, max_x, min_y, max_y))
-    #print (min_x, max_x, min_y, max_y)
     for x in xrange(min_x, max_x + 1):
       cam_matrix[x][min_y] = 168 if cam_matrix[x][max_y] > 0 else 128
       cam_matrix[x][max_y] = 168 if cam_matrix[x][max_y] > 0 else 128
