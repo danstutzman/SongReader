@@ -9,6 +9,7 @@ import yaml
 import os.path
 import sys
 import numpy.fft
+import scipy.ndimage.interpolation
 from annotated_image import AnnotatedImage
 
 # matrix.size = 691200 = 720 x 960print 
@@ -133,33 +134,26 @@ def update_chart():
   matrix_min = 0 #scipy.stats.scoreatpercentile(matrix.flat, 0)
   matrix_max = 255 #scipy.stats.scoreatpercentile(matrix.flat, 100)
   darknesses = numpy.zeros(500)
-  for chart_x in xrange(0, 500):
-    progress = chart_x / 500.0
-    world_x = int((world_x0 * progress) + (world_x1 * (1 - progress)))
-    world_y = int((world_y0 * progress) + (world_y1 * (1 - progress)))
-    darkness = (matrix[world_y][world_x] - matrix_min) / \
-      float(matrix_max - matrix_min) * 99
-    if darkness < 0:
-      darkness = 0
-    if darkness > 99:
-      darkness = 99
-    chart_matrix[chart_x][darkness] = (128, 128, 255)
-    darknesses[chart_x] = darkness
-    histogram[darkness] += 1
-
-  chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
-  chart_matrix = numpy.fliplr(chart_matrix)
-  chart_image = \
-    PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
-  chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
-  chart.create_image(0, 0, image=chart_photo, anchor=NW)
+  #for chart_x in xrange(0, 500):
+  #  progress = chart_x / 500.0
+  #  world_x = int((world_x0 * progress) + (world_x1 * (1 - progress)))
+  #  world_y = int((world_y0 * progress) + (world_y1 * (1 - progress)))
+  #  darkness = (matrix[world_y][world_x] - matrix_min) / \
+  #    float(matrix_max - matrix_min) * 99
+  #  if darkness < 0:
+  #    darkness = 0
+  #  if darkness > 99:
+  #    darkness = 99
+  #  chart_matrix[chart_x][darkness] = (128, 128, 255)
+  #  darknesses[chart_x] = darkness
+  #  histogram[darkness] += 1
 
   point0 = int(big_image.points[0].world_x), int(big_image.points[0].world_y)
   point1 = int(big_image.points[1].world_x), int(big_image.points[1].world_y)
   if point0[0] > point1[0]: # order them left to right
     point0, point1 = point1, point0
   cam_matrix = []
-  cam2_matrix = [] # black except for where the lines are predicted to be
+  cam_matrix_annotated = []
   wavelens = []
   centered_ys = []
   best_center_ys = []
@@ -193,9 +187,9 @@ def update_chart():
 
     partially_erased_pure_white = \
       255 - ((255 - pure_white) * augmented_binary_non_staff)
-    vertical_slice = partially_erased_pure_white
+    vertical_slice_annotated = numpy.copy(vertical_slice)
 
-    y, wavelen = wavelen_and_first_peak(vertical_slice)
+    y, wavelen = wavelen_and_first_peak(partially_erased_pure_white)
 
     dark_y = y - (wavelen / 2)
     dark_ys = []
@@ -207,7 +201,7 @@ def update_chart():
         dark_ys.append(int(dark_y))
         #darkness = 255 - vertical_slice[int(dark_y)]
         #corresponding_darkness.append(darkness)
-        edge_score = 255 - vertical_slice[int(dark_y)]
+        edge_score = 255 - partially_erased_pure_white[int(dark_y)]
         #if int(dark_y) > 0:
         #  edge_score -= vertical_slice[int(dark_y) - 1] / 2
         #if int(dark_y) < len(vertical_slice) - 1:
@@ -237,7 +231,7 @@ def update_chart():
 
     for best_center_position in best_center_positions:
       best_center_y = dark_ys[best_center_position]
-      #vertical_slice[int(best_center_y)] = 0
+      vertical_slice_annotated[int(best_center_y)] = 0
 
       closest_train = None
       min_distance = None
@@ -263,10 +257,48 @@ def update_chart():
       closest_train['length'] += 1
       closest_train['widths'][world_x - point0[0]] = wavelen * 2
 
-    #cam_matrix.append(vertical_slice)
-    cam_matrix.append(binary_non_staff * 255)
+    cam_matrix_annotated.append(vertical_slice_annotated)
+    cam_matrix.append(vertical_slice)
+    #cam_matrix.append(binary_non_staff * 255)
     binary_non_staff_matrix.append(binary_non_staff)
 
+  min_lightness = 255
+  max_lightness = 0
+  for y in xrange(100):
+    lightness = cam_matrix[0][y]
+    if lightness < min_lightness:
+      min_lightness = lightness
+    if lightness > max_lightness:
+      max_lightness = lightness
+  for y in xrange(100):
+    adjusted_lightness = \
+      (cam_matrix[0][y] - min_lightness) * 99 / (max_lightness - min_lightness)
+    if adjusted_lightness < 1:
+      adjusted_lightness = 1
+    if adjusted_lightness > 99:
+      adjusted_lightness = 99
+    chart_matrix[y * 5][adjusted_lightness] = (255, 0, 0)
+  for y in xrange(100):
+    groove = (y - 33) / 7
+    if groove >= 0 and groove < 5:
+      adjusted_lightness = abs(y - ((groove * 7) + 33 + 4)) * (100 / 4)
+    else:
+      adjusted_lightness = 50
+    if adjusted_lightness < 1:
+      adjusted_lightness = 1
+    if adjusted_lightness > 99:
+      adjusted_lightness = 99
+    chart_matrix[y * 5][adjusted_lightness] = (0, 255, 0)
+
+  chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
+  chart_matrix = numpy.fliplr(chart_matrix)
+  chart_image = \
+    PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
+  chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
+  chart.create_image(0, 0, image=chart_photo, anchor=NW)
+
+  cam_matrix_copy = numpy.copy(cam_matrix)
+  center_track = []
   longest_train = None
   max_length = 0
   for train in trains:
@@ -282,13 +314,24 @@ def update_chart():
         for x2 in xrange(last_train_x, x):
           progress = (x2 - last_train_x) / float(x - last_train_x)
           y2 = int(progress * y + (1 - progress) * last_train_y)
-      #    cam_matrix[x2][y2] = 0 
-      #for bold in [-1, 0, 1]:
-      #  cam_matrix[x][y + bold] = 0 
+          cam_matrix_annotated[x2][y2] = 0 
+          center_track.append(y2)
+      else:
+        for bold in [-1, 0, 1]:
+          cam_matrix_annotated[x][y + bold] = 0 
       #cam_matrix[x][y - longest_train['widths'][x]] = 0
       #cam_matrix[x][y + longest_train['widths'][x]] = 0
       last_train_x = x
       last_train_y = y
+
+  #straight_matrix = []
+  #for x in xrange(len(cam_matrix)):
+  #  slice = cam_matrix[x]
+  #  mapping = lambda point: (point[0] * 0.5,)
+  #  new_slice = scipy.ndimage.interpolation.geometric_transform(\
+  #    slice, mapping, order=0, prefilter=False)
+  #  straight_matrix.append(new_slice)
+  #cam_matrix = straight_matrix # just to display it
 
   object2segment_lists = []
   recent_object_indexes = []
@@ -343,14 +386,15 @@ def update_chart():
         if max_y == None or y1 > max_y:
           max_y = y1
     object2bounds.append((min_x, max_x, min_y, max_y))
-    for x in xrange(min_x, max_x + 1):
-      cam_matrix[x][min_y] = 168 if cam_matrix[x][max_y] > 0 else 128
-      cam_matrix[x][max_y] = 168 if cam_matrix[x][max_y] > 0 else 128
-    for y in xrange(min_y, max_y + 1):
-      cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
-      cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
+    #for x in xrange(min_x, max_x + 1):
+    #  cam_matrix[x][min_y] = 168 if cam_matrix[x][max_y] > 0 else 128
+    #  cam_matrix[x][max_y] = 168 if cam_matrix[x][max_y] > 0 else 128
+    #for y in xrange(min_y, max_y + 1):
+    #  cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
+    #  cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
 
-  cam_matrix = numpy.array(cam_matrix)
+  cam_matrix = numpy.array(cam_matrix_annotated)
+  #cam_matrix = numpy.array(cam_matrix)
   size = (cam_matrix.shape[1], cam_matrix.shape[0])
   cam_matrix = scipy.flipud(cam_matrix)
   cam_image = PIL.Image.fromstring('L', size, cam_matrix.astype('b').tostring())
