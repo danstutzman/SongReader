@@ -164,6 +164,7 @@ def update_chart():
   centered_ys = []
   best_center_ys = []
   trains = [] # as in: trains on train racks
+  binary_non_staff_matrix = []
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
@@ -194,9 +195,6 @@ def update_chart():
       255 - ((255 - pure_white) * augmented_binary_non_staff)
     vertical_slice = partially_erased_pure_white
 
-    binary_partially_erased = \
-      numpy.array([1 if y > 240 else 0 for y in partially_erased_pure_white])
-
     y, wavelen = wavelen_and_first_peak(vertical_slice)
 
     dark_y = y - (wavelen / 2)
@@ -210,7 +208,6 @@ def update_chart():
         #darkness = 255 - vertical_slice[int(dark_y)]
         #corresponding_darkness.append(darkness)
         edge_score = 255 - vertical_slice[int(dark_y)]
-        #edge_score = -binary_partially_erased[int(dark_y)]
         #if int(dark_y) > 0:
         #  edge_score -= vertical_slice[int(dark_y) - 1] / 2
         #if int(dark_y) < len(vertical_slice) - 1:
@@ -266,7 +263,9 @@ def update_chart():
       closest_train['length'] += 1
       closest_train['widths'][world_x - point0[0]] = wavelen * 2
 
-    cam_matrix.append(vertical_slice)
+    #cam_matrix.append(vertical_slice)
+    cam_matrix.append(binary_non_staff * 255)
+    binary_non_staff_matrix.append(binary_non_staff)
 
   longest_train = None
   max_length = 0
@@ -283,13 +282,70 @@ def update_chart():
         for x2 in xrange(last_train_x, x):
           progress = (x2 - last_train_x) / float(x - last_train_x)
           y2 = int(progress * y + (1 - progress) * last_train_y)
-          cam_matrix[x2][y2] = 0 
-      for bold in [-1, 0, 1]:
-        cam_matrix[x][y + bold] = 0 
-      cam_matrix[x][y - longest_train['widths'][x]] = 0
-      cam_matrix[x][y + longest_train['widths'][x]] = 0
+      #    cam_matrix[x2][y2] = 0 
+      #for bold in [-1, 0, 1]:
+      #  cam_matrix[x][y + bold] = 0 
+      #cam_matrix[x][y - longest_train['widths'][x]] = 0
+      #cam_matrix[x][y + longest_train['widths'][x]] = 0
       last_train_x = x
       last_train_y = y
+
+  object2segments = []
+  recent_object_indexes = []
+  for x in xrange(len(binary_non_staff_matrix)):
+    slice = binary_non_staff_matrix[x]
+
+    segments = []
+    open_segment = None
+    previous_pixel = 1 # 1 means white (off), 0 means black (on)
+    for y in xrange(len(slice)):
+      if slice[y] == 0:
+        if previous_pixel == 1:
+          open_segment = y
+      else:
+        if previous_pixel == 0:
+          segments.append((x, open_segment, y - 1))
+          open_segment = None
+      previous_pixel = slice[y]
+
+    matched_object_indexes = {}
+    for segment in segments:
+      matching_object = None
+      for possible_object_index in recent_object_indexes:
+        possible_object = object2segments[possible_object_index]
+        last_segment = possible_object[-1]
+        if segment[1] < last_segment[2] and \
+           segment[2] > last_segment[1]:
+          matching_object = possible_object
+          matched_object_indexes[possible_object_index] = True
+          break
+      if matching_object:
+        matching_object.append(segment)
+      else:
+        object2segments.append([segment])
+        matched_object_indexes[len(object2segments) - 1] = True
+    recent_object_indexes = matched_object_indexes.keys()
+
+  object2bounds = []
+  for segments in object2segments:
+    min_x, max_x, min_y, max_y = None, None, None, None
+    for segment in segments:
+      x, y0, y1 = segment
+      if min_x == None:
+        min_x = x
+      max_x = x
+      if min_y == None or y0 < min_y:
+        min_y = y0
+      if max_y == None or y1 > max_y:
+        max_y = y1
+    object2bounds.append((min_x, max_x, min_y, max_y))
+    #print (min_x, max_x, min_y, max_y)
+    for x in xrange(min_x, max_x + 1):
+      cam_matrix[x][min_y] = 168 if cam_matrix[x][max_y] > 0 else 128
+      cam_matrix[x][max_y] = 168 if cam_matrix[x][max_y] > 0 else 128
+    for y in xrange(min_y, max_y + 1):
+      cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
+      cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
 
   cam_matrix = numpy.array(cam_matrix)
   size = (cam_matrix.shape[1], cam_matrix.shape[0])
