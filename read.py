@@ -112,18 +112,6 @@ def wavelen_and_first_peak(array):
 
   return x, wave_length
 
-# everything above cutoff is white; everything below is black
-def threshold_array(array, cutoff):
-  vertical_slice4 = numpy.copy(array)
-  vertical_slice4 -= cutoff
-  vertical_slice4 += abs(vertical_slice4)
-  vertical_slice4 += 100
-  vertical_slice4 = 255 - vertical_slice4
-  vertical_slice4 -= (254 - cutoff)
-  vertical_slice4 += abs(vertical_slice4)
-  vertical_slice4 *= 255 / (vertical_slice4.max() + 1) # avoid div by 0
-  return vertical_slice4
-
 def make_white_pure_white(array):
   array = numpy.copy(array)
   array = 130 - array
@@ -218,20 +206,20 @@ def update_chart():
   cam_matrix = []
   cam2_matrix = [] # black except for where the lines are predicted to be
   wavelens = []
-  centered_xs = []
-  best_center_xs = []
+  centered_ys = []
+  best_center_ys = []
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
     vertical_slice = matrix[(world_y-50):(world_y+50),world_x]
 
-    binary = numpy.array([1 if x > 130 else 0 for x in vertical_slice])
+    binary = numpy.array([1 if y > 130 else 0 for y in vertical_slice])
     
     pure_white = make_white_pure_white(vertical_slice)
     blurred = (numpy.roll(pure_white, 1) + \
       numpy.roll(pure_white, 0) +
       numpy.roll(pure_white, -1)) / 3
-    binary_non_staff = numpy.array([1 if x >= 200 else 0 for x in blurred])
+    binary_non_staff = numpy.array([1 if y >= 200 else 0 for y in blurred])
 
     blurred_binary_non_staff = \
       numpy.roll(binary_non_staff, -4) + \
@@ -244,37 +232,37 @@ def update_chart():
       numpy.roll(binary_non_staff,  3) + \
       numpy.roll(binary_non_staff,  4)
     augmented_binary_non_staff = \
-      numpy.array([1 if x == 9 else 0 for x in blurred_binary_non_staff])
+      numpy.array([1 if y == 9 else 0 for y in blurred_binary_non_staff])
 
     partially_erased_pure_white = \
       255 - ((255 - pure_white) * augmented_binary_non_staff)
     vertical_slice = partially_erased_pure_white
 
     binary_partially_erased = \
-      numpy.array([1 if x > 240 else 0 for x in partially_erased_pure_white])
+      numpy.array([1 if y > 240 else 0 for y in partially_erased_pure_white])
 
-    x, wavelen = wavelen_and_first_peak(vertical_slice)
+    y, wavelen = wavelen_and_first_peak(vertical_slice)
 
-    dark_x = x - (wavelen / 2)
-    dark_xs = []
+    dark_y = y - (wavelen / 2)
+    dark_ys = []
     corresponding_darkness = []
-    while dark_x < len(vertical_slice):
-      if int(dark_x) >= 0:
+    while dark_y < len(vertical_slice):
+      if int(dark_y) >= 0:
         #if wavelen < 12:
-        #  vertical_slice[int(dark_x)] = 120
-        dark_xs.append(int(dark_x))
-        #darkness = 255 - vertical_slice[int(dark_x)]
+        #  vertical_slice[int(dark_y)] = 120
+        dark_ys.append(int(dark_y))
+        #darkness = 255 - vertical_slice[int(dark_y)]
         #corresponding_darkness.append(darkness)
-        edge_score = 255 - vertical_slice[int(dark_x)]
-        #edge_score = -binary_partially_erased[int(dark_x)]
-        #if int(dark_x) > 0:
-        #  edge_score -= vertical_slice[int(dark_x) - 1] / 2
-        #if int(dark_x) < len(vertical_slice) - 1:
-        #  edge_score -= vertical_slice[int(dark_x) + 1] / 2
+        edge_score = 255 - vertical_slice[int(dark_y)]
+        #edge_score = -binary_partially_erased[int(dark_y)]
+        #if int(dark_y) > 0:
+        #  edge_score -= vertical_slice[int(dark_y) - 1] / 2
+        #if int(dark_y) < len(vertical_slice) - 1:
+        #  edge_score -= vertical_slice[int(dark_y) + 1] / 2
         corresponding_darkness.append(edge_score)
-      dark_x += wavelen
+      dark_y += wavelen
 
-    # 0 corresponds to the first predicted_x being the center,
+    # 0 corresponds to the first predicted_y being the center,
     #           -2 -1 | (0) 1 2
     # so -2 corresponds to only one line being visible in the window
     #   -4 -3 (-2) -1 |  0
@@ -282,7 +270,7 @@ def update_chart():
     #                 |  0 1 (2) 3 4
     best_center_positions = []
     max_score = None
-    for center_position in xrange(2, len(dark_xs) - 2):
+    for center_position in xrange(2, len(dark_ys) - 2):
       five_darknesses = \
         corresponding_darkness[(center_position - 2):(center_position + 3)]
       total_score = five_darknesses[0] + five_darknesses[1] + \
@@ -295,8 +283,8 @@ def update_chart():
           best_center_positions.append(center_position)
 
     for best_center_position in best_center_positions:
-      best_center_x = dark_xs[best_center_position]
-      vertical_slice[int(best_center_x)] = 0
+      best_center_y = dark_ys[best_center_position]
+      vertical_slice[int(best_center_y)] = 0
 
     cam_matrix.append(vertical_slice)
 
