@@ -163,6 +163,7 @@ def update_chart():
   wavelens = []
   centered_ys = []
   best_center_ys = []
+  trains = [] # as in: trains on train racks
   for world_x in xrange(point0[0], point1[0]):
     progress = (world_x - point0[0]) / float(point1[0] - point0[0])
     world_y = int((point1[1] * progress) + (point0[1] * (1 - progress)))
@@ -239,9 +240,52 @@ def update_chart():
 
     for best_center_position in best_center_positions:
       best_center_y = dark_ys[best_center_position]
-      vertical_slice[int(best_center_y)] = 0
+      #vertical_slice[int(best_center_y)] = 0
+
+      closest_train = None
+      min_distance = None
+      for possible_train in trains:
+        if min_distance == None or \
+            abs(possible_train['last_y'] - best_center_y) < min_distance:
+          closest_train = possible_train
+          min_distance = abs(possible_train['last_y'] - best_center_y)
+      if closest_train:
+        if abs(closest_train['last_y'] - best_center_y) > 4:
+          closest_train = None
+      if closest_train == None:
+        closest_train = {
+          'length':0,
+          'last_y':best_center_y,
+          'sequence':[-1] * (point1[0] - point0[0])
+        }
+        trains.append(closest_train)
+      closest_train['last_y'] = \
+        closest_train['last_y'] * 0.75 + best_center_y * 0.25
+      closest_train['sequence'][world_x - point0[0]] = best_center_y
+      closest_train['length'] += 1
 
     cam_matrix.append(vertical_slice)
+
+  longest_train = None
+  max_length = 0
+  for train in trains:
+    if train['length'] > max_length:
+      max_length = train['length']
+      longest_train = train
+  last_train_y = None
+  last_train_x = None
+  for x in xrange(len(longest_train['sequence'])):
+    y = longest_train['sequence'][x]
+    if y > -1:
+      if last_train_x and last_train_y:
+        for x2 in xrange(last_train_x, x):
+          progress = (x2 - last_train_x) / float(x - last_train_x)
+          y2 = int(progress * y + (1 - progress) * last_train_y)
+          cam_matrix[x2][y2] = 0 
+      for bold in [-1, 0, 1]:
+        cam_matrix[x][y + bold] = 0 
+      last_train_x = x
+      last_train_y = y
 
   cam_matrix = numpy.array(cam_matrix)
   size = (cam_matrix.shape[1], cam_matrix.shape[0])
