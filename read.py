@@ -281,7 +281,7 @@ def update_chart():
       adjusted_lightness = 1
     if adjusted_lightness > 99:
       adjusted_lightness = 99
-    chart_matrix[y * 5][adjusted_lightness] = (255, 0, 0)
+    #chart_matrix[y * 5][adjusted_lightness] = (255, 0, 0)
   for y in xrange(100):
     groove = (y - 33) / 7
     if groove >= 0 and groove < 5:
@@ -292,7 +292,7 @@ def update_chart():
       adjusted_lightness = 1
     if adjusted_lightness > 99:
       adjusted_lightness = 99
-    chart_matrix[y * 5][adjusted_lightness] = (0, 255, 0)
+    #chart_matrix[y * 5][adjusted_lightness] = (0, 255, 0)
 
   blur_matrix = []
   best_skew = None
@@ -369,13 +369,6 @@ def update_chart():
       cam_matrix_annotated[x][y] = 180
       y += wavelen
 
-  chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
-  chart_matrix = numpy.fliplr(chart_matrix)
-  chart_image = \
-    PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
-  chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
-  chart.create_image(0, 0, image=chart_photo, anchor=NW)
-
   cam_matrix_copy = numpy.copy(cam_matrix)
   center_track = []
   longest_train = None
@@ -451,6 +444,11 @@ def update_chart():
         matched_object_indexes[len(object2segment_lists) - 1] = True
     recent_object_indexes = matched_object_indexes.keys()
 
+  # draw staff lines on chart_matrix
+  for staff_y in [-2, -1, 0, 1, 2]:
+    for x in xrange(500):
+      chart_matrix[x][50 + (staff_y * 3 * 2)] = (128, 128, 0)
+
   object2bounds = []
   for segment_lists in object2segment_lists:
     min_x, max_x, min_y, max_y = None, None, None, None
@@ -465,8 +463,7 @@ def update_chart():
         if max_y == None or y1 > max_y:
           max_y = y1
     object2bounds.append((min_x, max_x, min_y, max_y))
-    if 10 < (max_x - min_x) < 40 and \
-       5 < (max_y - min_y) < 10:
+    if 5 < (max_x - min_x) and 5 < (max_y - min_y):
       for x in xrange(min_x, max_x + 1):
         cam_matrix_annotated[x][min_y] = 168 \
           if cam_matrix[x][max_y] > 0 else 128
@@ -486,6 +483,23 @@ def update_chart():
       note = notes[int(round(staff_y * 2))]
       print mid_x, staff_y, note
       cam_matrix_annotated[mid_x][best_center_y + (staff_y * wavelen)] = 255
+      center_y = 50 + round(staff_y * 2) * 3
+      ledger_line_y = int((center_y - 50) / 3 / 2) * 3 * 2 + 50
+      while ledger_line_y > 50 + 4 * 3:
+        for x in xrange(-12, 13):
+          chart_matrix[mid_x + x + 50][ledger_line_y] = (127, 127, 0)
+        ledger_line_y -= 2 * 3
+      for y in xrange(-8, 8):
+        for x in xrange(-8, 9):
+          if (y * y) * 2 + x * x < 20:
+            chart_matrix[mid_x + x + 50][center_y + y] = (255, 255, 0)
+
+  chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
+  chart_matrix = numpy.fliplr(chart_matrix)
+  chart_image = \
+    PIL.Image.fromstring('RGB', (500, 100), chart_matrix.astype('b').tostring())
+  chart_photo = PIL.ImageTk.PhotoImage(image=chart_image)
+  chart.create_image(0, 0, image=chart_photo, anchor=NW)
 
   #augmented_binary_non_staff_matrix = \
   #  numpy.array(augmented_binary_non_staff_matrix)
