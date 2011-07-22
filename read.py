@@ -199,7 +199,7 @@ def update_chart():
     while dark_y < len(vertical_slice):
       if int(dark_y) >= 0:
         #if wavelen < 16:
-        #vertical_slice_annotated[int(dark_y)] = 255
+        #vertical_slice_annotated[int(dark_y)] = 160
         dark_ys.append(int(dark_y))
         #darkness = 255 - vertical_slice[int(dark_y)]
         #corresponding_darkness.append(darkness)
@@ -366,7 +366,7 @@ def update_chart():
     y = best_first_y
     y += x / float(width) * best_skew
     for i in xrange(5):
-      cam_matrix_annotated[x][y] = 255
+      cam_matrix_annotated[x][y] = 180
       y += wavelen
 
   chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
@@ -465,12 +465,27 @@ def update_chart():
         if max_y == None or y1 > max_y:
           max_y = y1
     object2bounds.append((min_x, max_x, min_y, max_y))
-    #for x in xrange(min_x, max_x + 1):
-    #  cam_matrix[x][min_y] = 168 if cam_matrix[x][max_y] > 0 else 128
-    #  cam_matrix[x][max_y] = 168 if cam_matrix[x][max_y] > 0 else 128
-    #for y in xrange(min_y, max_y + 1):
-    #  cam_matrix[min_x][y] = 168 if cam_matrix[min_x][y] > 0 else 128
-    #  cam_matrix[max_x][y] = 168 if cam_matrix[max_x][y] > 0 else 128
+    if 10 < (max_x - min_x) < 40 and \
+       5 < (max_y - min_y) < 10:
+      for x in xrange(min_x, max_x + 1):
+        cam_matrix_annotated[x][min_y] = 168 \
+          if cam_matrix[x][max_y] > 0 else 128
+        cam_matrix_annotated[x][max_y] = 168 \
+          if cam_matrix[x][max_y] > 0 else 128
+      for y in xrange(min_y, max_y + 1):
+        cam_matrix_annotated[min_x][y] = 168 \
+          if cam_matrix[min_x][y] > 0 else 128
+        cam_matrix_annotated[max_x][y] = 168 \
+          if cam_matrix[max_x][y] > 0 else 128
+      mid_x = (max_x + min_x) / 2
+      mid_y = (max_y + min_y) / 2
+      staff_y = (mid_y - best_center_y) / wavelen
+      notes = ['hi b', 'hi a', 'tenor g', 'tenor f', 'tenor e', \
+        'tenor d', 'tenor c', 'tenor b', 'tenor a', 'bass g', ' ', \
+        'soprano g', 'soprano a', 'hi f', 'hi e', 'hi d', 'hi c']
+      note = notes[int(round(staff_y * 2))]
+      print mid_x, staff_y, note
+      cam_matrix_annotated[mid_x][best_center_y + (staff_y * wavelen)] = 255
 
   #augmented_binary_non_staff_matrix = \
   #  numpy.array(augmented_binary_non_staff_matrix)
