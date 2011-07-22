@@ -143,55 +143,10 @@ def update_chart():
       darkness = 0
     if darkness > 99:
       darkness = 99
-    chart_matrix[chart_x][darkness] = (0, 0, 255)
+    chart_matrix[chart_x][darkness] = (128, 128, 255)
     darknesses[chart_x] = darkness
     histogram[darkness] += 1
 
-  chart_x, wave_length = wavelen_and_first_peak(darknesses)
-  big_image.draw_tick_marks(chart_x, wave_length)
-  while chart_x < 500:
-    if chart_x >= 0:
-      for y in xrange(0, 100):
-        chart_matrix[int(chart_x)][y] = (0, 255, 0)
-    chart_x += wave_length
-  
-  fft = numpy.fft.fft(darknesses, 512)
-  for i in xrange(len(fft)):
-    fft[i] = fft[i] / 2 + \
-      fft[i - 1] / 4 if i > 0 else 0 + \
-      fft[i + 1] / 4 if i < 1023 else 0
-  fft = fft / 4000
-  last_height = 0
-  for chart_x in xrange(0, 500):
-    height = fft[chart_x] * 100 * 10
-    if height < 0:
-      height = 0
-    if height > 99:
-      height = 99
-    for h in xrange(height, last_height):
-      chart_matrix[chart_x][h] = (155, 155, 155)
-    for h in xrange(last_height, height):
-      chart_matrix[chart_x][h] = (155, 155, 155)
-    last_height = height
-  
-  # smooth histogram
-  #for i in xrange(3):
-  #  for chart_x in xrange(0, 100):
-  #    histogram[chart_x] = histogram[chart_x] / 2 + \
-  #      (histogram[chart_x - 1] / 4 if chart_x > 0 else 0) + \
-  #      (histogram[chart_x + 1] / 4 if chart_x < 99 else 0)
-  histogram = histogram / histogram.max() * 99
-  
-  # draw histogram
-  for chart_x in xrange(0, 100):
-    chart_matrix[chart_x][99 - histogram[chart_x]] = (255, 0, 0)
-  # draw percentiles
-  for percentile in [5, 50, 95]:
-    percentile_as_x = \
-      int(scipy.stats.scoreatpercentile(matrix.flat, percentile) / 255.0 * 100.0)
-    for y in xrange(0, 10):
-      chart_matrix[percentile_as_x][y] = (255, 0, 0)
-  
   chart_matrix = numpy.rot90(chart_matrix, 3) # rotates 270
   chart_matrix = numpy.fliplr(chart_matrix)
   chart_image = \
