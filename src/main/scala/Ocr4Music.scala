@@ -3,13 +3,26 @@ import javax.imageio.ImageIO
 import java.awt.Graphics2D
 import java.awt.image.BufferedImage
 
-class ColorImage(_w:Int, _h:Int, _rgb255:Array[(Int,Int,Int)]) {
+class ColorImage(_w:Int, _h:Int, _data:Array[(Int,Int,Int)]) {
   val w = _w
   val h = _h
-  val rgb255 = _rgb255
+  val data = _data
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
-    rgb255(y * w + x) = tuple
+    data(y * w + x) = tuple
   }
+}
+
+class GrayImage(_w:Int, _h:Int, _data:Array[Int]) {
+  val w = _w
+  val h = _h
+  val data = _data
+  def update(x:Int, y:Int, brightness:Int) {
+    data(y * w + x) = brightness
+  }
+  def +(scalar:Int) = { new GrayImage(w, h, data.map { _ + scalar }) }
+  def -(scalar:Int) = { new GrayImage(w, h, data.map { _ - scalar }) }
+  def *(scalar:Int) = { new GrayImage(w, h, data.map { _ * scalar }) }
+  def /(scalar:Int) = { new GrayImage(w, h, data.map { _ / scalar }) }
 }
 
 object Ocr4Music {
@@ -52,28 +65,41 @@ object Ocr4Music {
     val w = bufferedImage.getWidth()
     val h = bufferedImage.getHeight()
     val pixelsARGB:Array[Int] = bufferedImage.getRGB(0, 0, w, h, null, 0, w)
-    val rgb255 = pixelsARGB.map { convertARGBIntToRGBTuple }
-    val colorImage = new ColorImage(w, h, rgb255)
+    val data = pixelsARGB.map { convertARGBIntToRGBTuple }
+    val colorImage = new ColorImage(w, h, data)
     colorImage
   }
 
   def writeColorImage(colorImage:ColorImage, file:File) {
     val (w, h) = (colorImage.w, colorImage.h)
     val imageOut = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB)
-    val pixelsARGBNew = colorImage.rgb255.map { convertRGBTupleToARGBInt }
+    val pixelsARGBNew = colorImage.data.map { convertRGBTupleToARGBInt }
     imageOut.setRGB(0, 0, w, h, pixelsARGBNew, 0, w)
     ImageIO.write(imageOut, "PNG", file)
   }
 
+  def convertColorImageToGrayImage(colorImage:ColorImage) : GrayImage = {
+    val data = colorImage.data.map { rgb => (rgb._1 + rgb._2 + rgb._3) / 3 }
+    new GrayImage(colorImage.w, colorImage.h, data)
+  }
+
+  def convertGrayImageToColorImage(grayImage:GrayImage) : ColorImage = {
+    val data = grayImage.data.map { v => (v, v, v) }
+    new ColorImage(grayImage.w, grayImage.h, data)
+  }
+
   def tryLoadingAndSavingFiles {
     val colorImage = readColorImage(new File("photo.jpeg"))
+    val grayImage = convertColorImageToGrayImage(colorImage)
+    val grayImage2 = (grayImage * -1) + 255
+    val colorImage2 = convertGrayImageToColorImage(grayImage2)
 
     for (x <- 0 until 100) {
       for (y <- 0 until 100) {
-        colorImage(x, y) = (x, y, 0)
+        colorImage2(x, y) = (x, y, 0)
       }
     }
 
-    writeColorImage(colorImage, new File("out.png"))
+    writeColorImage(colorImage2, new File("out.png"))
   }
 }
