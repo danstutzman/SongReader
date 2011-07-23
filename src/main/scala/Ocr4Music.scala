@@ -3,10 +3,7 @@ import javax.imageio.ImageIO
 import java.awt.Graphics2D
 import java.awt.image.BufferedImage
 
-class ColorImage(_w:Int, _h:Int, _data:Array[(Int,Int,Int)]) {
-  val w = _w
-  val h = _h
-  val data = _data
+class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
     data(y * w + x) = tuple
   }
@@ -26,10 +23,7 @@ class ColorImage(_w:Int, _h:Int, _data:Array[(Int,Int,Int)]) {
   }
 }
 
-class GrayImage(_w:Int, _h:Int, _data:Array[Int]) {
-  val w = _w
-  val h = _h
-  val data = _data
+class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def update(x:Int, y:Int, brightness:Int) {
     data(y * w + x) = brightness
   }
