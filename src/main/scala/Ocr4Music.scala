@@ -1,11 +1,14 @@
-import java.io.File
-import javax.imageio.ImageIO
 import java.awt.Graphics2D
 import java.awt.image.BufferedImage
+import java.io.File
+import java.lang.Math
+import javax.imageio.ImageIO
+import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 
 class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
-    data(y * w + x) = tuple
+    if (x >= 0 && x < w && y >= 0 && y < h)
+      data(y * w + x) = tuple
   }
   def toGrayImage : GrayImage = {
     val newData = data.map { rgb => (rgb._1 + rgb._2 + rgb._3) / 3 }
@@ -26,11 +29,10 @@ class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
 class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def this(w:Int, h:Int) = this(w, h, new Array[Int](w * h))
   def apply(x:Int, y:Int) = {
-    if (x < 0 || x >= w || y < 0 || y >= h) {
+    if (x < 0 || x >= w || y < 0 || y >= h)
       0
-    } else {
+    else
       data(y * w + x)
-    }
   }
   def update(x:Int, y:Int, brightness:Int) {
     data(y * w + x) = brightness
@@ -49,9 +51,12 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   }
   def toColorImage : ColorImage = {
     new ColorImage(w, h, data.map { v =>
-      if (v < 0) { (0, 0, 255) } // blue (too cold)
-      else if (v > 255) { (255, 0, 0) } // red (too hot)
-      else { (v, v, v) }
+      if (v < 0)
+        (0, 0, 255) // blue (too cold)
+      else if (v > 255)
+        (255, 0, 0) // red (too hot)
+      else
+        (v, v, v)
     })
   }
   def giveBrightnessPerPixel(block:(Int,Int)=>Int) = {
@@ -145,17 +150,20 @@ object Ocr4Music {
     colorImage
   }
 
-  def findArgmax(inputs:Range, block:Int=>Int) : Int = {
-    var max = inputs(0)
-    var argmax = block(inputs(0))
-    inputs.foreach { input =>
+  def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
+    var argmaxIndex = 0
+    var argmax = inputs(0)
+    var max = block(inputs(0))
+    (0 until inputs.length).foreach { i =>
+      val input = inputs(i)
       val output = block(input)
       if (output > max) {
         max = output
         argmax = input
+        argmaxIndex = i
       }
     }
-    argmax
+    (argmax, argmaxIndex)
   }
 
   def averageOfSkewedImage(image:GrayImage, skew:Int) : Array[Int] = {
@@ -175,7 +183,7 @@ object Ocr4Music {
 
   def findBestSkew(image:GrayImage) : Int = {
     val maxSkew = maxVerticalSkewGivenWidth(image.w)
-    val bestSkew = findArgmax((-maxSkew to maxSkew), { skew =>
+    val (bestSkew, _) = findArgmax[Int,Int]((-maxSkew to maxSkew), { skew =>
       val average = averageOfSkewedImage(image, skew)
       val score = average.max - average.min
       score
@@ -207,12 +215,18 @@ object Ocr4Music {
     annotated
   }
 
+  def hammingWindow(n:Int) : Seq[Double] = {
+    (0 until n).map { i =>
+      0.54 - 0.46 * Math.cos(2 * Math.PI * i / (n - 1))
+    }
+  }
+
   def tryLoadingAndSavingFiles {
     val colorImage = readColorImage(new File("photo.jpeg"))
     val grayImage = colorImage.toGrayImage
     //val excerpt = grayImage.crop(200, 50, 220, 75) // straight with notes
-    //val excerpt = grayImage.crop(540, 180, 60, 60) // diagonal down
-    val excerpt = grayImage.crop(0, 85, 40, 40) // diagonal up
+    val excerpt = grayImage.crop(540, 180, 60, 60) // diagonal down
+    //val excerpt = grayImage.crop(0, 85, 40, 40) // diagonal up
     val whiteBackground = excerpt.brighten(130)
     val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
@@ -226,5 +240,42 @@ object Ocr4Music {
 
     val imageOfSkews = constructImageComparingSkews(partiallyErased)
     imageOfSkews.saveTo(new File("skews.png"))
+
+    val bestSkewsAverage = averageOfSkewedImage(partiallyErased, bestSkew)
+    val window = hammingWindow(bestSkewsAverage.length)
+    val fftNumBuckets = 512
+    val fftInput = new Array[Float](fftNumBuckets)
+    (0 until bestSkewsAverage.length).foreach { i =>
+      fftInput(i) = (255 - bestSkewsAverage(i)) * window(i).floatValue
+    }
+    val fftOutput = fftInput.clone
+    val fft = new FloatFFT_1D(fftNumBuckets)
+    fft.realForward(fftOutput) // mutates array in place
+
+    val fftOutputPolar  = new Array[(Float,Float)](fftNumBuckets / 2)
+    (0 until fftNumBuckets by 2).foreach { i =>
+      val (re, im) = (fftOutput(i), fftOutput(i + 1))
+      val magnitude = Math.sqrt(re * re + im * im)
+      var phase = Math.atan2(im, re)
+      fftOutputPolar(i / 2) =
+        if (i / 2 > 20) (magnitude.floatValue, phase.floatValue)
+        else (0.0f, 0.0f)
+    }
+    val (strongestBucketContents, strongestBucketNum) =
+      findArgmax[(Float,Float),Float](fftOutputPolar, { polar => polar._1 })
+    val waveLength = fftNumBuckets.floatValue / strongestBucketNum
+    val wavePhase = strongestBucketContents._2 / Math.PI / 2
+
+    val annotated2 = partiallyErased.toColorImage
+    var y = waveLength * -wavePhase
+    while (y < annotated2.h) {
+      for (x <- 0 until 20) {
+        val skewedY = (y + (x * bestSkew / annotated2.w)).intValue
+        if (skewedY >= 0 && skewedY < annotated2.h)
+          annotated2(x, skewedY) = (255,0,0)
+      }
+      y += waveLength
+    }
+    annotated2.saveTo(new File("annotated2.png"))
   }
 }
