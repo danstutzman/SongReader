@@ -5,6 +5,13 @@ import java.lang.Math
 import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 
+object Colors {
+  val underflow = (0, 0, 255) // blue (too cold)
+  val overflow = (255, 0, 0) // red (too hot)
+  val annotation = (255, 0, 0)
+  val ansiEscapeToHighlightProgramOutput = "\u001b" + "[1;37m" // bright white
+}
+
 class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
     if (x >= 0 && x < w && y >= 0 && y < h)
@@ -52,9 +59,9 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def toColorImage : ColorImage = {
     new ColorImage(w, h, data.map { v =>
       if (v < 0)
-        (0, 0, 255) // blue (too cold)
-      else if (v > 255)
-        (255, 0, 0) // red (too hot)
+        Colors.underflow
+      else if (v > 255) 
+        Colors.overflow
       else
         (v, v, v)
     })
@@ -110,19 +117,13 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def saveTo(file:File) { this.toColorImage.saveTo(file) }
 }
 
-case class Metrics(val skew:Int, val waveLength:Float, val wavePhase:Float) {
-}
+case class Metrics(
+  val skew:Int,
+  val waveLength:Float,
+  val wavePhase:Float
+) {}
 
 object Ocr4Music {
-  def main(args:Array[String]) {
-    try {
-      println("\u001b" + "[1;37m"); // make program output bright white
-      tryLoadingAndSavingFiles
-    } catch {
-      case e: Exception => e.printStackTrace()
-    }
-  }
-
   def readColorImage(file:File) : ColorImage = {
     def convertARGBIntToRGBTuple(argb:Int) : (Int,Int,Int) = {
       val a = (argb >> 24) & 0xff
@@ -213,7 +214,7 @@ object Ocr4Music {
     var annotated = image.toColorImage
     for (x <- 0 until image.w) {
       val skewAmount = x * skew / image.w
-      annotated(x, (image.h / 2) + skewAmount) = (255, 0, 0)
+      annotated(x, (image.h / 2) + skewAmount) = Colors.annotation
     }
     annotated
   }
@@ -288,5 +289,14 @@ object Ocr4Music {
     val partiallyErased = eraseNotes(excerpt)
     val metrics = estimateMetrics(partiallyErased)
     println(metrics)
+  }
+
+  def main(args:Array[String]) {
+    try {
+      println(Colors.ansiEscapeToHighlightProgramOutput)
+      tryLoadingAndSavingFiles
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }
   }
 }
