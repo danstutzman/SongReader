@@ -110,6 +110,9 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def saveTo(file:File) { this.toColorImage.saveTo(file) }
 }
 
+case class Metrics(val skew:Int, val waveLength:Float, val wavePhase:Float) {
+}
+
 object Ocr4Music {
   def main(args:Array[String]) {
     try {
@@ -221,26 +224,32 @@ object Ocr4Music {
     }
   }
 
-  def tryLoadingAndSavingFiles {
-    val colorImage = readColorImage(new File("photo.jpeg"))
-    val grayImage = colorImage.toGrayImage
-    //val excerpt = grayImage.crop(200, 50, 220, 75) // straight with notes
-    val excerpt = grayImage.crop(540, 180, 60, 60) // diagonal down
-    //val excerpt = grayImage.crop(0, 85, 40, 40) // diagonal up
-    val whiteBackground = excerpt.brighten(130)
+  def eraseNotes(input:GrayImage) : GrayImage = {
+    val whiteBackground = input.brighten(130)
     val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
     val partiallyErased = whiteBackground.addWithCeiling(
       augmentedBinaryNonStaff.inverse)
-    partiallyErased.toColorImage.saveTo(new File("out.png"))
+    partiallyErased
+  }
+
+  def annotateFFTResult(input:GrayImage, metrics:Metrics) {
+    val annotated = input.toColorImage
+    var y = metrics.waveLength * -metrics.wavePhase
+    val color = (255,0,0) // red
+    while (y < annotated.h) {
+      for (x <- 0 until 20) {
+        val skewedY = (y + (x * metrics.skew / annotated.w)).intValue
+        if (skewedY >= 0 && skewedY < annotated.h)
+          annotated(x, skewedY) = color
+      }
+      y += metrics.waveLength
+    }
+    annotated.saveTo(new File("annotated2.png"))
+  }
+
+  def estimateMetrics(partiallyErased:GrayImage) : Metrics = {
     val bestSkew = findBestSkew(partiallyErased)
-    println("best skew: %d".format(bestSkew))
-    val annotatedImage = annotateSkew(bestSkew, excerpt)
-    annotatedImage.saveTo(new File("annotated.png"))
-
-    val imageOfSkews = constructImageComparingSkews(partiallyErased)
-    imageOfSkews.saveTo(new File("skews.png"))
-
     val bestSkewsAverage = averageOfSkewedImage(partiallyErased, bestSkew)
     val window = hammingWindow(bestSkewsAverage.length)
     val fftNumBuckets = 512
@@ -248,6 +257,7 @@ object Ocr4Music {
     (0 until bestSkewsAverage.length).foreach { i =>
       fftInput(i) = (255 - bestSkewsAverage(i)) * window(i).floatValue
     }
+
     val fftOutput = fftInput.clone
     val fft = new FloatFFT_1D(fftNumBuckets)
     fft.realForward(fftOutput) // mutates array in place
@@ -261,21 +271,22 @@ object Ocr4Music {
         if (i / 2 > 20) (magnitude.floatValue, phase.floatValue)
         else (0.0f, 0.0f)
     }
+
     val (strongestBucketContents, strongestBucketNum) =
       findArgmax[(Float,Float),Float](fftOutputPolar, { polar => polar._1 })
     val waveLength = fftNumBuckets.floatValue / strongestBucketNum
-    val wavePhase = strongestBucketContents._2 / Math.PI / 2
+    val wavePhase = (strongestBucketContents._2 / Math.PI / 2).floatValue
 
-    val annotated2 = partiallyErased.toColorImage
-    var y = waveLength * -wavePhase
-    while (y < annotated2.h) {
-      for (x <- 0 until 20) {
-        val skewedY = (y + (x * bestSkew / annotated2.w)).intValue
-        if (skewedY >= 0 && skewedY < annotated2.h)
-          annotated2(x, skewedY) = (255,0,0)
-      }
-      y += waveLength
-    }
-    annotated2.saveTo(new File("annotated2.png"))
+    Metrics(bestSkew, waveLength, wavePhase)
+  }
+
+  def tryLoadingAndSavingFiles {
+    val original = readColorImage(new File("photo.jpeg")).toGrayImage
+    //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
+    val excerpt = original.crop(540, 180, 60, 60) // diagonal down
+    //val excerpt = original.crop(0, 85, 40, 40) // diagonal up
+    val partiallyErased = eraseNotes(excerpt)
+    val metrics = estimateMetrics(partiallyErased)
+    println(metrics)
   }
 }
