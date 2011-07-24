@@ -12,11 +12,24 @@ object Colors {
   val ansiEscapeToHighlightProgramOutput = "\u001b" + "[1;37m" // bright white
 }
 
-case class Metrics(
+case class Metrics (
   val skew:Int,
   val waveLength:Float,
   val wavePhase:Float,
   val centerY:Float
+) {}
+
+case class Segment (
+  val y:Int,
+  val x0:Int,
+  val x1:Int
+) {}
+
+case class BoundingBox (
+  val minX:Int,
+  val maxX:Int,
+  val minY:Int,
+  val maxY:Int
 ) {}
 
 object Ocr4Music {
@@ -91,13 +104,14 @@ object Ocr4Music {
     }
   }
 
-  def eraseNotes(input:GrayImage) : GrayImage = {
+  // returns image with just notes, and without notes
+  def separateNotes(input:GrayImage) : (GrayImage, GrayImage) = {
     val whiteBackground = input.brighten(130)
     val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
     val partiallyErased = whiteBackground.addWithCeiling(
       augmentedBinaryNonStaff.inverse)
-    partiallyErased
+    (binaryNonStaff, partiallyErased)
   }
 
   def annotateFFTResult(input:GrayImage, metrics:Metrics) {
@@ -179,6 +193,131 @@ object Ocr4Music {
     annotated.saveTo(new File("center_y.png"))
   }
 
+  def scanSegments(binaryImage:GrayImage) : List[Segment] = {
+    var segments:List[Segment] = Nil
+    (0 until binaryImage.h).foreach { y =>
+      var previousPixel = 255
+      var openSegment = 0
+      (0 until binaryImage.w).foreach { x =>
+        val currentPixel = binaryImage(x, y)
+        if (currentPixel == 0) { // 0 is "on", by the way
+          if (previousPixel != 0)
+            openSegment = x
+        }
+        else {
+          if (previousPixel == 0)
+            segments = Segment(y, openSegment, x) :: segments
+        }
+        previousPixel = currentPixel
+      }
+    }
+    segments
+  }
+
+  def annotateSegments(baseImage:GrayImage, segments:List[Segment]) {
+    val annotated = baseImage.toColorImage
+    segments.foreach { segment =>
+      annotated(segment.x0, segment.y) = Colors.annotation
+      annotated(segment.x1, segment.y) = Colors.annotation
+    }
+    annotated.saveTo(new File("segments.png"))
+  }
+
+  def groupTouchingSegments(segments:List[Segment]) : List[List[Segment]] = {
+    case class SegmentGroup (
+      var earlierLayers:List[Segment],
+      var previousLayer:List[Segment],
+      var currentLayer:List[Segment]
+    ) {}
+
+    var maxY = segments.foldLeft(0) { (maxY, segment) =>
+      if (segment.y > maxY) segment.y else maxY
+    }
+    var yToSegments:Array[List[Segment]] = new Array[List[Segment]](maxY + 1)
+    (0 to maxY).foreach { y => yToSegments(y) = Nil }
+    segments.foreach { segment =>
+      yToSegments(segment.y) = segment :: yToSegments(segment.y)
+    }
+
+    var activeGroups:List[SegmentGroup] = Nil
+    var inactiveGroups:List[SegmentGroup] = Nil
+    (0 to maxY).foreach { y =>
+      yToSegments(y).foreach { segment =>
+        val touchingGroupIfAny = activeGroups.find { group =>
+          group.previousLayer.find { previousSegment =>
+//if (y > 15 && y < 20) {
+          //println("segment: %s, prevSegment: %s".format(segment, previousSegment))
+//}
+
+            segment.x0 < previousSegment.x1 && segment.x1 > previousSegment.x0
+          }.isDefined
+        }
+//if (y > 15 && y < 20) {
+//println("Group for %s: %s".format(segment, touchingGroupIfAny))
+//}
+        val group = touchingGroupIfAny.getOrElse {
+          val newGroup = SegmentGroup(Nil, Nil, Nil)
+          activeGroups = newGroup :: activeGroups
+          newGroup
+        }
+        group.currentLayer = segment :: group.currentLayer
+      }
+
+      val (newActiveGroups, newInactiveGroups) =
+        activeGroups.partition { group => group.currentLayer.size > 0 }
+      inactiveGroups = newInactiveGroups ::: inactiveGroups
+      activeGroups = newActiveGroups.map { group =>
+        SegmentGroup(
+          group.previousLayer ::: group.earlierLayers,
+          group.currentLayer,
+          Nil)
+      }
+//if (y > 15 && y < 20) {
+//println("----------")
+//inactiveGroups.foreach { println }
+//println("-")
+//activeGroups.foreach { println }
+//}
+    }
+
+    (inactiveGroups ::: activeGroups).map { group =>
+      group.earlierLayers ::: group.previousLayer ::: group.currentLayer
+    }
+  }
+
+  def boundSegmentGroups(segmentGroups:List[List[Segment]]) = {
+    segmentGroups.map { segments =>
+      val minX = segments.foldLeft(segments(0).x0) { (minX, segment) =>
+        if (segment.x0 < minX) segment.x0 else minX
+      }
+      val maxX = segments.foldLeft(segments(0).x1) { (maxX, segment) =>
+        if (segment.x1 > maxX) segment.x1 else maxX
+      }
+      val minY = segments.foldLeft(segments(0).y) { (minY, segment) =>
+        if (segment.y < minY) segment.y else minY
+      }
+      val maxY = segments.foldLeft(segments(0).y) { (maxY, segment) =>
+        if (segment.y > maxY) segment.y else maxY
+      }
+      BoundingBox(minX, maxX, minY, maxY)
+    }
+  }
+
+  def annotateBounds(baseImage:GrayImage, bounds:List[BoundingBox]) {
+    val annotated = baseImage.toColorImage
+    bounds.foreach { box =>
+      (box.minX to box.maxX).foreach { x =>
+        annotated(x, box.minY) = Colors.annotation
+        annotated(x, box.maxY) = Colors.annotation
+      }
+      (box.minY to box.maxY).foreach { y =>
+        annotated(box.minX, y) = Colors.annotation
+        annotated(box.maxX, y) = Colors.annotation
+      }
+    }
+    annotated.saveTo(new File("bounds.png"))
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
@@ -193,7 +332,15 @@ object Ocr4Music {
     val excerpt = original.crop(200, 50, 220, 75) // straight with notes
     //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
-    val partiallyErased = eraseNotes(excerpt)
+    val (justNotes, partiallyErased) = separateNotes(excerpt)
     val metrics = estimateMetrics(partiallyErased)
+
+    val segments = scanSegments(justNotes)
+    val segmentGroups = groupTouchingSegments(segments)
+    val bounds = boundSegmentGroups(segmentGroups)
+    val bigBounds = bounds.filter { bound =>
+      bound.maxX - bound.minX > 4 && bound.maxY - bound.minY > 4
+    }
+    annotateBounds(excerpt, bigBounds)
   }
 }
