@@ -32,6 +32,11 @@ case class BoundingBox (
   val maxY:Int
 ) {}
 
+case class Note (
+  val excerptX:Int, // in pixels from the left edge of the excerpt box
+  val staffY:Int // 0 = the middle
+) {}
+
 object Ocr4Music {
   def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
     var argmaxIndex = 0
@@ -318,6 +323,57 @@ object Ocr4Music {
     annotated.saveTo(new File("bounds.png"))
   }
 
+  def annotateNotes(notes:List[Note], excerpt:GrayImage) {
+    val staffSeparation = 6
+    val darkYellow = (128, 128, 0)
+    val brightYellow = (255, 255, 0)
+    val staffHeight = 100
+    val image = new ColorImage(excerpt.w, staffHeight + excerpt.h)
+
+    // draw notes
+    notes.foreach { note =>
+      val centerY = (staffHeight / 2) +
+        (note.staffY * staffSeparation / 2).intValue
+      (-8 to 8).foreach { x =>
+        (-8 to 8).foreach { y =>
+          if ((x * x) + 2 * (y * y) < 20) {
+            image(note.excerptX + x, centerY + y) =
+              brightYellow
+          }
+        }
+      }
+
+      // draw ledger lines
+      var staffY = note.staffY
+      while (staffY >= 6) {
+        val ledgerLineY = ((staffY / 2).intValue * 2 * staffSeparation / 2) +
+          (staffHeight / 2)
+        (-8 to 8).foreach { x =>
+          image(note.excerptX + x, ledgerLineY) = darkYellow
+        }
+        staffY -= 2
+      }
+
+      // draw staff (top-most so line vs. space notes are more obvious)
+      (-4 to 4 by 2).foreach { staffY =>
+        (0 until image.w).foreach { x =>
+          image(x, (staffHeight / 2) + (staffY * staffSeparation / 2)) =
+            darkYellow
+        }
+      }
+    }
+
+    // copy excerpt
+    (0 to excerpt.h).foreach { y =>
+      (0 to excerpt.w).foreach { x =>
+        val v = excerpt(x, y)
+        image(x, y + staffHeight) = (v, v, v)
+      }
+    }
+
+    image.saveTo(new File("notes.png"))
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
@@ -338,9 +394,16 @@ object Ocr4Music {
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
-    val bigBounds = bounds.filter { bound =>
+    val notSmallBounds = bounds.filter { bound =>
       bound.maxX - bound.minX > 4 && bound.maxY - bound.minY > 4
     }
-    annotateBounds(excerpt, bigBounds)
+    val notes = notSmallBounds.map { bound =>
+      val midX = (bound.maxX + bound.minX) / 2
+      val midY = (bound.maxY + bound.minY) / 2
+      val unskewedY = midY + (midX * metrics.skew / excerpt.w)
+      val staffY = (unskewedY - metrics.centerY) / (metrics.waveLength / 2)
+      Note(midX, staffY.intValue)
+    }
+    annotateNotes(notes, excerpt)
   }
 }

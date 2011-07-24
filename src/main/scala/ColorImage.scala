@@ -4,6 +4,7 @@ import java.io.File
 import javax.imageio.ImageIO
 
 class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
+  def this(w:Int, h:Int) = this(w, h, ColorImage.allocateBlankData(w * h))
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
     if (x >= 0 && x < w && y >= 0 && y < h)
       data(y * w + x) = tuple
@@ -25,6 +26,11 @@ class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
 }
 
 object ColorImage {
+  def allocateBlankData(length:Int) = {
+    val data = new Array[(Int,Int,Int)](length)
+    (0 until length).foreach { i => data(i) = (0,0,0) }
+    data
+  }
   def readFromFile(file:File) : ColorImage = {
     def convertARGBIntToRGBTuple(argb:Int) : (Int,Int,Int) = {
       val a = (argb >> 24) & 0xff
