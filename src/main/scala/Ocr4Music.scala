@@ -15,7 +15,8 @@ object Colors {
 case class Metrics(
   val skew:Int,
   val waveLength:Float,
-  val wavePhase:Float
+  val wavePhase:Float,
+  val centerY:Float
 ) {}
 
 object Ocr4Music {
@@ -75,13 +76,13 @@ object Ocr4Music {
     imageOfSkews
   }
 
-  def annotateSkew(skew:Int, image:GrayImage) : ColorImage = {
+  def annotateSkew(skew:Int, image:GrayImage) {
     var annotated = image.toColorImage
     for (x <- 0 until image.w) {
       val skewAmount = x * skew / image.w
       annotated(x, (image.h / 2) + skewAmount) = Colors.annotation
     }
-    annotated
+    annotated.saveTo(new File("skew.png"))
   }
 
   def hammingWindow(n:Int) : Seq[Double] = {
@@ -117,6 +118,7 @@ object Ocr4Music {
   def estimateMetrics(partiallyErased:GrayImage) : Metrics = {
     val bestSkew = findBestSkew(partiallyErased)
     val bestSkewsAverage = averageOfSkewedImage(partiallyErased, bestSkew)
+
     val window = hammingWindow(bestSkewsAverage.length)
     val fftNumBuckets = 512
     val fftInput = new Array[Float](fftNumBuckets)
@@ -143,17 +145,38 @@ object Ocr4Music {
     val waveLength = fftNumBuckets.floatValue / strongestBucketNum
     val wavePhase = (strongestBucketContents._2 / Math.PI / 2).floatValue
 
-    Metrics(bestSkew, waveLength, wavePhase)
+    var darkYs:List[Int] = Nil
+    var darkY = waveLength * -wavePhase
+    while (darkY < bestSkewsAverage.length) {
+      if (darkY.intValue > 0)
+        darkYs = darkY.intValue :: darkYs
+      darkY += waveLength
+    }
+
+    val darkYIndexes = 2 until darkYs.length - 2
+    val (bestCenterIndex, _) =
+      findArgmax[Int,Int](darkYIndexes, { centerIndex =>
+        (-2 to 2).foldLeft(0) { (sum, whichStaffLine) =>
+          sum + -bestSkewsAverage(darkYs(centerIndex + whichStaffLine))
+        }
+      })
+    val bestCenterY = darkYs(bestCenterIndex)
+
+    Metrics(bestSkew, waveLength, wavePhase, bestCenterY)
   }
 
-  def recognizeNotes {
-    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
-    //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
-    val excerpt = original.crop(540, 180, 60, 60) // diagonal down
-    //val excerpt = original.crop(0, 85, 40, 40) // diagonal up
-    val partiallyErased = eraseNotes(excerpt)
-    val metrics = estimateMetrics(partiallyErased)
-    println(metrics)
+  def annotateCenterY(input:GrayImage, metrics:Metrics) {
+    val annotated = input.toColorImage
+    val color = (255,0,0) // red
+    (-2 to 2).foreach { staffLine =>
+      for (x <- 0 until 20) {
+        val y = metrics.centerY + (staffLine * metrics.waveLength)
+        val skewedY = (y + (x * metrics.skew / annotated.w)).intValue
+        if (skewedY >= 0 && skewedY < annotated.h)
+          annotated(x, skewedY) = color
+      }
+    }
+    annotated.saveTo(new File("center_y.png"))
   }
 
   def main(args:Array[String]) {
@@ -163,5 +186,14 @@ object Ocr4Music {
     } catch {
       case e: Exception => e.printStackTrace()
     }
+  }
+
+  def recognizeNotes {
+    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
+    val excerpt = original.crop(200, 50, 220, 75) // straight with notes
+    //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
+    //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
+    val partiallyErased = eraseNotes(excerpt)
+    val metrics = estimateMetrics(partiallyErased)
   }
 }
