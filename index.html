@@ -1,0 +1,69 @@
+<html>
+  <head>
+    <title>Annotation interface</title>
+  </head>
+  <body>
+    <div style='position:relative'>
+      <img id='photo' src='/photo.jpeg' onclick='void(0)'/>
+      <div id='box1' style='border:1px black solid;position:absolute;left:50px;top:50px;width:100px;height:100px' onclick='void(0)'></div>
+    </div>
+    <script>
+      var photo = document.getElementById('photo');
+      function handleClick(x, y) {
+        var box = document.getElementById('box1');
+        box.style.left = x + 'px';
+        box.style.top = y + 'px';
+        box.style.width = '0px';
+        box.style.height = '0px';
+      }
+      function handleDrag(x, y) {
+        var box = document.getElementById('box1');
+        box.style.width  = (x - parseInt(box.style.left)) + 'px';
+        box.style.height = (y - parseInt(box.style.top)) + 'px';
+      }
+      photo.onmousedown = function(e) {
+        var e = e ? e : window.event;
+        if (e.targetTouches)
+          return; // let the touchstart handler take care of it
+        handleClick(e.clientX, e.clientY);
+        photo.onmousemove = function(e) {
+          var e = e ? e : window.event;
+          handleDrag(e.clientX, e.clientY);
+        }
+        photo.onmouseup = function(e) {
+          var photo = document.getElementById('photo');
+          var box = document.getElementById('box1');
+          photo.onmousemove = null;
+          photo.onmouseup = null;
+          box.onmousemove = null;
+          box.onmouseup = null;
+        }
+        var box = document.getElementById('box1');
+        box.onmousemove = photo.onmousemove;
+        box.onmouseup = photo.onmouseup;
+        e.preventDefault(); // prevent Chrome's default of dragging the image around
+      }
+      photo.addEventListener('touchstart', function(e) {
+        var e = e ? e : window.event;
+        //console.log('start ' + e.touches.length);
+        if (e.touches.length == 1) {
+          var clientX = e.targetTouches[0].pageX;
+          var clientY = e.targetTouches[0].pageY;
+          handleClick(clientX, clientY);
+          e.preventDefault(); // prevent iOS Safari's default of dragging page around
+        }
+      }, false);
+      photo.addEventListener('touchmove', function(e) {
+        var e = e ? e : window.event;
+        //console.log('move ' + e.touches.length);
+        if (e.touches.length == 1) {
+          console.log('MOVE 1');
+          var clientX = e.targetTouches[0].pageX;
+          var clientY = e.targetTouches[0].pageY;
+          handleDrag(clientX, clientY);
+          e.preventDefault(); // prevent iOS Safari's default of dragging page around
+        }
+      }, false);
+    </script>
+  </body>
+</html>
