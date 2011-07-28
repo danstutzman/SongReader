@@ -26,6 +26,8 @@ var global = {
   currentBoxNum:null
 }
 
+var TABLE_Y_TO_STAFF_Y = -8;
+
 function updateButtonGlows() {
   document.getElementById('addButton').style.border =
     (global.addMode) ? '3px #0f0 solid' : '';
@@ -223,7 +225,7 @@ function updateCurrentBoxJSONFromStaff() {
         if (j >= notes.length)
           notes.push([]);
         if (hasNote)
-          notes[j].push(i);
+          notes[j].push(i + TABLE_Y_TO_STAFF_Y);
       }
     }
 
@@ -250,7 +252,7 @@ function updateStaffFromCurrentBox() {
       var notesForX = box.notes[x];
       extendStaff();
       for (var i = 0; i < notesForX.length; i++) {
-        var y = notesForX[i];
+        var y = notesForX[i] - TABLE_Y_TO_STAFF_Y;
         var td = trs[y].getElementsByTagName('td')[x];
         setTDHasNote(td, true);
       }
