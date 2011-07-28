@@ -33,6 +33,13 @@
         boxes:[]
       }
 
+      function updateButtonGlows() {
+        document.getElementById('addButton').style.border =
+          (global.addMode) ? '3px #0f0 solid' : '';
+        document.getElementById('deleteButton').style.border =
+          (global.deleteMode) ? '3px #0f0 solid' : '';
+      }
+
       function toggleAddMode() {
         if (global.addMode)
           global.addMode = false;
@@ -54,6 +61,7 @@
           photo.onmousemove = null;
           corner.style.display = 'none';
         }
+        updateButtonGlows();
         return false;
       }
 
@@ -64,6 +72,7 @@
           global.deleteMode = true;
           global.addMode = false;
         }
+        updateButtonGlows();
       }
 
       function updateBoxJSON() {
@@ -193,8 +202,10 @@
   <body>
     <div style='position:relative' id='surrounding_div'>
       <div style='float:right;width:200px'>
-        <div style='border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleAddMode()'>Add</a></div>
-        <div style='border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleDeleteMode()'>Delete</a></div>
+        <button id='addButton' style='width:100px;height:50px'
+          onClick='return toggleAddMode()'>Add</button>
+        <button id='deleteButton' style='width:100px;height:50px'
+          onClick='return toggleDeleteMode()'>Delete</button>
         <textarea id='box_json' cols='20' rows='20'></textarea>
       </div>
       <img id='photo' src='/photo.jpeg' onclick='void(0)'/>
