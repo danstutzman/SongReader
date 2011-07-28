@@ -364,15 +364,23 @@ object Ocr4Music {
         }
       }
 
-      // draw ledger lines
-      var staffY = note.staffY
-      while (staffY >= 6) {
+      def drawLedgerLine(staffY:Int) {
         val ledgerLineY = ((staffY / 2).intValue * 2 * staffSeparation / 2) +
           (staffHeight / 2)
         (-8 to 8).foreach { x =>
           image((note.staffX + 1) * xSeparation + x, ledgerLineY) = darkYellow
         }
+      }
+
+      // draw ledger lines
+      var staffY = note.staffY
+      while (staffY >= 6) {
+        drawLedgerLine(staffY)
         staffY -= 2
+      }
+      while (staffY <= -6) {
+        drawLedgerLine(staffY)
+        staffY += 2
       }
 
       // draw staff (top-most so line vs. space notes are more obvious)
