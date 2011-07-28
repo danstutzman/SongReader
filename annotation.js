@@ -264,7 +264,11 @@ function extendStaff() {
   for (var i = 0; i < trs.length; i++) {
     var tr = trs[i];
     var td = document.createElement('td');
-    td.setAttribute('class', (i % 2 == 1) ? 'line' : 'space');
+    var class;
+    if (i < 4) class = (i % 2 == 0) ? 'ledger' : 'space';
+    else if (i > 12) class = (i % 2 == 0) ? 'ledger' : 'space';
+    else class = (i % 2 == 0) ? 'line' : 'space';
+    td.setAttribute('class', class);
     td.onclick = function() {
       setTDHasNote(this, !getTDHasNote(this));
       updateCurrentBoxJSONFromStaff();
