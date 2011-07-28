@@ -17,3 +17,6 @@ end
 get '/json2.js' do
   send_file 'json2.js'
 end
+get '/annotation.js' do
+  send_file 'annotation.js'
+end
