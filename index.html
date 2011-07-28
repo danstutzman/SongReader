@@ -1,8 +1,32 @@
 <html>
   <head>
     <title>Annotation interface</title>
+    <script type='text/javascript' src='json2.js'></script>
+    <script type='text/javascript'
+      src='http://ajax.googleapis.com/ajax/libs/jquery/1.6.2/jquery.min.js'></script>
   </head>
     <script>
+      $(document).ready(function() {
+        $.ajax({
+          type:'GET',
+          url:'/boxes.json',
+          dataType: 'text',
+          success: function(data) {
+            var boxes = JSON.parse(data);
+            for (var i = 0; i < boxes.length; i++) {
+              var box = boxes[i];
+              createBox(global.nextBoxNum,
+                box.left, box.top, box.width, box.height);
+            }
+          },
+          error: function(jqXHR, textStatus, errorThrown) {
+            console.warn(jqXHR);
+            console.warn(textStatus);
+            console.warn(errorThrown);
+          }
+        });
+      });
+
       var global = {
         newBoxMode:false,
         nextBoxNum:0,
@@ -42,26 +66,53 @@
         }
       }
 
+      function updateBoxJSON() {
+        var boxJSON = document.getElementById('box_json');
+        var boxes = [];
+        for (var i = 0; i < global.nextBoxNum; i++) {
+          var boxDiv = document.getElementById('box' + i);
+          var box = {
+            left: parseInt(boxDiv.style.left),
+            top: parseInt(boxDiv.style.top),
+            width: parseInt(boxDiv.style.width),
+            height: parseInt(boxDiv.style.height)
+          };
+          boxes.push(box);
+        }
+        boxJSON.value = JSON.stringify(boxes, 3);
+      }
+
+      function createBox(num, left, top, width, height) {
+        var box = document.createElement('div');
+        box.setAttribute('id', 'box' + num);
+        box.setAttribute('style', 'position:absolute;' +
+          'left:' + left + 'px' + ';' +
+          'top:' + top + 'px' + ';' +
+          'width:' + width + 'px;' +
+          'height:' + height + 'px;' +
+          'border:3px black solid');
+        var surroundingDiv = document.getElementById('surrounding_div');
+        surroundingDiv.appendChild(box);
+        var box = document.getElementById('box' + global.nextBoxNum);
+        global.nextBoxNum += 1; // update early so loops include new box
+        box.onmousedown = function(e) {
+          if (photo.onmousedown) photo.onmousedown(e);
+        }
+        box.onmousemove = function(e) {
+          if (photo.onmousemove) photo.onmousemove(e);
+        };
+        box.onmouseup = function(e) {
+          if (photo.onmouseup) photo.onmouseup(e);
+        };
+        updateBoxJSON();
+      }
+
       function handleClick(x, y) {
         if (global.addMode) {
           var photo = document.getElementById('photo');
-          var box = document.createElement('div');
-          box.setAttribute('id', 'box' + global.nextBoxNum);
-          box.setAttribute('style', 'position:absolute;' +
-            'left:' + x + 'px' + ';' +
-            'top:' + y + 'px' + ';' +
-            'width:50px;height:50px;border:1px black solid');
-          var surroundingDiv = document.getElementById('surrounding_div');
-          surroundingDiv.appendChild(box);
-          box = document.getElementById('box' + global.nextBoxNum);
-          box.onmousedown = function(e) { photo.onmousedown(e); }
-          box.onmousemove = function(e) { photo.onmousemove(e); };
-          box.onmouseup = function(e) { photo.onmouseup(e); };
-
+          createBox(global.nextBoxNum, x, y, 50, 50);
           var corner = document.getElementById('corner');
           corner.style.display = 'none';
-
-          global.nextBoxNum += 1;
         }
         else if (global.deleteMode) {
           var foundBox = null;
@@ -106,10 +157,8 @@
             var photo = document.getElementById('photo');
             photo.onmousemove = null;
             photo.onmouseup = null;
-            var box = document.getElementById('box' + (global.nextBoxNum - 1));
-            box.onmousemove = null;
-            box.onmouseup = null;
             global.addMode = false;
+            updateBoxJSON();
           }
         };
         //var box = document.getElementById('box1');
@@ -141,8 +190,11 @@
     </script>
   <body>
     <div style='position:relative' id='surrounding_div'>
-      <div style='float:right;border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleAddMode()'>Add</a></div>
-      <div style='float:right;border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleDeleteMode()'>Delete</a></div>
+      <div style='float:right;width:200px'>
+        <div style='border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleAddMode()'>Add</a></div>
+        <div style='border:1px black solid;border-top:1px gray solid;border-left:1px gray solid;width:100px;height:50px'><a href='#' onClick='return toggleDeleteMode()'>Delete</a></div>
+        <textarea id='box_json' cols='20' rows='20'></textarea>
+      </div>
       <img id='photo' src='/photo.jpeg' onclick='void(0)'/>
       <!--<div id='box1' style='border:1px black solid;position:absolute;left:50px;top:50px;width:100px;height:100px' onclick='void(0)'></div>-->
       <div id='corner' style='border-top:1px black solid;border-left:1px black solid;display:none;position:absolute;width:20px;height:20px'/>
