@@ -46,8 +46,8 @@
           photo.onmousemove = function() {
             var e = e ? e : window.event;
             corner.style.display = 'block';
-            corner.style.left = e.clientX + 'px';
-            corner.style.top = e.clientY + 'px';
+            corner.style.left = e.clientX + document.body.scrollLeft + 'px';
+            corner.style.top = e.clientY + document.body.scrollTop + 'px';
           }
         }
         else {
@@ -147,10 +147,12 @@
         //if (e.targetTouches)
         //  return; // let the touchstart handler take care of it
         var photo = document.getElementById('photo');
-        handleClick(e.clientX, e.clientY);
+        handleClick(e.clientX + document.body.scrollLeft,
+          e.clientY + document.body.scrollTop);
         photo.onmousemove = function(e) {
           var e = e ? e : window.event;
-          handleDrag(e.clientX, e.clientY);
+          handleDrag(e.clientX + document.body.scrollLeft,
+            e.clientY + document.body.scrollTop);
         };
         photo.onmouseup = function(e) {
           if (global.addMode) {
