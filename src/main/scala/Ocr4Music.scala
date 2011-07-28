@@ -4,6 +4,7 @@ import java.io.File
 import java.lang.Math
 import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
+import com.twitter.json.Json
 
 object Colors {
   val underflow = (0, 0, 255) // blue (too cold)
@@ -13,6 +14,7 @@ object Colors {
 }
 
 case class Metrics (
+  val width:Int,
   val skew:Int,
   val waveLength:Float,
   val wavePhase:Float,
@@ -32,10 +34,28 @@ case class BoundingBox (
   val maxY:Int
 ) {}
 
-case class Note (
-  val excerptX:Int, // in pixels from the left edge of the excerpt box
-  val staffY:Int // 0 = the middle
+case class Annotation (
+  val left:Int,
+  val top:Int,
+  val width:Int,
+  val height:Int,
+  val notes:Set[Note]
 ) {}
+
+case class Note (
+  val staffX:Int, // 0 = far left, n = far right
+  val staffY:Int // 0 = the middle, -4 = top, 4 = bottom
+) {}
+
+class Performance (
+  val numCorrect:Int,
+  val numIncorrect:Int,
+  val numMissing:Int
+) {
+  def this() = this(0, 0, 0)
+  def precision() = { numCorrect.floatValue / (numCorrect + numIncorrect) }
+  def recall() = { numCorrect.floatValue / (numCorrect + numMissing) }
+}
 
 object Ocr4Music {
   def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
@@ -181,7 +201,7 @@ object Ocr4Music {
       })
     val bestCenterY = darkYs(bestCenterIndex)
 
-    Metrics(bestSkew, waveLength, wavePhase, bestCenterY)
+    Metrics(partiallyErased.w, bestSkew, waveLength, wavePhase, bestCenterY)
   }
 
   def annotateCenterY(input:GrayImage, metrics:Metrics) {
@@ -323,8 +343,9 @@ object Ocr4Music {
     annotated.saveTo(new File("bounds.png"))
   }
 
-  def annotateNotes(notes:List[Note], excerpt:GrayImage) {
+  def annotateNotes(notes:Set[Note], excerpt:GrayImage, caseNum:Int) {
     val staffSeparation = 6
+    val xSeparation = 18
     val darkYellow = (128, 128, 0)
     val brightYellow = (255, 255, 0)
     val staffHeight = 100
@@ -337,7 +358,7 @@ object Ocr4Music {
       (-8 to 8).foreach { x =>
         (-8 to 8).foreach { y =>
           if ((x * x) + 2 * (y * y) < 20) {
-            image(note.excerptX + x, centerY + y) =
+            image((note.staffX + 1) * xSeparation + x, centerY + y) =
               brightYellow
           }
         }
@@ -349,7 +370,7 @@ object Ocr4Music {
         val ledgerLineY = ((staffY / 2).intValue * 2 * staffSeparation / 2) +
           (staffHeight / 2)
         (-8 to 8).foreach { x =>
-          image(note.excerptX + x, ledgerLineY) = darkYellow
+          image((note.staffX + 1) * xSeparation + x, ledgerLineY) = darkYellow
         }
         staffY -= 2
       }
@@ -371,39 +392,115 @@ object Ocr4Music {
       }
     }
 
-    image.saveTo(new File("notes.png"))
+    image.saveTo(new File("notes" + caseNum + ".png"))
   }
 
-  def main(args:Array[String]) {
-    try {
-      println(Colors.ansiEscapeToHighlightProgramOutput)
-      recognizeNotes
-    } catch {
-      case e: Exception => e.printStackTrace()
+  def recognizeNotesFromBounds(bounds:List[BoundingBox], metrics:Metrics) = {
+    val notSmallBounds = bounds.filter { bound =>
+      bound.maxX - bound.minX > 4 && bound.maxY - bound.minY > 4
     }
+    val notSmallBoundsSorted = notSmallBounds.sort { (bound1, bound2) =>
+      val midX1 = (bound1.maxX + bound1.minX) / 2
+      val midX2 = (bound2.maxX + bound2.minX) / 2
+      midX1 < midX2
+    }
+
+    var lastNoteMidX = -99
+    var staffX = -1
+    var notes:List[Note] = Nil
+    notSmallBoundsSorted.foreach { bound =>
+      val midX = (bound.maxX + bound.minX) / 2
+      val midY = (bound.maxY + bound.minY) / 2
+      val unskewedY = midY + (midX * metrics.skew / metrics.width)
+      val staffY = (unskewedY - metrics.centerY) / (metrics.waveLength / 2)
+      if (Math.abs(midX - lastNoteMidX) >= 10)
+        staffX += 1
+        
+      notes = Note(staffX, staffY.intValue) :: notes
+
+      lastNoteMidX = midX
+    }
+    Set() ++ notes
   }
 
-  def recognizeNotes {
+  def recognizeNotes(box:Annotation, caseNum:Int) = {
     val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
-    val excerpt = original.crop(200, 50, 220, 75) // straight with notes
+    //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
     //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
+    val excerpt = original.crop(box.left, box.top, box.width, box.height)
     val (justNotes, partiallyErased) = separateNotes(excerpt)
     val metrics = estimateMetrics(partiallyErased)
 
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
-    val notSmallBounds = bounds.filter { bound =>
-      bound.maxX - bound.minX > 4 && bound.maxY - bound.minY > 4
+    val estimatedNotes = recognizeNotesFromBounds(bounds, metrics)
+    annotateNotes(estimatedNotes, excerpt, caseNum)
+    estimatedNotes
+  }
+
+  def doRecognitionForEachBox {
+    var globalPerformance = new Performance()
+    val annotationsString:String =
+      scala.io.Source.fromFile("boxes.json").mkString
+    val annotationsJson:List[Map[String,Any]] = 
+      Json.parse(annotationsString).asInstanceOf[List[Map[String,Any]]]
+    var caseNum = 0
+    annotationsJson.foreach { annotationJson =>
+      val left = annotationJson("left").asInstanceOf[Int]
+      val top = annotationJson("top").asInstanceOf[Int]
+      val width = annotationJson("width").asInstanceOf[Int]
+      val height = annotationJson("height").asInstanceOf[Int]
+
+      var annotatedNotes:Set[Note] = Set()
+      var numGroup = 0
+      annotationJson("notes").asInstanceOf[List[List[Int]]].foreach { group =>
+        annotatedNotes ++= group.map { staffY => Note(numGroup, staffY) }
+        numGroup += 1
+      }
+
+      val annotation = Annotation(left, top, width, height, annotatedNotes)
+      val estimatedNotes = recognizeNotes(annotation, caseNum)
+      val performance = calcPerformance(estimatedNotes, annotatedNotes)
+      println("Case num %d: precision: %.2f, recall: %.2f".format(
+        caseNum, performance.precision, performance.recall))
+      globalPerformance = new Performance(
+        globalPerformance.numCorrect + performance.numCorrect,
+        globalPerformance.numIncorrect + performance.numIncorrect,
+        globalPerformance.numMissing + performance.numMissing)
+
+      caseNum += 1
     }
-    val notes = notSmallBounds.map { bound =>
-      val midX = (bound.maxX + bound.minX) / 2
-      val midY = (bound.maxY + bound.minY) / 2
-      val unskewedY = midY + (midX * metrics.skew / excerpt.w)
-      val staffY = (unskewedY - metrics.centerY) / (metrics.waveLength / 2)
-      Note(midX, staffY.intValue)
+    println("Total:      precision: %.2f -- recall: %.2f".format(
+      globalPerformance.precision, globalPerformance.recall))
+  }
+
+  def calcPerformance(estimated:Set[Note], annotated:Set[Note]) = {
+    var numCorrect = 0
+    var numIncorrect = 0
+    var numMissing = 0
+
+    annotated.foreach { annotatedNote =>
+      if (estimated.contains(annotatedNote))
+        numCorrect += 1
+      else
+        numMissing += 1
     }
-    annotateNotes(notes, excerpt)
+    estimated.foreach { estimatedNote =>
+      if (!annotated.contains(estimatedNote))
+        numIncorrect += 1
+    }
+
+    new Performance(numCorrect, numIncorrect, numMissing)
+  }
+
+  def main(args:Array[String]) {
+    try {
+      println(Colors.ansiEscapeToHighlightProgramOutput)
+      doRecognitionForEachBox
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }
   }
 }
