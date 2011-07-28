@@ -39,20 +39,7 @@ object ColorImage {
       val b = (argb >> 0) & 0xff
       (r, g, b)
     }
-    val unrotatedBufferedImage = ImageIO.read(file)
-
-    def rotate90Degrees(imageIn:BufferedImage) : BufferedImage = {
-      val imageOut = new BufferedImage(
-        imageIn.getHeight(), imageIn.getWidth(),
-        BufferedImage.TYPE_INT_ARGB)
-      val g2d = imageOut.getGraphics().asInstanceOf[Graphics2D]
-      g2d.rotate(Math.toRadians(90.0))
-      g2d.drawImage(imageIn, 0, -imageIn.getHeight(), null)
-      g2d.dispose()
-      imageOut
-    }
-    val bufferedImage = rotate90Degrees(unrotatedBufferedImage)
-
+    val bufferedImage = ImageIO.read(file)
     val w = bufferedImage.getWidth()
     val h = bufferedImage.getHeight()
     val pixelsARGB:Array[Int] = bufferedImage.getRGB(0, 0, w, h, null, 0, w)
