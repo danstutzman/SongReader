@@ -166,7 +166,7 @@ function handleDrag(x, y) {
     box.style.width  = (x - parseInt(box.style.left)) + 'px';
     box.style.height = (y - parseInt(box.style.top)) + 'px';
     global.boxes[boxNum].width = x - global.boxes[boxNum].left;
-    global.boxes[boxNum].height = y - global.boxes[boxNum].height;
+    global.boxes[boxNum].height = y - global.boxes[boxNum].top;
   }
 }
 function handleOnMouseDown() {
