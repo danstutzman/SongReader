@@ -440,7 +440,9 @@ object Ocr4Music {
       if (Math.abs(midX - lastNoteMidX) >= 10)
         staffX += 1
         
-      notes = Note(staffX, staffY.intValue) :: notes
+      // if note seems to be 0.3 or further, we're probably guessing wrong
+      if (Math.abs(staffY - Math.round(staffY)) < 0.3)
+        notes = Note(staffX, Math.round(staffY)) :: notes
 
       lastNoteMidX = midX
     }
