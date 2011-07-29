@@ -204,18 +204,22 @@ object Ocr4Music {
     Metrics(partiallyErased.w, bestSkew, waveLength, wavePhase, bestCenterY)
   }
 
-  def annotateCenterY(input:GrayImage, metrics:Metrics) {
+  def annotateCenterY(input:GrayImage, metrics:Metrics) : ColorImage = {
     val annotated = input.toColorImage
-    val color = (255,0,0) // red
+    val color = (255,255,255) // white
     (-2 to 2).foreach { staffLine =>
-      for (x <- 0 until 20) {
-        val y = metrics.centerY + (staffLine * metrics.waveLength)
-        val skewedY = (y + (x * metrics.skew / annotated.w)).intValue
-        if (skewedY >= 0 && skewedY < annotated.h)
-          annotated(x, skewedY) = color
+      for (x1 <- 0 until input.w by 50) {
+        for (x2 <- 0 until 5) {
+          val x = x1 + x2 // for dashed line
+          val y = metrics.centerY + (staffLine * metrics.waveLength)
+          val skewedY = (y + (x * metrics.skew / annotated.w)).intValue
+          if (skewedY >= 0 && skewedY < annotated.h)
+            annotated(x, skewedY) = color
+        }
       }
     }
-    annotated.saveTo(new File("center_y.png"))
+    //annotated.saveTo(new File("center_y.png"))
+    annotated
   }
 
   def scanSegments(binaryImage:GrayImage) : List[Segment] = {
@@ -328,8 +332,8 @@ object Ocr4Music {
     }
   }
 
-  def annotateBounds(baseImage:GrayImage, bounds:List[BoundingBox]) {
-    val annotated = baseImage.toColorImage
+  def annotateBounds(baseImage:ColorImage, bounds:List[BoundingBox]) = {
+    val annotated = baseImage.copy
     bounds.foreach { box =>
       (box.minX to box.maxX).foreach { x =>
         annotated(x, box.minY) = Colors.annotation
@@ -340,10 +344,10 @@ object Ocr4Music {
         annotated(box.maxX, y) = Colors.annotation
       }
     }
-    annotated.saveTo(new File("bounds.png"))
+    annotated
   }
 
-  def annotateNotes(notes:Set[Note], excerpt:GrayImage, caseNum:Int) {
+  def annotateNotes(notes:Set[Note], excerpt:ColorImage, caseNum:Int) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
@@ -395,8 +399,7 @@ object Ocr4Music {
     // copy excerpt
     (0 to excerpt.h).foreach { y =>
       (0 to excerpt.w).foreach { x =>
-        val v = excerpt(x, y)
-        image(x, y + staffHeight) = (v, v, v)
+        image(x, y + staffHeight) = excerpt(x, y)
       }
     }
 
@@ -419,7 +422,7 @@ object Ocr4Music {
     notSmallBoundsSorted.foreach { bound =>
       val midX = (bound.maxX + bound.minX) / 2
       val midY = (bound.maxY + bound.minY) / 2
-      val unskewedY = midY + (midX * metrics.skew / metrics.width)
+      val unskewedY = midY - (midX * metrics.skew / metrics.width)
       val staffY = (unskewedY - metrics.centerY) / (metrics.waveLength / 2)
       if (Math.abs(midX - lastNoteMidX) >= 10)
         staffX += 1
@@ -444,7 +447,8 @@ object Ocr4Music {
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
     val estimatedNotes = recognizeNotesFromBounds(bounds, metrics)
-    annotateNotes(estimatedNotes, excerpt, caseNum)
+    annotateNotes(estimatedNotes,
+      annotateBounds(annotateCenterY(excerpt, metrics), bounds), caseNum)
     estimatedNotes
   }
 
@@ -456,6 +460,7 @@ object Ocr4Music {
       Json.parse(annotationsString).asInstanceOf[List[Map[String,Any]]]
     var caseNum = 0
     annotationsJson.foreach { annotationJson =>
+//if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -477,6 +482,7 @@ object Ocr4Music {
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
         globalPerformance.numMissing + performance.numMissing)
+//}
 
       caseNum += 1
     }

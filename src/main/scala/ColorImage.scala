@@ -5,6 +5,13 @@ import javax.imageio.ImageIO
 
 class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
   def this(w:Int, h:Int) = this(w, h, ColorImage.allocateBlankData(w * h))
+  def copy : ColorImage = { new ColorImage(w, h, data.clone) }
+  def apply(x:Int, y:Int) : (Int,Int,Int) = {
+    if (x < 0 || x >= w || y < 0 || y >= h)
+      (0, 0, 0)
+    else
+      data(y * w + x)
+  }
   def update(x:Int, y:Int, tuple:(Int,Int,Int)) {
     if (x >= 0 && x < w && y >= 0 && y < h)
       data(y * w + x) = tuple
