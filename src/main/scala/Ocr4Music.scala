@@ -34,6 +34,15 @@ case class BoundingBox (
   val maxY:Int
 ) {}
 
+case class LabeledBoundingBox (
+  val label:BoundingBoxLabel,
+  val box:BoundingBox
+) {}
+
+sealed abstract class BoundingBoxLabel
+case object Note extends BoundingBoxLabel
+case object NonNote extends BoundingBoxLabel
+
 case class Annotation (
   val left:Int,
   val top:Int,
@@ -332,16 +341,19 @@ object Ocr4Music {
     }
   }
 
-  def annotateBounds(baseImage:ColorImage, bounds:List[BoundingBox]) = {
+  def annotateBounds(baseImage:ColorImage, bounds:List[LabeledBoundingBox]) = {
     val annotated = baseImage.copy
-    bounds.foreach { box =>
-      (box.minX to box.maxX).foreach { x =>
-        annotated(x, box.minY) = Colors.annotation
-        annotated(x, box.maxY) = Colors.annotation
+    bounds.foreach { bound =>
+      val color = if (bound.label == Note) (0,255,0) else (255,0,0)
+      val density = if (bound.label == Note) 1 else 3
+      val box = bound.box
+      (box.minX to box.maxX by density).foreach { x =>
+        annotated(x, box.minY) = color
+        annotated(x, box.maxY) = color
       }
-      (box.minY to box.maxY).foreach { y =>
-        annotated(box.minX, y) = Colors.annotation
-        annotated(box.maxX, y) = Colors.annotation
+      (box.minY to box.maxY by density).foreach { y =>
+        annotated(box.minX, y) = color
+        annotated(box.maxX, y) = color
       }
     }
     annotated
@@ -406,22 +418,23 @@ object Ocr4Music {
     image.saveTo(new File("notes" + caseNum + ".png"))
   }
 
-  def recognizeNotesFromBounds(bounds:List[BoundingBox], metrics:Metrics) = {
-    val notSmallBounds = bounds.filter { bound =>
-      bound.maxX - bound.minX > 4 && bound.maxY - bound.minY > 4
+  def recognizeNotesFromBounds(
+      bounds:List[LabeledBoundingBox], metrics:Metrics) = {
+    val boundsNotes = bounds.filter { bound =>
+      bound.label == Note
     }
-    val notSmallBoundsSorted = notSmallBounds.sort { (bound1, bound2) =>
-      val midX1 = (bound1.maxX + bound1.minX) / 2
-      val midX2 = (bound2.maxX + bound2.minX) / 2
+    val boundsSorted = boundsNotes.sort { (bound1, bound2) =>
+      val midX1 = (bound1.box.maxX + bound1.box.minX) / 2
+      val midX2 = (bound2.box.maxX + bound2.box.minX) / 2
       midX1 < midX2
     }
 
     var lastNoteMidX = -99
     var staffX = -1
     var notes:List[Note] = Nil
-    notSmallBoundsSorted.foreach { bound =>
-      val midX = (bound.maxX + bound.minX) / 2
-      val midY = (bound.maxY + bound.minY) / 2
+    boundsSorted.foreach { bound =>
+      val midX = (bound.box.maxX + bound.box.minX) / 2
+      val midY = (bound.box.maxY + bound.box.minY) / 2
       val unskewedY = midY - (midX * metrics.skew / metrics.width)
       val staffY = (unskewedY - metrics.centerY) / (metrics.waveLength / 2)
       if (Math.abs(midX - lastNoteMidX) >= 10)
@@ -432,6 +445,15 @@ object Ocr4Music {
       lastNoteMidX = midX
     }
     Set() ++ notes
+  }
+
+  def labelBounds(bounds:List[BoundingBox]) = {
+    bounds.map { bound =>
+      if (bound.maxX - bound.minX > 8 && bound.maxY - bound.minY > 6)
+        LabeledBoundingBox(Note, bound)
+      else
+        LabeledBoundingBox(NonNote, bound)
+    }
   }
 
   def recognizeNotes(box:Annotation, caseNum:Int) = {
@@ -446,9 +468,10 @@ object Ocr4Music {
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
-    val estimatedNotes = recognizeNotesFromBounds(bounds, metrics)
+    val labeledBounds = labelBounds(bounds)
+    val estimatedNotes = recognizeNotesFromBounds(labeledBounds, metrics)
     annotateNotes(estimatedNotes,
-      annotateBounds(annotateCenterY(excerpt, metrics), bounds), caseNum)
+      annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds), caseNum)
     estimatedNotes
   }
 
