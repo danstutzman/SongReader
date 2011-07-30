@@ -10,15 +10,27 @@
       .ledger { background-color: #eee; color: #aaa; width:20px; height:20px; }
       .line { background-color: black; color: #aaa; width:20px; height:20px; }
       .space { background-color: white; color: #aaa; width:20px; height:20px; }
+      .point { color:#faa; font-size:7pt; font-family: sans-serif; }
     </style>
   </head>
   <body>
     <div style='position:relative' id='surrounding_div'>
       <div style='float:right;width:200px'>
-        <button id='addButton' style='width:100px;height:50px'
-          onClick='return toggleAddMode()'>Add</button>
-        <button id='deleteButton' style='width:100px;height:50px'
-          onClick='return toggleDeleteMode()'>Delete</button>
+        <button id='newBoxButton' style='width:100px;height:50px'
+          onClick='return toggleNewBoxMode()'>New Box</button>
+        <button id='newPointButton' style='width:100px;height:50px'
+          onClick='return toggleNewPointMode()'>New Point</button>
+        <br/>
+        <select id='point_type'>
+          <option value='L'>Line note</option>
+          <option value='S'>Space note</option>
+          <option value='Sa'>Space note (above)</option>
+          <option value='Sb'>Space note (below)</option>
+          <option value='#'>Sharp</option>
+          <option value='N'>Natural</option>
+          <option value='b'>Flat</option>
+          <option value='\'>Flag</option>
+        </select>
         <br/>
         <br/>
         JSON:

@@ -4,11 +4,16 @@ $(document).ready(function() {
     url:'/boxes.json',
     dataType: 'text',
     success: function(data) {
-      var boxes = JSON.parse(data);
-      for (var i = 0; i < boxes.length; i++) {
-        var box = boxes[i];
-        createBox(global.nextBoxNum,
-          box.left, box.top, box.width, box.height, box.notes);
+      var boxesJSON = JSON.parse(data);
+      for (var i = 0; i < boxesJSON.length; i++) {
+        var boxJSON = boxesJSON[i];
+        var newBox = createBox(global.nextBoxNum,
+          boxJSON.left, boxJSON.top, boxJSON.width, boxJSON.height,
+          boxJSON.notes);
+        for (var j = 0; j < boxJSON.points.length; j++) {
+          var point = boxJSON.points[j];
+          createPoint(newBox, point.x, point.y, point.type);
+        }
       }
     },
     error: function(jqXHR, textStatus, errorThrown) {
@@ -23,28 +28,24 @@ var global = {
   newBoxMode:false,
   nextBoxNum:0,
   boxes:[],
-  currentBoxNum:null
+  currentBoxNum:null,
+  newBoxMode:false,
+  newPointMode:false
 }
 
 var TABLE_Y_TO_STAFF_Y = -8;
 
 function updateButtonGlows() {
-  document.getElementById('addButton').style.border =
-    (global.addMode) ? '3px #0f0 solid' : '';
-  document.getElementById('deleteButton').style.border =
-    (global.deleteMode) ? '3px #0f0 solid' : '';
+  document.getElementById('newBoxButton').style.border =
+    (global.newBoxMode) ? '3px #0f0 solid' : '';
+  document.getElementById('newPointButton').style.border =
+    (global.newPointMode) ? '3px #0f0 solid' : '';
 }
 
-function toggleAddMode() {
-  if (global.addMode)
-    global.addMode = false;
-  else {
-    global.addMode = true;
-    global.deleteMode = false;
-  }
+function updatePointerCursor() {
   var photo = document.getElementById('photo')
   var corner = document.getElementById('corner');
-  if (global.addMode) {
+  if (global.newBoxMode) {
     photo.onmousemove = function() {
       var e = e ? e : window.event;
       corner.style.display = 'block';
@@ -56,17 +57,28 @@ function toggleAddMode() {
     photo.onmousemove = null;
     corner.style.display = 'none';
   }
+}
+
+function toggleNewBoxMode() {
+  if (global.newBoxMode)
+    global.newBoxMode = false;
+  else {
+    global.newBoxMode = true;
+    global.newPointMode = false;
+  }
+  updatePointerCursor();
   updateButtonGlows();
   return false;
 }
 
-function toggleDeleteMode() {
-  if (global.deleteMode)
-    global.deleteMode = false;
+function toggleNewPointMode() {
+  if (global.newPointMode)
+    global.newPointMode = false;
   else {
-    global.deleteMode = true;
-    global.addMode = false;
+    global.newPointMode = true;
+    global.newBoxMode = false;
   }
+  updatePointerCursor();
   updateButtonGlows();
 }
 
@@ -98,11 +110,11 @@ function createBox(num, left, top, width, height, notes) {
     if (photo.onmouseup) photo.onmouseup(e);
   };
 
-  global.boxes.push(
-    {num:num, left:left, top:top, width:width, height:height,
-     notes:notes});
-
+  var newBox = {num:num, left:left, top:top, width:width, height:height,
+     notes:notes, points:[]};
+  global.boxes.push(newBox);
   updateBoxesJSON();
+  return newBox;
 }
 
 function findBoxIncludingPoint(x, y) {
@@ -123,18 +135,35 @@ function findBoxIncludingPoint(x, y) {
   return foundBox;
 }
 
+function createPoint(box, x, y, pointType) {
+  var div = document.createElement('div');
+  var surroundingDiv = document.getElementById('surrounding_div');
+  div.setAttribute('class', 'point');
+  div.setAttribute('style',
+    'position:absolute;left:' + x + 'px;top:' + y + 'px');
+
+  var text = document.createTextNode();
+  text.nodeValue = pointType;
+  div.appendChild(text);
+
+  surroundingDiv.appendChild(div);
+
+  box.points.push({type:pointType, x:x, y:y});
+  updateBoxesJSON();
+}
+
 function handleClick(x, y) {
-  if (global.addMode) {
+  if (global.newBoxMode) {
     var photo = document.getElementById('photo');
     createBox(global.nextBoxNum, x, y, 50, 50, []);
     var corner = document.getElementById('corner');
     corner.style.display = 'none';
   }
-  else if (global.deleteMode) {
+  else if (global.newPointMode) {
     var foundBox = findBoxIncludingPoint(x, y);
     if (foundBox) {
-      foundBox.style.display = 'none';
-      global.deleteMode = false;
+      var pointType = document.getElementById('point_type').value;
+      createPoint(foundBox, x, y, pointType);
     }
   }
   else {
@@ -160,7 +189,7 @@ function handleClick(x, y) {
 }
 
 function handleDrag(x, y) {
-  if (global.addMode) {
+  if (global.newBoxMode) {
     var boxNum = global.nextBoxNum - 1;
     var box = document.getElementById('box' + boxNum);
     box.style.width  = (x - parseInt(box.style.left)) + 'px';
@@ -174,15 +203,15 @@ function handleOnMouseDown() {
   //if (e.targetTouches)
   //  return; // let the touchstart handler take care of it
   var photo = document.getElementById('photo');
-  handleClick(e.clientX + document.body.scrollLeft,
-    e.clientY + document.body.scrollTop);
+  handleClick(e.clientX + document.body.scrollLeft - 12,
+    e.clientY + document.body.scrollTop - 15);
   photo.onmousemove = function(e) {
     var e = e ? e : window.event;
     handleDrag(e.clientX + document.body.scrollLeft,
       e.clientY + document.body.scrollTop);
   };
   photo.onmouseup = function(e) {
-    if (global.addMode) {
+    if (global.newBoxMode) {
       var photo = document.getElementById('photo');
       photo.onmousemove = null;
       photo.onmouseup = null;
