@@ -429,7 +429,36 @@ object Ocr4Music {
     val boundsNotes = bounds.filter { bound =>
       bound.label == Note
     }
-    val boundsSorted = boundsNotes.sort { (bound1, bound2) =>
+
+    def findOverlappingBound(
+        bound1:LabeledBoundingBox, boundsList:List[LabeledBoundingBox])
+        : Option[LabeledBoundingBox] = {
+      boundsList.foreach { bound2 =>
+        if (bound1.box.minX <= bound2.box.maxX &&
+            bound1.box.maxX >= bound2.box.minX &&
+            bound1.box.minY <= bound2.box.maxY &&
+            bound1.box.maxY >= bound2.box.minY)
+          return Some(bound2)
+      }
+      return None
+    }
+    var boundsCombined:List[LabeledBoundingBox] = List[LabeledBoundingBox]()
+    boundsNotes.foreach { bound1 =>
+      findOverlappingBound(bound1, boundsCombined) match {
+        case Some(bound2) =>
+          val newBound = LabeledBoundingBox(Note, BoundingBox(
+            bound1.box.minX min bound2.box.minX,
+            bound1.box.maxX max bound2.box.maxX,
+            bound1.box.minY min bound2.box.minY,
+            bound1.box.maxY max bound2.box.maxY))
+          boundsCombined =
+            newBound :: (boundsCombined - bound2)
+        case None =>
+          boundsCombined = bound1 :: boundsCombined
+      }
+    }
+
+    val boundsSorted = boundsCombined.sort { (bound1, bound2) =>
       val midX1 = (bound1.box.maxX + bound1.box.minX) / 2
       val midX2 = (bound2.box.maxX + bound2.box.minX) / 2
       midX1 < midX2
@@ -473,8 +502,7 @@ object Ocr4Music {
     val (justNotes, partiallyErased) = separateNotes(excerpt)
     val metrics = estimateMetrics(partiallyErased)
 
-    excerptLabeledPointsContext(original, caseNum, points, metrics)
-/*
+    //excerptLabeledPointsContext(original, caseNum, points, metrics)
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
@@ -483,8 +511,7 @@ object Ocr4Music {
     annotateNotes(estimatedNotes,
       annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds), caseNum)
     estimatedNotes
-*/
-    Set[Note]()
+    //Set[Note]()
   }
 
   def doRecognitionForEachBox {
@@ -519,14 +546,13 @@ object Ocr4Music {
 
       val annotation = Annotation(left, top, width, height, annotatedNotes)
       val estimatedNotes = recognizeNotes(original, annotation, points, caseNum)
-/*
       val performance = calcPerformance(estimatedNotes, annotatedNotes)
       println("Case num %d: precision: %.2f, recall: %.2f".format(
         caseNum, performance.precision, performance.recall))
       globalPerformance = new Performance(
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
-        globalPerformance.numMissing + performance.numMissing)*/
+        globalPerformance.numMissing + performance.numMissing)
 //}
 
       caseNum += 1
@@ -636,8 +662,8 @@ object Ocr4Music {
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-//      doRecognitionForEachBox
-      classifyNotesVsNonNotes
+      doRecognitionForEachBox
+//      classifyNotesVsNonNotes
     } catch {
       case e: Exception => e.printStackTrace()
     }
