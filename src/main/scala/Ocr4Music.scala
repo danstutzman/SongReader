@@ -571,10 +571,73 @@ object Ocr4Music {
     }
   }
 
+  def classifyNotesVsNonNotes {
+    val whitePixelToNumNotes = new Array[Int](100 * 100)
+    val whitePixelToNumNonNotes = new Array[Int](100 * 100)
+    val blackPixelToNumNotes = new Array[Int](100 * 100)
+    val blackPixelToNumNonNotes = new Array[Int](100 * 100)
+    var numNoteImages = 0
+    var numNonNoteImages = 0
+    var i = 0
+    new File("points").listFiles.foreach { file =>
+      val image = ColorImage.readFromFile(file).toGrayImage
+      val isNote = "^[LS]".r.findFirstMatchIn(file.getName).isDefined
+      if (isNote) {
+        (0 until (100 * 100)).foreach { i =>
+          val isBlack = (image.data(i) > 110)
+          if (isBlack)
+            blackPixelToNumNotes(i) += 1
+          else
+            whitePixelToNumNotes(i) += 1
+        }
+        numNoteImages += 1
+      } else {
+        (0 until (100 * 100)).foreach { i =>
+          val isBlack = (image.data(i) > 110)
+          if (isBlack)
+            blackPixelToNumNonNotes(i) += 1
+          else
+            whitePixelToNumNonNotes(i) += 1
+        }
+        numNonNoteImages += 1
+      }
+
+      val binarized = image.binarize(110)
+      binarized.saveTo(new File("binarized%d.png".format(i)))
+      i += 1
+    }
+    val notePrior = Math.log(numNoteImages.floatValue / (numNoteImages + numNonNoteImages))
+    val nonNotePrior = Math.log(numNonNoteImages.floatValue / (numNoteImages + numNonNoteImages))
+
+    new File("points").listFiles.foreach { file =>
+      val image = ColorImage.readFromFile(file).toGrayImage
+      var isNoteProb = 0.0
+      var isNonNoteProb = 0.0
+      (0 until (100 * 100)).foreach { i =>
+        val isBlack = (image.data(i) > 110)
+        if (isBlack) {
+          isNoteProb += Math.log((blackPixelToNumNotes(i) + 0.1) /
+            (blackPixelToNumNotes(i) + whitePixelToNumNotes(i)))
+          isNonNoteProb += Math.log((blackPixelToNumNonNotes(i) + 0.1) /
+            (blackPixelToNumNonNotes(i) + whitePixelToNumNonNotes(i)))
+        } else {
+          isNoteProb += Math.log((whitePixelToNumNotes(i) + 0.1) /
+            (blackPixelToNumNotes(i) + whitePixelToNumNotes(i)))
+          isNonNoteProb += Math.log((whitePixelToNumNonNotes(i) + 0.1) /
+            (blackPixelToNumNonNotes(i) + whitePixelToNumNonNotes(i)))
+        }
+      }
+      println("%-20s note:%f non-note:%f %s".format(
+        file, isNoteProb, isNonNoteProb,
+        if (isNoteProb > isNonNoteProb) "YES" else "NO"))
+    }
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-      doRecognitionForEachBox
+//      doRecognitionForEachBox
+      classifyNotesVsNonNotes
     } catch {
       case e: Exception => e.printStackTrace()
     }
