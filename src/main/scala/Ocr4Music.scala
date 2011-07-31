@@ -424,8 +424,7 @@ object Ocr4Music {
     image.saveTo(new File("notes" + caseNum + ".png"))
   }
 
-  def recognizeNotesFromBounds(
-      bounds:List[LabeledBoundingBox], metrics:Metrics) = {
+  def combineNoteBounds(bounds:List[LabeledBoundingBox]) = {
     val boundsNotes = bounds.filter { bound =>
       bound.label == Note
     }
@@ -457,8 +456,12 @@ object Ocr4Music {
           boundsCombined = bound1 :: boundsCombined
       }
     }
+    boundsCombined
+  }
 
-    val boundsSorted = boundsCombined.sort { (bound1, bound2) =>
+  def recognizeNotesFromBounds(
+      bounds:List[LabeledBoundingBox], metrics:Metrics) = {
+    val boundsSorted = bounds.sort { (bound1, bound2) =>
       val midX1 = (bound1.box.maxX + bound1.box.minX) / 2
       val midX2 = (bound2.box.maxX + bound2.box.minX) / 2
       midX1 < midX2
@@ -468,6 +471,8 @@ object Ocr4Music {
     var staffX = -1
     var notes:List[Note] = Nil
     boundsSorted.foreach { bound =>
+      
+
       val midX = (bound.box.maxX + bound.box.minX) / 2
       val midY = (bound.box.maxY + bound.box.minY) / 2
       val unskewedY = midY - (midX * metrics.skew / metrics.width)
@@ -507,7 +512,8 @@ object Ocr4Music {
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
     val labeledBounds = labelBounds(bounds)
-    val estimatedNotes = recognizeNotesFromBounds(labeledBounds, metrics)
+    val combinedBounds = combineNoteBounds(labeledBounds)
+    val estimatedNotes = recognizeNotesFromBounds(combinedBounds, metrics)
     annotateNotes(estimatedNotes,
       annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds), caseNum)
     estimatedNotes
@@ -523,7 +529,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 0) {
+if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -553,7 +559,7 @@ object Ocr4Music {
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
         globalPerformance.numMissing + performance.numMissing)
-//}
+}
 
       caseNum += 1
     }
