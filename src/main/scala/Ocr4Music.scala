@@ -56,6 +56,12 @@ case class Note (
   val staffY:Int // 0 = the middle, -4 = top, 4 = bottom
 ) {}
 
+case class LabeledPoint (
+  val label:String,
+  val x:Int,
+  val y:Int
+) {}
+
 class Performance (
   val numCorrect:Int,
   val numIncorrect:Int,
@@ -458,8 +464,8 @@ object Ocr4Music {
     }
   }
 
-  def recognizeNotes(box:Annotation, caseNum:Int) = {
-    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
+  def recognizeNotes(original:GrayImage, box:Annotation,
+      points:List[LabeledPoint], caseNum:Int) = {
     //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
     //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
@@ -467,6 +473,8 @@ object Ocr4Music {
     val (justNotes, partiallyErased) = separateNotes(excerpt)
     val metrics = estimateMetrics(partiallyErased)
 
+    excerptLabeledPointsContext(original, caseNum, points, metrics)
+/*
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
@@ -475,6 +483,8 @@ object Ocr4Music {
     annotateNotes(estimatedNotes,
       annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds), caseNum)
     estimatedNotes
+*/
+    Set[Note]()
   }
 
   def doRecognitionForEachBox {
@@ -484,12 +494,21 @@ object Ocr4Music {
     val annotationsJson:List[Map[String,Any]] = 
       Json.parse(annotationsString).asInstanceOf[List[Map[String,Any]]]
     var caseNum = 0
+    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
 //if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
       val height = annotationJson("height").asInstanceOf[Int]
+      val points =
+        annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
+          pointJson => LabeledPoint(
+            pointJson("type").asInstanceOf[String],
+            pointJson("x").asInstanceOf[Int],
+            pointJson("y").asInstanceOf[Int]
+          )
+        }
 
       var annotatedNotes:Set[Note] = Set()
       var numGroup = 0
@@ -499,14 +518,15 @@ object Ocr4Music {
       }
 
       val annotation = Annotation(left, top, width, height, annotatedNotes)
-      val estimatedNotes = recognizeNotes(annotation, caseNum)
+      val estimatedNotes = recognizeNotes(original, annotation, points, caseNum)
+/*
       val performance = calcPerformance(estimatedNotes, annotatedNotes)
       println("Case num %d: precision: %.2f, recall: %.2f".format(
         caseNum, performance.precision, performance.recall))
       globalPerformance = new Performance(
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
-        globalPerformance.numMissing + performance.numMissing)
+        globalPerformance.numMissing + performance.numMissing)*/
 //}
 
       caseNum += 1
@@ -532,6 +552,23 @@ object Ocr4Music {
     }
 
     new Performance(numCorrect, numIncorrect, numMissing)
+  }
+
+  def excerptLabeledPointsContext(original:GrayImage, caseNum:Int,
+      points:List[LabeledPoint], metrics:Metrics) {
+    var i = 0
+    points.foreach { point =>
+      val excerptRadius = (metrics.waveLength * 3).intValue
+      val excerpt = original.crop(
+        point.x + 2 - excerptRadius, point.y + 5 - excerptRadius,
+        excerptRadius * 2, excerptRadius * 2)
+      val resized =
+        excerpt.resize(100, 100, metrics.skew / metrics.width.floatValue)
+      val filename = "points/%s.%d.%d.png".format(point.label, caseNum, i)
+      resized.saveTo(new File(filename))
+
+      i += 1
+    }
   }
 
   def main(args:Array[String]) {
