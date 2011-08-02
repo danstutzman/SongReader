@@ -72,6 +72,18 @@ class Performance (
   def recall() = { numCorrect.floatValue / (numCorrect + numMissing) }
 }
 
+case class ParameterSearch (
+  val min:Float,
+  val max:Float,
+  val step:Float
+) {}
+
+case class QuadraticParameterSearch (
+  val a:ParameterSearch,
+  val b:ParameterSearch,
+  val c:ParameterSearch
+) {}
+
 object Ocr4Music {
   def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
     var argmaxIndex = 0
@@ -89,10 +101,11 @@ object Ocr4Music {
     (argmax, argmaxIndex)
   }
 
-  def averageOfSkewedImage(image:GrayImage, skew:Int) : Array[Int] = {
+  def averageOfSkewedImage(image:GrayImage, skew:Int, x0:Int, x1:Int)
+      : Array[Int] = {
     val sum:Array[Int] = new Array[Int](image.h)
     val inverseImage = image.inverse // so out of bounds is white not black
-    (0 until image.w).foreach { x =>
+    (x0 until x1).foreach { x =>
       val skewAmount = x * skew / image.w
       (0 until image.h).foreach { y =>
         sum(y) += inverseImage(x, y + skewAmount)
@@ -104,10 +117,10 @@ object Ocr4Music {
 
   def maxVerticalSkewGivenWidth(width:Int) : Int = { width / 4 }
 
-  def findBestSkew(image:GrayImage) : Int = {
+  def findBestSkew(image:GrayImage, x0:Int, x1:Int) : Int = {
     val maxSkew = maxVerticalSkewGivenWidth(image.w)
     val (bestSkew, _) = findArgmax[Int,Int]((-maxSkew to maxSkew), { skew =>
-      val average = averageOfSkewedImage(image, skew)
+      val average = averageOfSkewedImage(image, skew, x0, x1)
       val score = average.max - average.min
       score
     })
@@ -117,7 +130,7 @@ object Ocr4Music {
   def constructImageComparingSkews(imageIn:GrayImage) : GrayImage = {
     val maxSkew = maxVerticalSkewGivenWidth(imageIn.w)
     var skews = (-maxSkew to maxSkew).map { skew =>
-      averageOfSkewedImage(imageIn, skew)
+      averageOfSkewedImage(imageIn, skew, 0, imageIn.w)
     }
     var w = maxSkew * 2 + 1
     var imageOfSkews = new GrayImage(w, imageIn.h)
@@ -154,6 +167,269 @@ object Ocr4Music {
     (binaryNonStaff, partiallyErased)
   }
 
+  def newStaffTracking(input:GrayImage) {
+    val sliceWidth = 10
+    val skewDemo = input.copy
+    var y = input.h / 2.0
+    (0 until input.w by sliceWidth).foreach { x0 =>
+      if (x0 + sliceWidth < input.w) {
+        // If the next slice will be really narrow,
+        // merge it with the 2nd to last, then skip the last one
+        val x1 =
+          if (x0 + sliceWidth * 2 >= input.w) input.w
+          else x0 + sliceWidth
+        val bestSkew = findBestSkew(input, x0, x1)
+        val bestSkewsAverage = averageOfSkewedImage(input, bestSkew, x0, x1)
+        (x0 until x1).foreach { x =>
+          y += bestSkew.floatValue / input.w
+          skewDemo(x, y.intValue) = 0
+        }
+        (-4 to 4).foreach { deltaY =>
+          skewDemo(x1 - 1, y.intValue + deltaY) = 0
+        }
+      }
+    }
+    //skewDemo.saveTo(new File("skew_demo.png"))
+
+    (0 until input.w).foreach { x =>
+      val y = 0.0012 * x * x + 20
+      val yInt = y.intValue
+      if (yInt >= 0 && yInt < input.h)
+        skewDemo(x, yInt) = 0
+    }
+    skewDemo.saveTo(new File("skew_demo.png"))
+
+/*
+    val houghTransform = new GrayImage(200, 200)
+    (0 until input.w).foreach { x =>
+      (0 until 100).foreach { y =>
+        val v = 255 - input(x, y) //if (input(x, y) < 230) 1 else 0
+        (-100 until 100).foreach { mCents =>
+          val yIntercept = y - (mCents * 0.01) * x
+          val imageY = ((yIntercept * 1) + 100).intValue
+          if (imageY >= 0 && imageY < houghTransform.h) {
+            houghTransform((mCents + 100) / 1, imageY / 1) =
+              houghTransform((mCents + 100) / 1, imageY / 1) + v
+          }
+        }
+      }
+    }
+    val max = houghTransform.data.max 
+    (0 until houghTransform.w).foreach { x =>
+      (0 until houghTransform.h).foreach { y =>
+        houghTransform(x, y) = (houghTransform(x, y) * (250.0 / max)).intValue
+      }
+    }
+    houghTransform.saveTo(new File("hough_transform.png"))
+*/
+/*
+    val houghTransform2 = new GrayImage(200, 200)
+    (0 until input.w).foreach { x =>
+      (0 until 100).foreach { y =>
+        val v = 255 - input(x, y) //if (input(x, y) < 230) 1 else 0
+        (-100 until 100).foreach { aTenThousandths =>
+          val yIntercept = y - (aTenThousandths * 0.00003) * x * x
+          // assume b term (for b*x) is 0
+          val imageY = ((yIntercept / 1.0) + 100).intValue
+          if (imageY >= 0 && imageY < houghTransform2.h) {
+            houghTransform2(aTenThousandths + 100, imageY) =
+              houghTransform2(aTenThousandths + 100, imageY) + v
+          }
+        }
+      }
+    }
+    val max = houghTransform2.data.max 
+    (0 until houghTransform2.w).foreach { x =>
+      (0 until houghTransform2.h).foreach { y =>
+        houghTransform2(x, y) = (houghTransform2(x, y) * (250.0 / max)).intValue
+      }
+    }
+    houghTransform2.saveTo(new File("hough_transform2.png"))
+*/
+    val coverageDemo = input.copy
+    val params = QuadraticParameterSearch(
+      //ParameterSearch(-0.01f, 0.01f, 0.001f),
+      //ParameterSearch(-1.0f, 1.0f, 0.1f),
+      //ParameterSearch(-100.0f, 100.0f, 1.0f))
+      ParameterSearch(-0.001f, 0.001f, 0.0001f),
+      ParameterSearch(-1.0f, 1.01f, 0.01f),
+      ParameterSearch(-100.0f, 100.0f, 1.0f))
+    val halfW = coverageDemo.w / 2
+/*
+    var a = params.a.min
+    while (a <= params.a.max) {
+      var b = params.b.min
+      while (b <= params.b.max) {
+        (-halfW until halfW).foreach { x =>
+          val y = (a * x * x + b * x).intValue + (input.h / 2)
+          if (y >= 0 && y < coverageDemo.h)
+            coverageDemo(x + halfW, y) = 0
+        }
+        b += params.b.step
+      }
+      a += params.a.step
+    }
+    coverageDemo.saveTo(new File("coverage_demo.png"))
+*/
+
+    val numASteps =
+      Math.ceil((params.a.max - params.a.min) / params.a.step).intValue + 1
+    val numBSteps =
+      Math.ceil((params.b.max - params.b.min) / params.b.step).intValue + 1
+    val numCSteps =
+      Math.ceil((params.c.max - params.c.min) / params.c.step).intValue + 1
+    val hough = new Array[Int](numASteps * numBSteps * numCSteps)
+    //val hough2 = new GrayImage(numBSteps, numCSteps)
+    var maxTwo = 0
+    var bestBTwo = 0.0
+    var bestCTwo = 0.0
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val v = 255 - input(x, y)
+        val xCentered = x - input.w / 2
+        val yCentered = y - input.h / 2
+
+        val halfW = coverageDemo.w / 2
+        var a = params.a.min
+        var aSteps = 0
+        while (a <= params.a.max) {
+          var b = params.b.min
+          var bSteps = 0
+          while (b <= params.b.max) {
+            val cSolved =
+              yCentered - (a * xCentered * xCentered) - (b * xCentered)
+            val cSteps = ((cSolved - params.c.min) / params.c.step).intValue
+            if (cSteps >= 0 && cSteps < numCSteps) {
+              hough(aSteps * numBSteps * numCSteps +
+                                bSteps * numCSteps +
+                                            cSteps) += v
+              //hough2(bSteps, cSteps) = hough2(bSteps, cSteps) + v
+              //if (hough2(bSteps, cSteps) > maxTwo) {
+              //  maxTwo = hough2(bSteps, cSteps)
+              //  bestBTwo = b
+              //  bestCTwo = cSolved
+              //}
+            }
+            b += params.b.step
+            bSteps += 1
+          }
+          a += params.a.step
+          aSteps += 1
+        }
+
+      }
+    }
+
+    //val max2 = hough2.data.max 
+    //(0 until hough2.w).foreach { x =>
+    //  (0 until hough2.h).foreach { y =>
+    //    hough2(x, y) = (hough2(x, y) * (250.0 / max2)).intValue
+    //  }
+    //}
+    //hough2.saveTo(new File("hough2.png"))
+
+    var max = 0
+    var argmax = 0
+    (0 until hough.length).foreach { i =>
+      if (hough(i) > max) {
+        max = hough(i)
+        argmax = i
+      }
+    }
+    val bestASteps = argmax / numBSteps / numCSteps
+    val bestBSteps = (argmax - (bestASteps * numBSteps * numCSteps)) / numCSteps
+    val bestCSteps = argmax % numCSteps
+    val bestA = bestASteps * params.a.step + params.a.min
+    val bestB = bestBSteps * params.b.step + params.b.min
+    val bestC = bestCSteps * params.c.step + params.c.min
+
+    var slice = new Array[Int](numCSteps)
+    var walkingCSteps = 0
+    var walkingC = params.c.min
+    while (walkingC <= params.c.max) {
+      slice(walkingCSteps) = hough(bestASteps * numBSteps * numCSteps +
+                                               bestBSteps * numCSteps +
+                                                        walkingCSteps)
+      walkingC += params.c.step
+      walkingCSteps += 1
+    }
+
+    val staffSeparationAsCUnits = 7.0f
+    var bestSum = 0.0
+    var bestCenterCSteps = 0
+    (0 until slice.length).foreach { centerCSteps =>
+      var sum = 0.0
+      var synthetic = synthesizeTeethGraph(
+        centerCSteps, staffSeparationAsCUnits, slice.length)
+      (0 until slice.length).foreach { c =>
+        sum += slice(c) * -synthetic(c)
+      }
+      if (sum > bestSum) {
+        bestSum = sum
+        bestCenterCSteps = centerCSteps
+      }
+    }
+    val bestCenterC =
+      Math.round(bestCenterCSteps * params.c.step + params.c.min).intValue
+    println("bestC", bestC)
+    println("bestCenterCSteps", bestCenterCSteps)
+    println("bestCenterC", bestCenterC)
+
+    val graph = new GrayImage(50, slice.length)
+    (0 until slice.length).foreach { c =>
+      val v = slice(c)
+      (0 until 10).foreach { x => graph(x, c) = v / 30 }
+    }
+    graph.saveTo(new File("c_graph.png"))
+
+    (-halfW until halfW).foreach { x =>
+      (-2 to 2).foreach { staffY =>
+        val y = Math.round(
+          (bestA * x * x + bestB * x + bestCenterC) +
+          (staffY * staffSeparationAsCUnits) + (input.h / 2)).intValue
+        if (y >= 0 && y < coverageDemo.h)
+          coverageDemo(x + halfW, y) = 0
+      }
+    }
+    coverageDemo.saveTo(new File("coverage_demo.png"))
+
+/*
+    var alignDemo = input.toColorImage
+    val staffSeparation = 7.0f
+    (0 until input.w).foreach { x =>
+      val slice = (0 until input.h).map { y => input(x, y) }.toList
+      val sorted = slice.sort((x, y) => x > y)
+      val median = sorted(input.h / 2)
+
+      (0 until input.h).foreach { centerY =>
+        var sum = 0.0
+        var synthetic = synthesizeTeethGraph(centerY, staffSeparation, input.h)
+        (0 until input.h).foreach { y =>
+          sum += (input(x, y) - median) * synthetic(y)
+        }
+         
+        alignDemo(x, centerY) = (0, 0, (sum / 3).intValue + 3)
+      }
+    }
+    alignDemo.saveTo(new File("align_demo.png"))
+
+    var alignDemo2 = alignDemo.copy
+    (0 until input.w / 2).foreach { x =>
+      (0 until input.h).foreach { y =>
+        var maxY = 0
+        (-7 to 7).foreach { y2 =>
+          if (y + y2 >= 0 && y + y2 < input.h && alignDemo(x, y + y2)._3 > maxY) {
+            maxY = alignDemo(x, y + y2)._3
+println(maxY)
+          }
+        }
+        alignDemo2(x, y) = (0, 0, maxY)
+      }
+    }
+    alignDemo2.saveTo(new File("align_demo2.png"))
+*/
+  }
+
   def annotateFFTResult(input:GrayImage, metrics:Metrics) {
     val annotated = input.toColorImage
     var y = metrics.waveLength * -metrics.wavePhase
@@ -170,8 +446,9 @@ object Ocr4Music {
   }
 
   def estimateMetrics(partiallyErased:GrayImage) : Metrics = {
-    val bestSkew = findBestSkew(partiallyErased)
-    val bestSkewsAverage = averageOfSkewedImage(partiallyErased, bestSkew)
+    val bestSkew = findBestSkew(partiallyErased, 0, partiallyErased.w)
+    val bestSkewsAverage = averageOfSkewedImage(
+      partiallyErased, bestSkew, 0, partiallyErased.w)
 
     val window = hammingWindow(bestSkewsAverage.length)
     val fftNumBuckets = 512
@@ -505,6 +782,7 @@ object Ocr4Music {
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
     val (justNotes, partiallyErased) = separateNotes(excerpt)
+newStaffTracking(partiallyErased)
     val metrics = estimateMetrics(partiallyErased)
 
     //excerptLabeledPointsContext(original, caseNum, points, metrics)
@@ -529,7 +807,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-if (caseNum == 0) {
+if (caseNum == 4) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -665,11 +943,100 @@ if (caseNum == 0) {
     }
   }
 
+  //  ''''\  /\  /\  /\  /\  /''''   ^ +0.0 is max output
+  //       \/  \/  \/  \/  \/        v -1.0 is min output
+  //                | <= centerY
+  //       [----] = staffSeparation
+  def synthesizeTeethGraph(centerY:Float, staffSeparation:Float, h:Int) = {
+    val y0 = centerY - (staffSeparation * 2.5)
+    val y1 = centerY + (staffSeparation * 2.5)
+    (0 until h).map { y =>
+      if (y < y0) 0.0
+      else if (y > y1) 0.0
+      else {
+        // ranges from 0.0 to 5.0
+        val quotient = ((y - y0) / staffSeparation)
+
+        // ranges from -0.5 at valleys to 0.5 at peaks
+        val centeredSawtooth = (quotient - Math.floor(quotient)) - 0.5
+
+        // ranges from 0.0 at valleys to 0.5 at peaks
+        val centeredW = Math.abs(centeredSawtooth)
+
+        (centeredW * 2.0) - 1.0
+      }
+    }.toList
+  }
+
+  def alignStaffToSlice {
+    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
+    val h = 108
+    val slice = (38 until (58 + h)).map { y =>
+      original(414, y)
+    }.toList
+    val sorted = slice.sort((x, y) => x > y)
+    val median = sorted(h / 2)
+
+    val graph = new ColorImage(300, h)
+    (0 until slice.length).foreach { y =>
+      (0 until slice(y) / 4).foreach { x =>
+        graph(x, y) = (255, 255, 255)
+      }
+    }
+    (0 until h).foreach { y =>
+      graph(median / 4, y) = (255, 0, 0)
+    }
+
+
+    val syntheticLine = 60
+    val synthetic = synthesizeTeethGraph(47, 7, h)
+    (0 until h).foreach { y =>
+      graph(syntheticLine, y) = (255, 0, 0)
+    }
+    (0 until h).foreach { y =>
+      graph(syntheticLine + (synthetic(y) * 4).intValue, y) = (255, 255, 255)
+    }
+
+    val productLine = 120
+    var bestSum = 0.0
+    var bestCenterY = 0.0
+    var bestStaffSeparation = 0.0
+    (20 until 70).foreach { centerY =>
+      var staffSeparation = 6.0f
+      while (staffSeparation <= 8.0f) {
+        var sum = 0.0
+        var synthetic = synthesizeTeethGraph(centerY, staffSeparation, h)
+        (0 until h).foreach { y =>
+          sum += (slice(y) - median) * synthetic(y)
+        }
+        if (sum > bestSum) {
+          bestSum = sum
+          bestCenterY = centerY
+          bestStaffSeparation = staffSeparation
+        }
+        graph((staffSeparation * 10).intValue + 30, centerY) =
+          (0, 0, (sum / 5).intValue)
+        staffSeparation += 0.1f
+      }
+    }
+
+    def horizontalLine(centerX:Int, y:Double) {
+      (-5 to 5).foreach { x =>
+         graph(centerX + x, y.intValue) = (0, 0, 255)
+      }
+    }
+    (-2 to 2).foreach { i =>
+      horizontalLine(40, bestCenterY - (bestStaffSeparation * i))
+    }
+
+    graph.saveTo(new File("graph.png"))
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
       doRecognitionForEachBox
-//      classifyNotesVsNonNotes
+      //alignStaffToSlice
     } catch {
       case e: Exception => e.printStackTrace()
     }

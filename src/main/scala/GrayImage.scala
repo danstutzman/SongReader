@@ -2,6 +2,7 @@ import java.io.File
 
 class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
   def this(w:Int, h:Int) = this(w, h, new Array[Int](w * h))
+  def copy : GrayImage = { new GrayImage(w, h, data.clone) }
   def apply(x:Int, y:Int) = {
     if (x < 0 || x >= w || y < 0 || y >= h)
       0
