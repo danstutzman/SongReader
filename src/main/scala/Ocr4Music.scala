@@ -556,23 +556,48 @@ object Ocr4Music {
       if (Math.abs(midX - lastNoteMidX) >= 10)
         staffX += 1
         
-      // if note seems to be 0.3 or further, we're probably guessing wrong
-      //if (Math.abs(staffY - Math.round(staffY)) < 0.3)
-      notes = Note(staffX, Math.round(staffY)) :: notes
+      // guess it's a triad if bounding box is tall
+      if (bound.box.maxY - bound.box.minY > metrics.staffSeparation * 2.5) {
+        notes = Note(staffX, Math.round(staffY) - 2) ::
+                Note(staffX, Math.round(staffY)) ::
+                Note(staffX, Math.round(staffY) + 2) :: notes
+      // guess it's a third if bounding box is a little tall
+      } else if (bound.box.maxY - bound.box.minY >
+                 metrics.staffSeparation * 1.8) {
+        notes = Note(staffX, Math.round(staffY) - 1) ::
+                Note(staffX, Math.round(staffY) + 1) :: notes
+      } else {
+        // if note seems to be 0.3 or further, we're probably guessing wrong
+        //if (Math.abs(staffY - Math.round(staffY)) < 0.3)
+        notes = Note(staffX, Math.round(staffY)) :: notes
+      }
 
       lastNoteMidX = midX
     }
     Set() ++ notes
   }
 
-  def labelBounds(bounds:List[BoundingBox], metrics:Metrics) = {
+  def labelBounds(
+      bounds:List[BoundingBox], justNotes:GrayImage, metrics:Metrics) = {
     val units = metrics.staffSeparation
     bounds.map { bound =>
       if (bound.maxX - bound.minX > units * 4)
         LabeledBoundingBox(NonNote, bound) // beam connecting eighth notes
       else if (bound.maxX - bound.minX > units &&
-          bound.maxY - bound.minY > units / 2)
-        LabeledBoundingBox(Note, bound)
+          bound.maxY - bound.minY > units / 2) {
+        var sum = 0
+        (bound.minX until bound.maxX).foreach { x =>
+          (bound.minY until bound.maxY).foreach { y =>
+            sum += justNotes(x, y)
+          }
+        }
+        val filledness = 1.0f -
+          (sum / (bound.maxX - bound.minX) / (bound.maxY - bound.minY) / 255.0f)
+        if (filledness >= 0.5f)
+          LabeledBoundingBox(Note, bound)
+        else
+          LabeledBoundingBox(NonNote, bound)
+      }
       else
         LabeledBoundingBox(NonNote, bound)
     }
@@ -585,13 +610,14 @@ object Ocr4Music {
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
     val (justNotes, partiallyErased) = separateNotes(excerpt)
+    justNotes.saveTo(new File("just_notes.png"))
     val metrics = estimateMetrics(partiallyErased, caseNum)
 
     //excerptLabeledPointsContext(original, caseNum, points, metrics)
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
-    val labeledBounds = labelBounds(bounds, metrics)
+    val labeledBounds = labelBounds(bounds, justNotes, metrics)
     val combinedBounds = combineNoteBounds(labeledBounds)
     val estimatedNotes = recognizeNotesFromBounds(combinedBounds, metrics)
     annotateNotes(estimatedNotes,
@@ -610,7 +636,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 0) {
+//if (caseNum == 1) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
