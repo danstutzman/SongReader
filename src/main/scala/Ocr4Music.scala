@@ -174,8 +174,9 @@ object Ocr4Music {
       ParameterSearch(-0.001f, 0.001f, 0.0001f),
       //ParameterSearch(0.0f, 0.00001f, 0.1f), // to disable curvature
       ParameterSearch(-1.0f, 1.01f, 0.01f),
-      ParameterSearch(-100.0f, 100.0f, 0.5f),
+      ParameterSearch(-100.0f, 100.0f, 1.0f),
       ParameterSearch(4.0f, 16.0f, 1.0f))
+    // best to leave step at 1; 0.5 gets weird every-other-pixel artifacts
     val halfW = input.w / 2
 
     val numASteps =
