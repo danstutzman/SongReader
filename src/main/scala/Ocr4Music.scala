@@ -172,6 +172,7 @@ object Ocr4Music {
   def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
     val params = QuadraticParameterSearch(
       ParameterSearch(-0.001f, 0.001f, 0.0001f),
+      //ParameterSearch(0.0f, 0.00001f, 0.1f), // to disable curvature
       ParameterSearch(-1.0f, 1.01f, 0.01f),
       ParameterSearch(-100.0f, 100.0f, 0.5f),
       ParameterSearch(4.0f, 16.0f, 1.0f))
@@ -217,14 +218,6 @@ object Ocr4Music {
       }
     }
 
-    //val max2 = hough2.data.max 
-    //(0 until hough2.w).foreach { x =>
-    //  (0 until hough2.h).foreach { y =>
-    //    hough2(x, y) = (hough2(x, y) * (250.0 / max2)).intValue
-    //  }
-    //}
-    //hough2.saveTo(new File("hough2.png"))
-
     var max = 0
     var argmax = 0
     (0 until hough.length).foreach { i =>
@@ -239,6 +232,17 @@ object Ocr4Music {
     val bestA = bestASteps * params.a.step + params.a.min
     val bestB = bestBSteps * params.b.step + params.b.min
     val bestC = bestCSteps * params.c.step + params.c.min
+
+    /*val max2 = hough2.data.max 
+    (0 until hough2.w).foreach { x =>
+      (0 until hough2.h).foreach { y =>
+        hough2(x, y) = (hough2(x, y) * (250.0 / max2)).intValue
+      }
+    }
+    (-2 to 2).foreach { x =>
+      hough2(bestBSteps + x, bestCSteps) = 0
+    }
+    hough2.saveTo(new File("hough2.png"))*/
 
     var slice = new Array[Int](numCSteps)
     var walkingCSteps = 0
@@ -605,7 +609,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 1) {
+//if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -744,10 +748,11 @@ object Ocr4Music {
   }
 
   //
-  //      /\  /\  /\  /\  /\        ^ +1.0 is max output
-  //  ___/  \/  \/  \/  \/  \____   v  0.0 is min output
+  //      /\    /\    /\    /\    /\        ^ +1.0 is max output
+  //  ---/  \  /  \  /  \  /  \  /  \----
+  //         \/    \/    \/    \/           v -1.0 is min output
   //                | <= centerY
-  //     [---] = staffSeparation
+  //          [-----] = staffSeparation
   def synthesizeTeethGraph(centerY:Float, staffSeparation:Float, h:Int) = {
     val y0 = centerY - (staffSeparation * 2.5)
     val y1 = centerY + (staffSeparation * 2.5)
@@ -764,7 +769,7 @@ object Ocr4Music {
         // ranges from 0.0 at valleys to 0.5 at peaks
         val centeredW = Math.abs(centeredSawtooth)
 
-        1.0 - (centeredW * 2.0)
+        1.0 - (centeredW * 4.0)
       }
     }.toList
   }
