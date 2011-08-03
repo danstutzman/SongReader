@@ -302,20 +302,13 @@ object Ocr4Music {
       }
     }
 
-    val fiveBest = new Array[(Int,Int)](5)
-    var j = 0
+    // Draw 3x3 squares around 5 points, with black dots in the center
     (0 until 5).foreach { i =>
       val offset = i - 2 - bestBrightestIsPointN
       val cCenter =
         (brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
       val bCenter = (brightestBSteps +
         bestStaffSeparationInCAxis * bestBOverCSlope * offset).intValue
-      fiveBest(i) = (cCenter, bCenter)
-    }
-
-    // Draw 3x3 squares around 5 points, with black dots in the center
-    fiveBest.foreach { cb =>
-      val (cCenter, bCenter) = cb
       (-1 to 1).foreach { bNeighbor =>
         (-1 to 1).foreach { cNeighbor =>
           hough2(cCenter + cNeighbor, bCenter + bNeighbor) = 5000
@@ -324,7 +317,7 @@ object Ocr4Music {
       hough2(cCenter, bCenter) = 0
     }
 
-    // Scale down the hough2 image so it's
+    // Scale down the hough2 image so it's between 0-255
     val max2 = hough2.data.max 
     (0 until hough2.w).foreach { c =>
       (0 until hough2.h).foreach { b =>
@@ -332,54 +325,19 @@ object Ocr4Music {
       }
     }
 
-    // Compare every point to every other point to determine the average slope
-    var sumBOverCSlopes = 0.0f
-    fiveBest.foreach { cb1 =>
-      fiveBest.foreach { cb2 =>
-        if (cb1 != cb2) {
-          val (c1, b1) = cb1
-          val (c2, b2) = cb2
-          val bOverCSlope = (b1 - b2).floatValue / (c1 - c2)
-          sumBOverCSlopes += bOverCSlope
-        }
-      }
-    }
-    var averageBOverCSlope = sumBOverCSlopes / (5 * (5 - 1))
-    
-    // Determine the intercept and spacing through more arithmetic
-    var sumBIntercepts = 0.0f
-    var sumCs = 0.0f
-    var sumBs = 0.0f
-    var minC = 99999f
-    var maxC = -99999f
-    var minB = 99999f
-    var maxB = -99999f
-    fiveBest.foreach { cb =>
-      val (c, b) = cb
-      val bIntercept = b - averageBOverCSlope * c
-      sumBIntercepts += bIntercept
-      sumCs += c
-      sumBs += b
-      if (c < minC)
-        minC = c
-      if (c > maxC)
-        maxC = c
-      if (b < minB)
-        minB = b
-      if (b > maxB)
-        maxB = b
-    }
-    val averageBIntercept = sumBIntercepts / 5
-    val averageC = sumCs / 5
-    val averageB = sumBs / 5
-    val cSpacing = (maxC - minC) / 4.0f
-    val bSpacing = (maxB - minB) / 4.0f
+    val centerCSteps =
+      brightestCSteps + bestStaffSeparationInCAxis * -bestBrightestIsPointN
+    val centerBSteps =
+      brightestBSteps + bestStaffSeparationInCAxis * bestBOverCSlope *
+      -bestBrightestIsPointN
+    val cSpacingSteps = bestStaffSeparationInCAxis
+    val bSpacingSteps = bestStaffSeparationInCAxis * bestBOverCSlope
 
-    // convert from integer "step" values to real b and c values
-    val realAverageC = averageC * params.c.step + params.c.min
-    val realAverageB = averageB * params.b.step + params.b.min
-    val realCSpacing = cSpacing * params.c.step
-    val realBSpacing = bSpacing * params.b.step
+    // convert from step (array index) coordinates to usable coordinates
+    val centerC = centerCSteps * params.c.step + params.c.min
+    val centerB = centerBSteps * params.b.step + params.b.min
+    val cSpacing = cSpacingSteps * params.c.step
+    val bSpacing = bSpacingSteps * params.b.step
 
     // now draw that slope on the image
     /*(0 until hough2.w).foreach { cSteps =>
@@ -389,8 +347,7 @@ object Ocr4Music {
     }*/
     hough2.saveTo(new File("hough2.png"))
 
-    Metrics(input.w, input.h, bestA, realAverageB, realAverageC,
-      realCSpacing, realBSpacing)
+    Metrics(input.w, input.h, bestA, centerB, centerC, cSpacing, bSpacing)
   }
 
   def annotateCenterY(input:GrayImage, metrics:Metrics) : ColorImage = {
