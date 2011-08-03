@@ -83,14 +83,15 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
     })
   }
   def saveTo(file:File) { this.toColorImage.saveTo(file) }
-  def resize(newW:Int, newH:Int, skew:Float) = {
+  def resize(newW:Int, newH:Int, slope:Float) = {
     new GrayImage(newW, newH, giveBrightnessPerPixel(newW, newH) {
         (newX, newY) =>
       val oldXFloat = newX.floatValue * w / newW
       val oldX0 = Math.floor(oldXFloat).intValue
       val oldX1 = Math.ceil(oldXFloat).intValue
       val oldXWeight = oldXFloat - oldX0
-      val oldYFloat = (newY.floatValue * h / newH) + ((newX - newW/2.0f) * skew)
+      val oldYFloat = (newY.floatValue * h / newH) +
+        ((newX - newW/2.0f) * slope * h / newH)
       val oldY0 = Math.floor(oldYFloat).intValue
       val oldY1 = Math.ceil(oldYFloat).intValue
       val oldYWeight = oldYFloat - oldY0

@@ -658,7 +658,11 @@ object Ocr4Music {
     justNotes.saveTo(new File("just_notes.png"))
     val metrics = estimateMetrics(partiallyErased, caseNum)
 
-    //excerptLabeledPointsContext(original, caseNum, points, metrics)
+    val translatedPoints = points.map { xy =>
+      val LabeledPoint(label, originalX, originalY) = xy
+      LabeledPoint(label, originalX - box.left, originalY - box.top)
+    }
+    excerptLabeledPointsContext(excerpt, caseNum, translatedPoints, metrics)
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
@@ -681,7 +685,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 0) {
+if (caseNum == 4) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -711,7 +715,7 @@ object Ocr4Music {
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
         globalPerformance.numMissing + performance.numMissing)
-//}
+}
 
       caseNum += 1
     }
@@ -738,22 +742,23 @@ object Ocr4Music {
     new Performance(numCorrect, numIncorrect, numMissing)
   }
 
-  /*def excerptLabeledPointsContext(original:GrayImage, caseNum:Int,
+  def excerptLabeledPointsContext(image:GrayImage, caseNum:Int,
       points:List[LabeledPoint], metrics:Metrics) {
     var i = 0
     points.foreach { point =>
-      val excerptRadius = (metrics.waveLength * 3).intValue
-      val excerpt = original.crop(
+      val excerptRadius = (metrics.cSpacing * 1.5).intValue
+      val excerpt = image.crop(
         point.x + 2 - excerptRadius, point.y + 5 - excerptRadius,
         excerptRadius * 2, excerptRadius * 2)
-      val resized =
-        excerpt.resize(100, 100, metrics.skew / metrics.width.floatValue)
+      // Differentiate axx + bx + c to get 2ax + b as slope
+      val slope = (2.0f * metrics.a * (point.x - metrics.w / 2)) + metrics.b
+      val resized = excerpt.resize(100, 100, slope)
       val filename = "points/%s.%d.%d.png".format(point.label, caseNum, i)
       resized.saveTo(new File(filename))
 
       i += 1
     }
-  }*/
+  }
 
   def classifyNotesVsNonNotes {
     val whitePixelToNumNotes = new Array[Int](100 * 100)
