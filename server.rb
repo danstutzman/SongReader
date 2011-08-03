@@ -7,8 +7,11 @@ require 'sinatra'
 get '/' do
   send_file 'index.html'
 end
-get '/photo.jpeg' do
-  send_file 'photo.jpeg'
+get '/photo1.jpeg' do
+  send_file 'photo1.jpeg'
+end
+get '/photo2.jpeg' do
+  send_file 'photo2.jpeg'
 end
 get '/boxes.json' do
   content_type :json

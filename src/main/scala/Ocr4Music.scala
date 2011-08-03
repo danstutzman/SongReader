@@ -5,6 +5,7 @@ import java.lang.Math
 import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 import com.twitter.json.Json
+import scala.collection.mutable.ArraySeq
 
 object Colors {
   val underflow = (0, 0, 255) // blue (too cold)
@@ -73,8 +74,7 @@ case class ParameterSearch (
 case class QuadraticParameterSearch (
   val a:ParameterSearch,
   val b:ParameterSearch,
-  val c:ParameterSearch,
-  val staffSeparation:ParameterSearch
+  val c:ParameterSearch
 ) {}
 
 case class Metrics (
@@ -83,7 +83,11 @@ case class Metrics (
   val a:Float, // x^2 term
   val b:Float, // x term
   val c:Float,  // constant term
-  val staffSeparation:Float
+  // The amount of separation between each staff line is not constant.
+  // It's computed with the linear function:
+  //   b = bOverCSlope*c + bIntercept
+  val cSpacing:Float,
+  val bSpacing:Float
 ) {}
 
 object Ocr4Music {
@@ -153,12 +157,6 @@ object Ocr4Music {
     annotated.saveTo(new File("skew.png"))
   }
 
-  def hammingWindow(n:Int) : Seq[Double] = {
-    (0 until n).map { i =>
-      0.54 - 0.46 * Math.cos(2 * Math.PI * i / (n - 1))
-    }
-  }
-
   // returns image with just notes, and without notes
   def separateNotes(input:GrayImage) : (GrayImage, GrayImage) = {
     val whiteBackground = input.brighten(130)
@@ -171,12 +169,11 @@ object Ocr4Music {
 
   def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
     val params = QuadraticParameterSearch(
-      ParameterSearch(-0.001f, 0.001f, 0.0001f),
-      //ParameterSearch(0.0f, 0.00001f, 0.1f), // to disable curvature
-      ParameterSearch(-1.0f, 1.01f, 0.01f),
-      ParameterSearch(-100.0f, 100.0f, 1.0f),
-      ParameterSearch(4.0f, 16.0f, 1.0f))
-    // best to leave step at 1; 0.5 gets weird every-other-pixel artifacts
+      ParameterSearch(-0.001f, 0.001f, 0.0001f), // A
+      //ParameterSearch(0.0f, 0.00001f, 0.1f), // A, to disable curvature
+      ParameterSearch(-1.0f, 1.01f, 0.01f), // B
+      ParameterSearch(-100.0f, 100.0f, 1.0f)) // C
+    // best to leave C step at 1; 0.5 gets weird every-other-pixel artifacts
     val halfW = input.w / 2
 
     val numASteps =
@@ -186,7 +183,6 @@ object Ocr4Music {
     val numCSteps =
       Math.ceil((params.c.max - params.c.min) / params.c.step).intValue + 1
     val hough = new Array[Int](numASteps * numBSteps * numCSteps)
-    //val hough2 = new GrayImage(numBSteps, numCSteps)
     (0 until input.w).foreach { x =>
       (0 until input.h).foreach { y =>
         val v = 255 - input(x, y)
@@ -207,7 +203,6 @@ object Ocr4Music {
               hough(aSteps * numBSteps * numCSteps +
                                 bSteps * numCSteps +
                                             cSteps) += v
-              //hough2(bSteps, cSteps) = hough2(bSteps, cSteps) + v
             }
             b += params.b.step
             bSteps += 1
@@ -215,7 +210,6 @@ object Ocr4Music {
           a += params.a.step
           aSteps += 1
         }
-
       }
     }
 
@@ -234,78 +228,169 @@ object Ocr4Music {
     val bestB = bestBSteps * params.b.step + params.b.min
     val bestC = bestCSteps * params.c.step + params.c.min
 
-    /*val max2 = hough2.data.max 
-    (0 until hough2.w).foreach { x =>
-      (0 until hough2.h).foreach { y =>
-        hough2(x, y) = (hough2(x, y) * (250.0 / max2)).intValue
+    // we have to extract the hough2 for the bestASteps plane
+    val hough2 = new GrayImage(numCSteps, numBSteps)
+    (0 until hough2.w).foreach { cSteps =>
+      (0 until hough2.h).foreach { bSteps =>
+        hough2(cSteps, bSteps) = hough(bestASteps * numBSteps * numCSteps +
+                                                       bSteps * numCSteps +
+                                                                   cSteps)
       }
     }
-    (-2 to 2).foreach { x =>
-      hough2(bestBSteps + x, bestCSteps) = 0
-    }
-    hough2.saveTo(new File("hough2.png"))*/
 
-    var slice = new Array[Int](numCSteps)
-    var walkingCSteps = 0
-    var walkingC = params.c.min
-    while (walkingC <= params.c.max) {
-      slice(walkingCSteps) = hough(bestASteps * numBSteps * numCSteps +
-                                               bestBSteps * numCSteps +
-                                                        walkingCSteps)
-      walkingC += params.c.step
-      walkingCSteps += 1
-    }
-
-    val cDemo = new GrayImage(10, numCSteps)
-    var maxValue = 0.0
-    (0 until numCSteps).foreach { cSteps =>
-      if (slice(cSteps) > maxValue)
-        maxValue = slice(cSteps)
-    }
-    (0 until numCSteps).foreach { cSteps =>
-      (0 until cDemo.w).foreach { x =>
-        cDemo(x, cSteps) = (slice(cSteps) * 250.0 / maxValue).intValue
-      }
-    }
-    cDemo.saveTo(new File("c_demo.png"))
-
-    var bestSum = 0.0
-    var bestCenterCSteps = 0
-    var bestStaffSeparation = 0.0f
-    var staffSeparation = params.staffSeparation.min
-    val teethDemo = new GrayImage(10, numCSteps)
-    while (staffSeparation <= params.staffSeparation.max) {
-      (0 until slice.length).foreach { centerCSteps =>
-        var sum = 0.0
-        var synthetic = synthesizeTeethGraph(
-          centerCSteps, staffSeparation / params.c.step, slice.length)
-        (0 until slice.length).foreach { c =>
-          sum += slice(c) * synthetic(c)
-        }
-        if (sum > bestSum) {
-          bestSum = sum
-          bestCenterCSteps = centerCSteps
-          bestStaffSeparation = staffSeparation
-        }
-
-        (0 until teethDemo.w).foreach { x =>
-          teethDemo(x, centerCSteps) = sum.intValue
+    // Find brightest point
+    var brightestCSteps = 0
+    var brightestBSteps = 0
+    var maxBrightness = 0
+    (0 until hough2.h).foreach { bSteps =>
+      (0 until hough2.w).foreach { cSteps =>
+        val v = hough2(cSteps, bSteps)
+        if (v > maxBrightness) {
+          maxBrightness = v
+          brightestCSteps = cSteps
+          brightestBSteps = bSteps
         }
       }
-      staffSeparation += params.staffSeparation.step
     }
-    val bestCenterC =
-      Math.round(bestCenterCSteps * params.c.step + params.c.min).intValue
 
-    (0 until numCSteps).foreach { cSteps =>
-      (0 until teethDemo.w).foreach { x =>
-        teethDemo(x, cSteps) = (teethDemo(x, cSteps) * 250.0 / bestSum).intValue
+    var maxSum = -999999f
+    var bestBOverCSlope = 0.0f
+    var bestBrightestIsPointN = 0
+    var bestStaffSeparationInCAxis = 0.0f
+    var staffSeparationInCAxis = 4.0f
+    while (staffSeparationInCAxis < 20.0f) {
+      var bOverCSlope = -0.5f
+      while (bOverCSlope < 0.5f) {
+        (-2 to 2).foreach { brightestIsPointN =>
+          var leftmost = -2 - brightestIsPointN
+          var rightmost = 2 - brightestIsPointN
+          val c0 =
+            (brightestCSteps + staffSeparationInCAxis * leftmost).intValue
+          val c1 =
+            (brightestCSteps + staffSeparationInCAxis * rightmost).intValue
+          val b0 =
+            brightestBSteps + staffSeparationInCAxis * bOverCSlope * leftmost
+          val b1 =
+            brightestBSteps + staffSeparationInCAxis * bOverCSlope * rightmost
+          var bSteps = b0
+          var sum = 0.0f
+          (leftmost to rightmost).foreach { n =>
+            val cSteps = (brightestCSteps +
+              staffSeparationInCAxis * n).intValue
+            val bSteps =
+              (brightestBSteps +
+              staffSeparationInCAxis * bOverCSlope * n).intValue
+            val v = hough2(cSteps, bSteps)
+            sum += v
+          }
+          if (sum > maxSum) {
+            maxSum = sum
+            bestBOverCSlope = bOverCSlope
+            bestBrightestIsPointN = brightestIsPointN
+            bestStaffSeparationInCAxis = staffSeparationInCAxis
+          }
+        }
+        bOverCSlope += 0.01f
       }
-    }    
-    teethDemo(teethDemo.w / 2, bestCenterCSteps) = 0
-    teethDemo.saveTo(new File("teeth_demo.png"))
+      staffSeparationInCAxis += 0.1f
+    }
+    
+    // Draw 5x5 square on brightest point
+    (-2 to 2).foreach { bNeighbor =>
+      (-2 to 2).foreach { cNeighbor =>
+        hough2(brightestCSteps + cNeighbor, brightestBSteps + bNeighbor) = 5000
+      }
+    }
 
-    Metrics(input.w, input.h, bestA, bestB, bestCenterC, bestStaffSeparation)
+    val fiveBest = new Array[(Int,Int)](5)
+    var j = 0
+    (0 until 5).foreach { i =>
+      val offset = i - 2 - bestBrightestIsPointN
+      val cCenter =
+        (brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
+      val bCenter = (brightestBSteps +
+        bestStaffSeparationInCAxis * bestBOverCSlope * offset).intValue
+      fiveBest(i) = (cCenter, bCenter)
+    }
+
+    // Draw 3x3 squares around 5 points, with black dots in the center
+    fiveBest.foreach { cb =>
+      val (cCenter, bCenter) = cb
+      (-1 to 1).foreach { bNeighbor =>
+        (-1 to 1).foreach { cNeighbor =>
+          hough2(cCenter + cNeighbor, bCenter + bNeighbor) = 5000
+        }
+      }
+      hough2(cCenter, bCenter) = 0
+    }
+
+    // Scale down the hough2 image so it's
+    val max2 = hough2.data.max 
+    (0 until hough2.w).foreach { c =>
+      (0 until hough2.h).foreach { b =>
+        hough2(c, b) = (hough2(c, b) * (250.0 / max2)).intValue
+      }
+    }
+
+    // Compare every point to every other point to determine the average slope
+    var sumBOverCSlopes = 0.0f
+    fiveBest.foreach { cb1 =>
+      fiveBest.foreach { cb2 =>
+        if (cb1 != cb2) {
+          val (c1, b1) = cb1
+          val (c2, b2) = cb2
+          val bOverCSlope = (b1 - b2).floatValue / (c1 - c2)
+          sumBOverCSlopes += bOverCSlope
+        }
+      }
+    }
+    var averageBOverCSlope = sumBOverCSlopes / (5 * (5 - 1))
+    
+    // Determine the intercept and spacing through more arithmetic
+    var sumBIntercepts = 0.0f
+    var sumCs = 0.0f
+    var sumBs = 0.0f
+    var minC = 99999f
+    var maxC = -99999f
+    var minB = 99999f
+    var maxB = -99999f
+    fiveBest.foreach { cb =>
+      val (c, b) = cb
+      val bIntercept = b - averageBOverCSlope * c
+      sumBIntercepts += bIntercept
+      sumCs += c
+      sumBs += b
+      if (c < minC)
+        minC = c
+      if (c > maxC)
+        maxC = c
+      if (b < minB)
+        minB = b
+      if (b > maxB)
+        maxB = b
+    }
+    val averageBIntercept = sumBIntercepts / 5
+    val averageC = sumCs / 5
+    val averageB = sumBs / 5
+    val cSpacing = (maxC - minC) / 4.0f
+    val bSpacing = (maxB - minB) / 4.0f
+
+    // convert from integer "step" values to real b and c values
+    val realAverageC = averageC * params.c.step + params.c.min
+    val realAverageB = averageB * params.b.step + params.b.min
+    val realCSpacing = cSpacing * params.c.step
+    val realBSpacing = bSpacing * params.b.step
+
+    // now draw that slope on the image
+    /*(0 until hough2.w).foreach { cSteps =>
+      val bSteps = averageBOverCSlope * cSteps + averageBIntercept
+      if (bSteps >= 0 && bSteps < hough2.w)
+        hough2(cSteps, bSteps.intValue) = 255
+    }*/
+    hough2.saveTo(new File("hough2.png"))
+
+    Metrics(input.w, input.h, bestA, realAverageB, realAverageC,
+      realCSpacing, realBSpacing)
   }
 
   def annotateCenterY(input:GrayImage, metrics:Metrics) : ColorImage = {
@@ -314,9 +399,10 @@ object Ocr4Music {
     val halfW = annotated.w / 2
     (-halfW until halfW).foreach { x =>
       (-2 to 2).foreach { staffY =>
-        val y = Math.round(
-          (metrics.a * x * x + metrics.b * x + metrics.c) +
-          (staffY * metrics.staffSeparation) + (input.h / 2)).intValue
+        val a = metrics.a
+        val b = metrics.b + (staffY * metrics.bSpacing)
+        val c = metrics.c + (staffY * metrics.cSpacing)
+        val y = Math.round((a * x * x + b * x + c) + (input.h / 2)).intValue
         if (y >= 0 && y < annotated.h)
           annotated(x + halfW, y) = (255, 255, 255)
       }
@@ -544,6 +630,7 @@ object Ocr4Music {
     var lastNoteMidX = -99
     var staffX = -1
     var notes:List[Note] = Nil
+    val staffSeparation = metrics.cSpacing
     boundsSorted.foreach { bound =>
       val midX = (bound.box.maxX + bound.box.minX) / 2
       val midY = (bound.box.maxY + bound.box.minY) / 2
@@ -552,18 +639,18 @@ object Ocr4Music {
       val displacementY =
         metrics.a * xCentered * xCentered + metrics.b * xCentered + metrics.c
       val deskewedY = yCentered - displacementY
-      val staffY = deskewedY / (metrics.staffSeparation / 2)
+      val staffY = deskewedY / (staffSeparation / 2)
       if (Math.abs(midX - lastNoteMidX) >= 10)
         staffX += 1
         
       // guess it's a triad if bounding box is tall
-      if (bound.box.maxY - bound.box.minY > metrics.staffSeparation * 2.5) {
+      if (bound.box.maxY - bound.box.minY > staffSeparation * 2.5) {
         notes = Note(staffX, Math.round(staffY) - 2) ::
                 Note(staffX, Math.round(staffY)) ::
                 Note(staffX, Math.round(staffY) + 2) :: notes
       // guess it's a third if bounding box is a little tall
       } else if (bound.box.maxY - bound.box.minY >
-                 metrics.staffSeparation * 1.8) {
+                 staffSeparation * 1.8) {
         notes = Note(staffX, Math.round(staffY) - 1) ::
                 Note(staffX, Math.round(staffY) + 1) :: notes
       } else {
@@ -579,12 +666,12 @@ object Ocr4Music {
 
   def labelBounds(
       bounds:List[BoundingBox], justNotes:GrayImage, metrics:Metrics) = {
-    val units = metrics.staffSeparation
+    val units = metrics.cSpacing
     bounds.map { bound =>
       if (bound.maxX - bound.minX > units * 4)
         LabeledBoundingBox(NonNote, bound) // beam connecting eighth notes
-      else if (bound.maxX - bound.minX > units &&
-          bound.maxY - bound.minY > units / 2) {
+      else if (bound.maxX - bound.minX > units * 5 / 4 &&
+          bound.maxY - bound.minY >= units * 1 / 2) {
         var sum = 0
         (bound.minX until bound.maxX).foreach { x =>
           (bound.minY until bound.maxY).foreach { y =>
@@ -610,6 +697,7 @@ object Ocr4Music {
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
     val (justNotes, partiallyErased) = separateNotes(excerpt)
+    partiallyErased.saveTo(new File("partially_erased.png"))
     justNotes.saveTo(new File("just_notes.png"))
     val metrics = estimateMetrics(partiallyErased, caseNum)
 
@@ -630,13 +718,13 @@ object Ocr4Music {
   def doRecognitionForEachBox {
     var globalPerformance = new Performance()
     val annotationsString:String =
-      scala.io.Source.fromFile("boxes.json").mkString
+      scala.io.Source.fromFile("boxes1.json").mkString
     val annotationsJson:List[Map[String,Any]] = 
       Json.parse(annotationsString).asInstanceOf[List[Map[String,Any]]]
     var caseNum = 0
-    val original = ColorImage.readFromFile(new File("photo.jpeg")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 1) {
+//if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -772,33 +860,6 @@ object Ocr4Music {
         file, isNoteProb, isNonNoteProb,
         if (isNoteProb > isNonNoteProb) "YES" else "NO"))
     }
-  }
-
-  //
-  //      /\    /\    /\    /\    /\        ^ +1.0 is max output
-  //  ---/  \  /  \  /  \  /  \  /  \----
-  //         \/    \/    \/    \/           v -1.0 is min output
-  //                | <= centerY
-  //          [-----] = staffSeparation
-  def synthesizeTeethGraph(centerY:Float, staffSeparation:Float, h:Int) = {
-    val y0 = centerY - (staffSeparation * 2.5)
-    val y1 = centerY + (staffSeparation * 2.5)
-    (0 until h).map { y =>
-      if (y < y0) 0.0
-      else if (y > y1) 0.0
-      else {
-        // ranges from 0.0 to 5.0
-        val quotient = ((y - y0) / staffSeparation)
-
-        // ranges from -0.5 at valleys to 0.5 at peaks
-        val centeredSawtooth = (quotient - Math.floor(quotient)) - 0.5
-
-        // ranges from 0.0 at valleys to 0.5 at peaks
-        val centeredW = Math.abs(centeredSawtooth)
-
-        1.0 - (centeredW * 4.0)
-      }
-    }.toList
   }
 
   def main(args:Array[String]) {
