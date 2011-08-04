@@ -157,14 +157,14 @@ object Ocr4Music {
     annotated.saveTo(new File("skew.png"))
   }
 
-  // returns image with just notes, and without notes
-  def separateNotes(input:GrayImage) : (GrayImage, GrayImage) = {
+  // returns image with just notes, just notes grayscale, and without notes
+  def separateNotes(input:GrayImage) = {
     val whiteBackground = input.brighten(130)
     val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
     val partiallyErased = whiteBackground.addWithCeiling(
       augmentedBinaryNonStaff.inverse)
-    (binaryNonStaff, partiallyErased)
+    (binaryNonStaff, whiteBackground, partiallyErased)
   }
 
   def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
@@ -647,27 +647,89 @@ object Ocr4Music {
     }
   }
 
+  def matchNoteTemplateWithBounds(combinedBounds:List[LabeledBoundingBox],
+      whiteBackground:GrayImage, noteTemplate:ColorImage, metrics:Metrics) {
+    var i = 0
+    combinedBounds.foreach { bound =>
+      val box = bound.box
+      val oldWidth  = (box.maxX - box.minX) * 2 // double so we have some margin
+      val oldHeight = (box.maxY - box.minY) * 2
+      val midX = (box.maxX - box.minX) / 2
+      val excerptX0 = (box.minX - oldWidth/4) max 0
+      val excerptY0 = (box.minY - oldHeight/4) max 0
+      val excerpt = whiteBackground.crop(
+        excerptX0, excerptY0, oldWidth, oldHeight)
+
+      // Differentiate axx + bx + c to get 2ax + b as slope
+      val slope = (2.0f * metrics.a * (midX - metrics.w / 2)) + metrics.b
+      // metrics.cSpacing * 1.5 / 100 = oldWidth / x; solve for x
+      val newWidth  = (excerpt.w * 100 / (metrics.cSpacing * 1.5f)).intValue
+      val newHeight = (excerpt.h * 100 / (metrics.cSpacing * 1.5f)).intValue
+      val resized = excerpt.resize(newWidth, newHeight, slope)
+
+      // Draw staff lines on excerpt image (after resizing it not before)
+      (0 until excerpt.w).foreach { excerptX =>
+        val x = excerptX + excerptX0 - (metrics.w / 2)
+        (-2 to 2).foreach { staffY =>
+          val a = metrics.a
+          val b = metrics.b + (staffY * metrics.bSpacing)
+          val c = metrics.c + (staffY * metrics.cSpacing)
+          val y = Math.round((a * x * x + b * x + c) + (metrics.h / 2)).intValue
+          val excerptY = y - excerptY0
+          if (excerptY >= 0 && excerptY < excerpt.h)
+            excerpt(excerptX, excerptY) = 0
+        }
+      }
+      excerpt.saveTo(new File("not_resized%d.png".format(i)))
+
+      // Draw staff lines on resized image
+      (0 until resized.w).foreach { resizedX =>
+        val excerptX = resizedX * excerpt.w / resized.w
+        val x = excerptX + excerptX0 - (metrics.w / 2)
+        (-2 to 2).foreach { staffY =>
+          val a = metrics.a
+          val b = metrics.b + (staffY * metrics.bSpacing)
+          val c = metrics.c + (staffY * metrics.cSpacing)
+          val slopeAdjustment =
+            (resizedX - resized.w/2) * slope * excerpt.h / resized.h
+          val y = (a * x * x + b * x + c) - slopeAdjustment + (metrics.h / 2)
+          val excerptY = y - excerptY0
+          val resizedY = (excerptY * resized.h / excerpt.h).intValue
+          if (resizedY >= 0 && resizedY < resized.h)
+            resized(resizedX, resizedY) = 0
+        }
+      }
+      resized.saveTo(new File("resized%d.png".format(i)))
+
+      i += 1
+    }
+  }
+
   def recognizeNotes(original:GrayImage, box:Annotation,
-      points:List[LabeledPoint], caseNum:Int) = {
+      points:List[LabeledPoint], caseNum:Int, noteTemplate:ColorImage) = {
     //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
     //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
-    val (justNotes, partiallyErased) = separateNotes(excerpt)
+    val (justNotes, whiteBackground, partiallyErased) = separateNotes(excerpt)
     partiallyErased.saveTo(new File("partially_erased.png"))
     justNotes.saveTo(new File("just_notes.png"))
+    whiteBackground.saveTo(new File("white_background.png"))
     val metrics = estimateMetrics(partiallyErased, caseNum)
 
     val translatedPoints = points.map { xy =>
       val LabeledPoint(label, originalX, originalY) = xy
       LabeledPoint(label, originalX - box.left, originalY - box.top)
     }
-    excerptLabeledPointsContext(excerpt, caseNum, translatedPoints, metrics)
+    excerptLabeledPointsContext(
+      whiteBackground, caseNum, translatedPoints, metrics)
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
     val labeledBounds = labelBounds(bounds, justNotes, metrics)
     val combinedBounds = combineNoteBounds(labeledBounds)
+    matchNoteTemplateWithBounds(
+      combinedBounds, whiteBackground, noteTemplate, metrics)
     val estimatedNotes = recognizeNotesFromBounds(combinedBounds, metrics)
     annotateNotes(estimatedNotes,
       annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds),
@@ -676,7 +738,7 @@ object Ocr4Music {
     //Set[Note]()
   }
 
-  def doRecognitionForEachBox {
+  def doRecognitionForEachBox(noteTemplate:ColorImage) {
     var globalPerformance = new Performance()
     val annotationsString:String =
       scala.io.Source.fromFile("boxes1.json").mkString
@@ -685,7 +747,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-if (caseNum == 4) {
+if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -707,7 +769,8 @@ if (caseNum == 4) {
       }
 
       val annotation = Annotation(left, top, width, height, annotatedNotes)
-      val estimatedNotes = recognizeNotes(original, annotation, points, caseNum)
+      val estimatedNotes = recognizeNotes(
+        original, annotation, points, caseNum, noteTemplate)
       val performance = calcPerformance(estimatedNotes, annotatedNotes)
       println("Case num %d: precision: %.2f, recall: %.2f".format(
         caseNum, performance.precision, performance.recall))
@@ -744,8 +807,8 @@ if (caseNum == 4) {
 
   def excerptLabeledPointsContext(image:GrayImage, caseNum:Int,
       points:List[LabeledPoint], metrics:Metrics) {
-    var pic0Option:Option[GrayImage] = None
-    var pic1Option:Option[GrayImage] = None
+    //var pic0Option:Option[GrayImage] = None
+    //var pic1Option:Option[GrayImage] = None
 
     var i = 0
     points.foreach { point =>
@@ -758,15 +821,15 @@ if (caseNum == 4) {
       val resized = excerpt.resize(100, 100, slope)
       val filename = "points/%s.%d.%d.png".format(point.label, caseNum, i)
       resized.saveTo(new File(filename))
-      if (i == 0)
+      /*if (i == 0)
         pic0Option = Some(resized)
       if (i == 5)
-        pic1Option = Some(resized)
+        pic1Option = Some(resized)*/
 
       i += 1
     }
 
-    if (caseNum == 4) {
+    /*if (caseNum == 4) {
       val Some(pic0) = pic0Option
       val Some(pic1) = pic1Option
 
@@ -798,53 +861,68 @@ if (caseNum == 4) {
         }
       }
       shiftedPic.saveTo(new File("points/shifted_pic.png"))
-    }
+    }*/
   }
 
-  def classifyNotesVsNonNotes {
-    val whitePixelToNumNotes = new Array[Int](100 * 100)
-    val whitePixelToNumNonNotes = new Array[Int](100 * 100)
-    val blackPixelToNumNotes = new Array[Int](100 * 100)
-    val blackPixelToNumNonNotes = new Array[Int](100 * 100)
-    var numNoteImages = 0
-    var numNonNoteImages = 0
-    var i = 0
+  def trainNoteTemplate : ColorImage = {
+    var sumValues = new GrayImage(100, 100)
+    var numImages = 0
     new File("points").listFiles.foreach { file =>
       val image = ColorImage.readFromFile(file).toGrayImage
       val isNote = "^[LS]".r.findFirstMatchIn(file.getName).isDefined
       if (isNote) {
-        (0 until (100 * 100)).foreach { i =>
-          val isBlack = (image.data(i) > 110)
-          if (isBlack)
-            blackPixelToNumNotes(i) += 1
-          else
-            whitePixelToNumNotes(i) += 1
+        (0 until 100).foreach { y =>
+          (0 until 100).foreach { x =>
+            sumValues(x, y) = sumValues(x, y) + image(x, y)
+          }
         }
-        numNoteImages += 1
-      } else {
-        (0 until (100 * 100)).foreach { i =>
-          val isBlack = (image.data(i) > 110)
-          if (isBlack)
-            blackPixelToNumNonNotes(i) += 1
-          else
-            whitePixelToNumNonNotes(i) += 1
-        }
-        numNonNoteImages += 1
+        numImages += 1
       }
-
-      val binarized = image.binarize(110)
-      binarized.saveTo(new File("binarized%d.png".format(i)))
-      i += 1
     }
-    val notePrior =
-      Math.log(numNoteImages.floatValue / (numNoteImages + numNonNoteImages))
-    val nonNotePrior =
-      Math.log(numNonNoteImages.floatValue / (numNoteImages + numNonNoteImages))
 
+    val meanValues = new GrayImage(100, 100)
+    (0 until 100).foreach { y =>
+      (0 until 100).foreach { x =>
+        meanValues(x, y) = sumValues(x, y) / numImages
+      }
+    }
+
+    val sumOfDevsSquared = new GrayImage(100, 100)
+    def square(x:Int) = { x * x }
     new File("points").listFiles.foreach { file =>
       val image = ColorImage.readFromFile(file).toGrayImage
-      var isNoteProb = 0.0
-      var isNonNoteProb = 0.0
+      val isNote = "^[LS]".r.findFirstMatchIn(file.getName).isDefined
+      if (isNote) {
+        (0 until 100).foreach { y =>
+          (0 until 100).foreach { x =>
+            sumOfDevsSquared(x, y) = sumOfDevsSquared(x, y) +
+              square(image(x, y) - meanValues(x, y))
+          }
+        }
+        numImages += 1
+      }
+    }
+
+    val stdDevs = new GrayImage(100, 100)
+    (0 until 100).foreach { y =>
+      (0 until 100).foreach { x =>
+        stdDevs(x, y) = Math.sqrt(sumOfDevsSquared(x, y) / numImages).intValue
+      }
+    }
+
+    val template = new ColorImage(100, 100)
+    (0 until 100).foreach { y =>
+      (0 until 100).foreach { x =>
+        //template(x, y) = (meanValues(x, y), 255 - (stdDevs(x, y) * 3), 0)
+        template(x, y) = (0, 255 - (stdDevs(x, y) * 3), 0)
+      }
+    }
+    template.saveTo(new File("template.png"))
+    template
+
+/*
+    new File("points").listFiles.foreach { file =>
+      val image = ColorImage.readFromFile(file).toGrayImage
       (0 until (100 * 100)).foreach { i =>
         val isBlack = (image.data(i) > 110)
         if (isBlack) {
@@ -863,12 +941,14 @@ if (caseNum == 4) {
         file, isNoteProb, isNonNoteProb,
         if (isNoteProb > isNonNoteProb) "YES" else "NO"))
     }
+*/
   }
 
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-      doRecognitionForEachBox
+      val noteTemplate = trainNoteTemplate
+      doRecognitionForEachBox(noteTemplate)
     } catch {
       case e: Exception => e.printStackTrace()
     }
