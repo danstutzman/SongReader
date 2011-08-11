@@ -587,7 +587,6 @@ object Ocr4Music {
     var lastNoteMidX = -99
     var staffX = -1
     var notes:List[Note] = Nil
-    val staffSeparation = metrics.cSpacing
     boundsSorted.foreach { bound =>
       val midX = (bound.box.maxX + bound.box.minX) / 2
       val midY = (bound.box.maxY + bound.box.minY) / 2
@@ -596,6 +595,7 @@ object Ocr4Music {
       val displacementY =
         metrics.a * xCentered * xCentered + metrics.b * xCentered + metrics.c
       val deskewedY = yCentered - displacementY
+      val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
       if (Math.abs(midX - lastNoteMidX) >= 10)
         staffX += 1
@@ -623,8 +623,10 @@ object Ocr4Music {
 
   def labelBounds(
       bounds:List[BoundingBox], justNotes:GrayImage, metrics:Metrics) = {
-    val units = metrics.cSpacing
     bounds.map { bound =>
+      val midX = (bound.maxX - bound.minX) / 2
+      val centeredX = midX - (metrics.w / 2)
+      val units = metrics.bSpacing * centeredX + metrics.cSpacing
       if (bound.maxX - bound.minX > units * 4)
         LabeledBoundingBox(NonNote, bound) // beam connecting eighth notes
       else if (bound.maxX - bound.minX > units * 5 / 4 &&
