@@ -168,13 +168,12 @@ object Ocr4Music {
   }
 
   def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
+    val aspectRatio = input.h / input.w.floatValue
     val params = QuadraticParameterSearch(
       ParameterSearch(-0.001f, 0.001f, 0.0001f), // A
-      //ParameterSearch(0.0f, 0.00001f, 0.1f), // A, to disable curvature
-      ParameterSearch(-1.0f, 1.01f, 0.01f), // B
-      ParameterSearch(-100.0f, 100.0f, 1.0f)) // C
-    // best to leave C step at 1; 0.5 gets weird every-other-pixel artifacts
-    val halfW = input.w / 2
+      //ParameterSearch(-0.00005f, 0.0f, 0.1f), // A, to disable curvature
+      ParameterSearch(-aspectRatio * 0.6f, aspectRatio * 0.6f, 0.005f), // B
+      ParameterSearch(-input.h.floatValue / 2, input.h.floatValue / 2, 0.25f)) // C
 
     val numASteps =
       Math.ceil((params.a.max - params.a.min) / params.a.step).intValue + 1
@@ -189,7 +188,6 @@ object Ocr4Music {
         val xCentered = x - input.w / 2
         val yCentered = y - input.h / 2
 
-        val halfW = input.w / 2
         var a = params.a.min
         var aSteps = 0
         while (a <= params.a.max) {
@@ -200,9 +198,11 @@ object Ocr4Music {
               yCentered - (a * xCentered * xCentered) - (b * xCentered)
             val cSteps = ((cSolved - params.c.min) / params.c.step).intValue
             if (cSteps >= 0 && cSteps < numCSteps) {
-              hough(aSteps * numBSteps * numCSteps +
-                                bSteps * numCSteps +
-                                            cSteps) += v
+              val i = aSteps * numBSteps * numCSteps + bSteps * numCSteps + cSteps
+              hough(i) += v
+              hough(i + 1) += v
+              hough(i + 2) += v
+              hough(i + 3) += v
             }
             b += params.b.step
             bSteps += 1
@@ -232,9 +232,8 @@ object Ocr4Music {
     val hough2 = new GrayImage(numCSteps, numBSteps)
     (0 until hough2.w).foreach { cSteps =>
       (0 until hough2.h).foreach { bSteps =>
-        hough2(cSteps, bSteps) = hough(bestASteps * numBSteps * numCSteps +
-                                                       bSteps * numCSteps +
-                                                                   cSteps)
+        val i = bestASteps * numBSteps * numCSteps + bSteps * numCSteps + cSteps
+        hough2(cSteps, bSteps) = hough(i)
       }
     }
 
@@ -253,14 +252,22 @@ object Ocr4Music {
       }
     }
 
+    // Look for the brightest sequence of 5 points all in a line,
+    // one of them being the brightest point found earlier
     var maxSum = -999999f
     var bestBOverCSlope = 0.0f
     var bestBrightestIsPointN = 0
     var bestStaffSeparationInCAxis = 0.0f
-    var staffSeparationInCAxis = 4.0f
-    while (staffSeparationInCAxis < 20.0f) {
-      var bOverCSlope = -0.5f
-      while (bOverCSlope < 0.5f) {
+    var staffSeparationInCAxis = 4.0f / params.c.step
+    while (staffSeparationInCAxis <= 20.0f / params.c.step) {
+      // 2.0f allows the b/c slope to trace over top of the lines corresponding
+      // with lines all emanating from one point.  On the other hand, a too small
+      // constant doesn't the distance between staffs to change much between the
+      // left side of the image and the right side.
+      val maxBOverCSlope = 1.9f * params.c.step / params.b.step / input.w
+      val minBOverCSlope = -maxBOverCSlope
+      var bOverCSlope = minBOverCSlope
+      while (bOverCSlope <= maxBOverCSlope) {
         (-2 to 2).foreach { brightestIsPointN =>
           var leftmost = -2 - brightestIsPointN
           var rightmost = 2 - brightestIsPointN
@@ -273,12 +280,12 @@ object Ocr4Music {
           val b1 =
             brightestBSteps + staffSeparationInCAxis * bOverCSlope * rightmost
           var bSteps = b0
-          var sum = 0.0f
+          var sum = 1.0f
           (leftmost to rightmost).foreach { n =>
-            val cSteps = (brightestCSteps +
+            val cSteps = Math.round(brightestCSteps +
               staffSeparationInCAxis * n).intValue
             val bSteps =
-              (brightestBSteps +
+              Math.round(brightestBSteps +
               staffSeparationInCAxis * bOverCSlope * n).intValue
             val v = hough2(cSteps, bSteps)
             sum += v
@@ -292,9 +299,9 @@ object Ocr4Music {
         }
         bOverCSlope += 0.01f
       }
-      staffSeparationInCAxis += 0.1f
+      staffSeparationInCAxis += 0.01f
     }
-    
+
     // Draw 5x5 square on brightest point
     (-2 to 2).foreach { bNeighbor =>
       (-2 to 2).foreach { cNeighbor =>
@@ -303,11 +310,11 @@ object Ocr4Music {
     }
 
     // Draw 3x3 squares around 5 points, with black dots in the center
-    (0 until 5).foreach { i =>
+    /*(0 until 5).foreach { i =>
       val offset = i - 2 - bestBrightestIsPointN
       val cCenter =
-        (brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
-      val bCenter = (brightestBSteps +
+        Math.round(brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
+      val bCenter = Math.round(brightestBSteps +
         bestStaffSeparationInCAxis * bestBOverCSlope * offset).intValue
       (-1 to 1).foreach { bNeighbor =>
         (-1 to 1).foreach { cNeighbor =>
@@ -315,7 +322,7 @@ object Ocr4Music {
         }
       }
       hough2(cCenter, bCenter) = 0
-    }
+    }*/
 
     // Scale down the hough2 image so it's between 0-255
     val max2 = hough2.data.max 
@@ -324,6 +331,7 @@ object Ocr4Music {
         hough2(c, b) = (hough2(c, b) * (250.0 / max2)).intValue
       }
     }
+    hough2.saveTo(new File("hough%d.png".format(caseNum)))
 
     val centerCSteps =
       brightestCSteps + bestStaffSeparationInCAxis * -bestBrightestIsPointN
@@ -338,14 +346,6 @@ object Ocr4Music {
     val centerB = centerBSteps * params.b.step + params.b.min
     val cSpacing = cSpacingSteps * params.c.step
     val bSpacing = bSpacingSteps * params.b.step
-
-    // now draw that slope on the image
-    /*(0 until hough2.w).foreach { cSteps =>
-      val bSteps = averageBOverCSlope * cSteps + averageBIntercept
-      if (bSteps >= 0 && bSteps < hough2.w)
-        hough2(cSteps, bSteps.intValue) = 255
-    }*/
-    hough2.saveTo(new File("hough2.png"))
 
     Metrics(input.w, input.h, bestA, centerB, centerC, cSpacing, bSpacing)
   }
@@ -716,20 +716,21 @@ object Ocr4Music {
     justNotes.saveTo(new File("just_notes.png"))
     whiteBackground.saveTo(new File("white_background.png"))
     val metrics = estimateMetrics(partiallyErased, caseNum)
+    demoStaffLines(excerpt, metrics, caseNum)
 
     val translatedPoints = points.map { xy =>
       val LabeledPoint(label, originalX, originalY) = xy
       LabeledPoint(label, originalX - box.left, originalY - box.top)
     }
-    excerptLabeledPointsContext(
-      whiteBackground, caseNum, translatedPoints, metrics)
+    //excerptLabeledPointsContext(
+    //  whiteBackground, caseNum, translatedPoints, metrics)
     val segments = scanSegments(justNotes)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
     val labeledBounds = labelBounds(bounds, justNotes, metrics)
     val combinedBounds = combineNoteBounds(labeledBounds)
-    matchNoteTemplateWithBounds(
-      combinedBounds, whiteBackground, noteTemplate, metrics)
+    //matchNoteTemplateWithBounds(
+    //  combinedBounds, whiteBackground, noteTemplate, metrics)
     val estimatedNotes = recognizeNotesFromBounds(combinedBounds, metrics)
     annotateNotes(estimatedNotes,
       annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds),
@@ -747,7 +748,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-if (caseNum == 0) {
+//if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -778,7 +779,7 @@ if (caseNum == 0) {
         globalPerformance.numCorrect + performance.numCorrect,
         globalPerformance.numIncorrect + performance.numIncorrect,
         globalPerformance.numMissing + performance.numMissing)
-}
+//}
 
       caseNum += 1
     }
@@ -862,6 +863,29 @@ if (caseNum == 0) {
       }
       shiftedPic.saveTo(new File("points/shifted_pic.png"))
     }*/
+  }
+
+
+  def demoStaffLines(excerpt:GrayImage, metrics:Metrics, caseNum:Int) {
+    val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
+    (-2 to 2).foreach { staffY =>
+      (0 until excerpt.w).foreach { xUncentered =>
+        val x = xUncentered - (excerpt.w / 2)
+        val a = metrics.a
+        val bOld = metrics.b + (staffY * metrics.bSpacing)
+        val cOld = metrics.c + (staffY * metrics.cSpacing)
+        val yOld = (a * x * x + bOld * x + cOld) + (excerpt.h / 2)
+        if (yOld >= 0 && Math.round(yOld * 4).intValue < demo.h)
+          demo(xUncentered * 4, Math.round(yOld * 4).intValue) = 255
+
+        /*val b = metrics.staffYToB(staffY + 2)
+        val c = metrics.staffYToC(staffY + 2)
+        val y = (a * x * x + b * x + c) + (excerpt.h / 2)
+        if (y >= 0 && Math.round(y * 4).intValue < demo.h)
+          demo(xUncentered * 4, Math.round(y * 4).intValue) = 255*/
+      }
+    }
+    demo.saveTo(new File("staff_lines%d.png".format(caseNum)))
   }
 
   def trainNoteTemplate : ColorImage = {
