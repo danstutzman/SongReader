@@ -178,8 +178,8 @@ object Ocr4Music {
     val aspectRatio = input.h / input.w.floatValue
     val params = QuadraticParameterSearch(
       ParameterSearch(-0.001f, 0.001f, 0.0001f), // A
-      //ParameterSearch(-0.00005f, 0.0f, 0.1f), // A, to disable curvature
-      ParameterSearch(-aspectRatio * 0.6f, aspectRatio * 0.6f, 0.005f), // B
+      //ParameterSearch(-0.00000f, 0.00005f, 0.1f), // A, to disable curvature
+      ParameterSearch(-aspectRatio * 0.6f, aspectRatio * 0.6f, aspectRatio / 100.0f), // B
       ParameterSearch(-input.h.floatValue / 2, input.h.floatValue / 2, 0.25f)) // C
 
     val numASteps =
@@ -204,12 +204,11 @@ object Ocr4Music {
             val cSolved =
               yCentered - (a * xCentered * xCentered) - (b * xCentered)
             val cSteps = ((cSolved - params.c.min) / params.c.step).intValue
-            if (cSteps >= 0 && cSteps < numCSteps) {
+            if (cSteps >= 4 && cSteps < numCSteps - 4) {
               val i = aSteps * numBSteps * numCSteps + bSteps * numCSteps + cSteps
-              hough(i) += v
-              hough(i + 1) += v
-              hough(i + 2) += v
-              hough(i + 3) += v
+              (-3 to 3).foreach { j =>
+                hough(i + j) += (v * (4 - Math.abs(j)))
+              }
             }
             b += params.b.step
             bSteps += 1
@@ -317,7 +316,7 @@ object Ocr4Music {
     }
 
     // Draw 3x3 squares around 5 points, with black dots in the center
-    /*(0 until 5).foreach { i =>
+    (0 until 5).foreach { i =>
       val offset = i - 2 - bestBrightestIsPointN
       val cCenter =
         Math.round(brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
@@ -329,7 +328,7 @@ object Ocr4Music {
         }
       }
       hough2(cCenter, bCenter) = 0
-    }*/
+    }
 
     // Scale down the hough2 image so it's between 0-255
     val max2 = hough2.data.max 
