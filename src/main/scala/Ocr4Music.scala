@@ -872,12 +872,13 @@ object Ocr4Music {
           (-8 to 8).foreach { noteY =>
             val newX = x + noteX
             val newY = y + noteY + Math.round(noteX * slope).intValue
-            if (newX >= 0 && newX < spots.w &&
-                newY >= 0 && newY < spots.h &&
-                (noteX * noteX) + 2 * (noteY * noteY) <
+            if ((noteX * noteX) + 2 * (noteY * noteY) <
                 staffSeparation * staffSeparation * 0.5f) {
-              val v = input(newX, newY)
-              sumFilled += (if (v > threshold) 0 else 1)
+              if (newX >= 0 && newX < spots.w &&
+                  newY >= 0 && newY < spots.h) {
+                val v = input(newX, newY)
+                sumFilled += (if (v > threshold) 0 else 1)
+              }
               opportunities += 1
             }
           }
