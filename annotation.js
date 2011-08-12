@@ -1,7 +1,7 @@
 $(document).ready(function() {
   $.ajax({
     type:'GET',
-    url:'/boxes.json',
+    url:'/boxes3.json',
     dataType: 'text',
     success: function(data) {
       var boxesJSON = JSON.parse(data);
