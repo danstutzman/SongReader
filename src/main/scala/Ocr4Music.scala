@@ -90,6 +90,13 @@ case class Metrics (
   val bSpacing:Float
 ) {}
 
+case class NoteColumn (
+  val skew:Int,
+  val x0:Int,
+  val x1:Int,
+  val strength:Int
+) {}
+
 object Ocr4Music {
   def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
     var argmaxIndex = 0
@@ -121,7 +128,7 @@ object Ocr4Music {
     average
   }
 
-  def maxVerticalSkewGivenWidth(width:Int) : Int = { width / 4 }
+  def maxVerticalSkewGivenWidth(width:Int) : Int = { width / 2 }
 
   def findBestSkew(image:GrayImage, x0:Int, x1:Int) : Int = {
     val maxSkew = maxVerticalSkewGivenWidth(image.w)
@@ -707,6 +714,233 @@ object Ocr4Music {
     }
   }
 
+  def demoExtremes(input:GrayImage, metrics:Metrics) {
+    val expectedNoteW = 15
+    val expectedNoteH = 10
+    val blackest = 50
+    val whitest = 100
+    val newImage = new ColorImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
+        newImage(x, y) = 
+          if (v > 255) (255, 0, 0)
+          else if (v < 0) (0, 0, 255)
+          else (v, v, v)
+      }
+    }
+    newImage.saveTo(new File("extremes.png"))
+
+    val matchImage = new GrayImage(input.w, input.h)
+    (-5 to 5).foreach { staffYDoubled =>
+      val x0 = expectedNoteW/2
+      val x1 = input.w - expectedNoteW/2
+      (x0 until x1).foreach { x =>
+        val xCentered = x - (input.w / 2)
+        val a = metrics.a
+        val b = metrics.b + (staffYDoubled * metrics.bSpacing / 2)
+        val c = metrics.c + (staffYDoubled * metrics.cSpacing / 2)
+        val y = Math.round(
+            (a * xCentered * xCentered + b * xCentered + c) + (input.h / 2)
+          ).intValue
+        if (y - expectedNoteH/2 >= 0 &&
+            y + expectedNoteH/2 < input.h) {
+          var sumDarkness = 0
+          var xWeight = 0
+          var yWeight = 0
+          (-expectedNoteH/2 until expectedNoteH/2).foreach { deltaY =>
+            (-expectedNoteW/2 until expectedNoteW/2).foreach { deltaX =>
+              val oldV = input(x + deltaX, y + deltaY)
+              val scaledV = (oldV - blackest) * 255 / (whitest - blackest)
+              val truncated =
+                (if (scaledV > 255) 0
+                else if (scaledV < 0) 255
+                else 255 - scaledV)
+              sumDarkness += truncated
+              xWeight += truncated * deltaX
+              yWeight += truncated * deltaY
+            }
+          }
+          val xAdjustment = xWeight /
+            (expectedNoteW * expectedNoteH * expectedNoteW)
+          val v = sumDarkness / (expectedNoteW * expectedNoteH)
+          val newY = staffYDoubled * metrics.cSpacing / 2 + (input.h / 2)
+          val yAdjustment = yWeight /
+            (expectedNoteW * expectedNoteH * expectedNoteH)
+          matchImage(x + xAdjustment / 3, newY.intValue + yAdjustment / 5) =
+            matchImage(x + xAdjustment / 3, newY.intValue + yAdjustment / 5) + v
+        }
+      }
+    }
+
+    matchImage.saveTo(new File("match.png"))
+  }
+
+  def findNoteColumns(justNotes:GrayImage, caseNum:Int) = {
+    val justNotesRotated = new GrayImage(justNotes.h, justNotes.w)
+    (0 until justNotesRotated.w).foreach { x =>
+      (0 until justNotesRotated.h).foreach { y =>
+        justNotesRotated(x, y) = justNotes(y, x)
+      }
+    }
+    val skewDemo = constructImageComparingSkews(justNotesRotated)
+    skewDemo.saveTo(new File("skew_demo%d.png".format(caseNum)))
+
+    val skewDemoSlope = new ColorImage(skewDemo.w, skewDemo.h)
+    (1 until skewDemo.h).foreach { y =>
+      (0 until skewDemo.w).foreach { x =>
+        val above = skewDemo(x, y - 1)
+        val below = skewDemo(x, y)
+        if (above > below)
+          skewDemoSlope(x, y) = ((above - below) * 2, 0, 0)
+        else
+          skewDemoSlope(x, y) = (0, 0, (below - above) * 3)
+      }
+    }
+    skewDemoSlope.saveTo(new File("skew_demo_slope%d.png".format(caseNum)))
+
+    var bestX = 0
+    var maxCombination = 0
+    (0 until skewDemo.w).foreach { x =>
+      var maxIncrease = 0
+      var maxDecrease = 0
+      (1 until skewDemo.h).foreach { y =>
+        val above = skewDemo(x, y - 1)
+        val below = skewDemo(x, y)
+        if (above > below) {
+          val increase = above - below
+          if (increase > maxIncrease)
+            maxIncrease = increase
+        }
+        else {
+          val decrease = below - above
+          if (decrease > maxDecrease)
+            maxDecrease = decrease
+        }
+      }
+      val combination = maxIncrease + maxDecrease
+      if (combination > maxCombination) {
+        maxCombination = combination
+        bestX = x
+      }
+    }
+    val bestSkew = bestX - skewDemo.w/2
+
+    var bestShift = 0
+    var maxContrast = 0
+    (4 to 30).foreach { shift =>
+      (1 until skewDemoSlope.h - shift).foreach { y0 =>
+        val y1 = y0 + shift
+        val y0Increase = skewDemoSlope(bestX, y0)._1
+        val y1Decrease = skewDemoSlope(bestX, y1)._3
+        val contrast = y0Increase + y1Decrease
+        if (contrast > maxContrast) {
+          maxContrast = contrast
+          bestShift = shift
+        }
+      }
+    }
+
+    var noteColumns:List[NoteColumn] = Nil
+    (1 until skewDemoSlope.h - bestShift).foreach { y0 =>
+      val y1 = y0 + bestShift
+      val y0Increase = skewDemoSlope(bestX, y0)._1
+      val y1Decrease = skewDemoSlope(bestX, y1)._3
+      val contrast = y0Increase + y1Decrease
+      if (y0Increase > 0 && y1Decrease > 0)
+        noteColumns =
+          NoteColumn(bestSkew, y0 + bestSkew / 2, y1 + bestSkew / 2,
+            y0Increase min y1Decrease) :: noteColumns
+    }
+    noteColumns
+  }
+
+  def demoNoteColumns(noteColumns:List[NoteColumn], input:GrayImage, caseNum:Int) {
+    val demoImage = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        var numColumnsInside = 0
+        noteColumns.foreach { noteColumn =>
+          val NoteColumn(skew, x0, x1, strength) = noteColumn
+          val xShifted = x + -skew * (y - input.h/2) / input.h/2
+          if (xShifted >= x0 && xShifted <= x1)
+            numColumnsInside += strength
+        }
+        demoImage(x, y) = input(x, y) + numColumnsInside / 2
+      }
+    }
+    demoImage.saveTo(new File("note_columns%d.png".format(caseNum)))
+  }
+
+  def findDarkSpots(input:GrayImage, metrics:Metrics, caseNum:Int) {
+    val threshold = 200
+    val spots = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        // Differentiate axx + bx + c to get 2ax + b as slope
+        val xCentered = x - metrics.w/2
+        val slope = (2.0f * metrics.a * xCentered) + metrics.b
+        val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
+
+        var sumFilled = 0
+        var opportunities = 0
+        (-8 to 8).foreach { noteX =>
+          (-8 to 8).foreach { noteY =>
+            val newX = x + noteX
+            val newY = y + noteY + Math.round(noteX * slope).intValue
+            if (newX >= 0 && newX < spots.w &&
+                newY >= 0 && newY < spots.h &&
+                (noteX * noteX) + 2 * (noteY * noteY) <
+                staffSeparation * staffSeparation * 0.5f) {
+              val v = input(newX, newY)
+              sumFilled += (if (v > threshold) 0 else 1)
+              opportunities += 1
+            }
+          }
+        }
+        val isNote = (sumFilled.floatValue / opportunities > 0.9f)
+        spots(x, y) = (if (isNote) 255 else 0)
+      }
+    }
+
+    val demo = new ColorImage(input.w, input.h)
+    (0 until spots.w).foreach { x =>
+      (0 until spots.h).foreach { y =>
+        val v = input(x, y)
+        demo(x, y) = (v, v, v)
+      }
+    }
+    (0 until spots.w).foreach { x =>
+      (0 until spots.h).foreach { y =>
+        val xCentered = x - metrics.w/2
+        val slope = (2.0f * metrics.a * xCentered) + metrics.b
+        val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
+        if (spots(x, y) == 255) {
+          (-8 to 8).foreach { noteX =>
+            (-8 to 8).foreach { noteY =>
+              val newX = x + noteX
+              val newY = y + noteY + Math.round(noteX * slope).intValue
+              if (newX >= 0 && newX < spots.w &&
+                  newY >= 0 && newY < spots.h &&
+                  (noteX * noteX) + 2 * (noteY * noteY) <
+                  staffSeparation * staffSeparation * 0.5f) {
+                demo(newX, newY) = (255, 0, 0)
+              }
+            }
+          }
+        }
+      }
+    }
+    (0 until spots.w).foreach { x =>
+      (0 until spots.h).foreach { y =>
+        if (spots(x, y) == 255) {
+          demo(x, y) = (255, 255, 0)
+        }
+      }
+    }
+    demo.saveTo(new File("dark_spots%d.png".format(caseNum)))
+  }
+
   def recognizeNotes(original:GrayImage, box:Annotation,
       points:List[LabeledPoint], caseNum:Int, noteTemplate:ColorImage) = {
     //val excerpt = original.crop(200, 50, 220, 75) // straight with notes
@@ -715,10 +949,15 @@ object Ocr4Music {
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
     val (justNotes, whiteBackground, partiallyErased) = separateNotes(excerpt)
     partiallyErased.saveTo(new File("partially_erased.png"))
-    justNotes.saveTo(new File("just_notes.png"))
-    whiteBackground.saveTo(new File("white_background.png"))
+    justNotes.saveTo(new File("just_notes%d.png".format(caseNum)))
+    whiteBackground.saveTo(new File("white_background.png%d".format(caseNum)))
     val metrics = estimateMetrics(partiallyErased, caseNum)
     demoStaffLines(excerpt, metrics, caseNum)
+
+    demoExtremes(excerpt, metrics)
+    val noteColumns = findNoteColumns(justNotes, caseNum)
+    demoNoteColumns(noteColumns, excerpt, caseNum)
+    findDarkSpots(whiteBackground, metrics, caseNum)
 
     val translatedPoints = points.map { xy =>
       val LabeledPoint(label, originalX, originalY) = xy
@@ -750,7 +989,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 0) {
+//if (caseNum == 9) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -874,11 +1113,11 @@ object Ocr4Music {
       (0 until excerpt.w).foreach { xUncentered =>
         val x = xUncentered - (excerpt.w / 2)
         val a = metrics.a
-        val bOld = metrics.b + (staffY * metrics.bSpacing)
-        val cOld = metrics.c + (staffY * metrics.cSpacing)
-        val yOld = (a * x * x + bOld * x + cOld) + (excerpt.h / 2)
-        if (yOld >= 0 && Math.round(yOld * 4).intValue < demo.h)
-          demo(xUncentered * 4, Math.round(yOld * 4).intValue) = 255
+        val b = metrics.b + (staffY * metrics.bSpacing)
+        val c = metrics.c + (staffY * metrics.cSpacing)
+        val y = (a * x * x + b * x + c) + (excerpt.h / 2)
+        if (y >= 0 && Math.round(y * 4).intValue < demo.h)
+          demo(xUncentered * 4, Math.round(y * 4).intValue) = 255
 
         /*val b = metrics.staffYToB(staffY + 2)
         val c = metrics.staffYToC(staffY + 2)
