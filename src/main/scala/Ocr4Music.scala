@@ -604,17 +604,17 @@ object Ocr4Music {
       val deskewedY = yCentered - displacementY
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
-      if (Math.abs(midX - lastNoteMidX) >= 10)
+      if (Math.abs(midX - lastNoteMidX) >= 12)
         staffX += 1
         
       // guess it's a triad if bounding box is tall
-      if (bound.box.maxY - bound.box.minY > staffSeparation * 2.5) {
+      if (bound.box.maxY - bound.box.minY > staffSeparation * 2) {
         notes = Note(staffX, Math.round(staffY) - 2) ::
                 Note(staffX, Math.round(staffY)) ::
                 Note(staffX, Math.round(staffY) + 2) :: notes
       // guess it's a third if bounding box is a little tall
       } else if (bound.box.maxY - bound.box.minY >
-                 staffSeparation * 1.8) {
+                 staffSeparation * 1) {
         notes = Note(staffX, Math.round(staffY) - 1) ::
                 Note(staffX, Math.round(staffY) + 1) :: notes
       } else {
@@ -631,28 +631,12 @@ object Ocr4Music {
   def labelBounds(
       bounds:List[BoundingBox], justNotes:GrayImage, metrics:Metrics) = {
     bounds.map { bound =>
-      val midX = (bound.maxX - bound.minX) / 2
-      val centeredX = midX - (metrics.w / 2)
-      val units = metrics.bSpacing * centeredX + metrics.cSpacing
-      if (bound.maxX - bound.minX > units * 4)
+      val w = bound.maxX - bound.minX + 1
+      val h = bound.maxY - bound.minY + 1
+      if (w / h > 6)
         LabeledBoundingBox(NonNote, bound) // beam connecting eighth notes
-      else if (bound.maxX - bound.minX > units * 5 / 4 &&
-          bound.maxY - bound.minY >= units * 1 / 2) {
-        var sum = 0
-        (bound.minX until bound.maxX).foreach { x =>
-          (bound.minY until bound.maxY).foreach { y =>
-            sum += justNotes(x, y)
-          }
-        }
-        val filledness = 1.0f -
-          (sum / (bound.maxX - bound.minX) / (bound.maxY - bound.minY) / 255.0f)
-        if (filledness >= 0.5f)
-          LabeledBoundingBox(Note, bound)
-        else
-          LabeledBoundingBox(NonNote, bound)
-      }
       else
-        LabeledBoundingBox(NonNote, bound)
+        LabeledBoundingBox(Note, bound)
     }
   }
 
@@ -872,7 +856,7 @@ object Ocr4Music {
     demoImage.saveTo(new File("note_columns%d.png".format(caseNum)))
   }
 
-  def findDarkSpots(input:GrayImage, metrics:Metrics, caseNum:Int) {
+  def findDarkSpots(input:GrayImage, metrics:Metrics, caseNum:Int) = {
     val threshold = 200
     val spots = new GrayImage(input.w, input.h)
     (0 until input.h).foreach { y =>
@@ -939,6 +923,14 @@ object Ocr4Music {
       }
     }
     demo.saveTo(new File("dark_spots%d.png".format(caseNum)))
+
+    val darkSpots = new GrayImage(input.w, input.h)
+    (0 until spots.w).foreach { x =>
+      (0 until spots.h).foreach { y =>
+        darkSpots(x, y) = (if (spots(x, y) == 255) 0 else 1)
+      }
+    }
+    darkSpots
   }
 
   def recognizeNotes(original:GrayImage, box:Annotation,
@@ -957,15 +949,15 @@ object Ocr4Music {
     demoExtremes(excerpt, metrics)
     val noteColumns = findNoteColumns(justNotes, caseNum)
     demoNoteColumns(noteColumns, excerpt, caseNum)
-    findDarkSpots(whiteBackground, metrics, caseNum)
+    val darkSpots = findDarkSpots(whiteBackground, metrics, caseNum)
 
-    val translatedPoints = points.map { xy =>
-      val LabeledPoint(label, originalX, originalY) = xy
-      LabeledPoint(label, originalX - box.left, originalY - box.top)
-    }
+    //val translatedPoints = points.map { xy =>
+    //  val LabeledPoint(label, originalX, originalY) = xy
+    //  LabeledPoint(label, originalX - box.left, originalY - box.top)
+    //}
     //excerptLabeledPointsContext(
     //  whiteBackground, caseNum, translatedPoints, metrics)
-    val segments = scanSegments(justNotes)
+    val segments = scanSegments(darkSpots)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
     val labeledBounds = labelBounds(bounds, justNotes, metrics)
@@ -989,7 +981,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 9) {
+//if (caseNum == 8) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
