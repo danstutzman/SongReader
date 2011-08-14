@@ -945,7 +945,7 @@ object Ocr4Music {
       separateNotes(excerpt)
     partiallyErased.saveTo(new File("partially_erased.png"))
     justNotes.saveTo(new File("just_notes%d.png".format(caseNum)))
-    whiteBackground.saveTo(new File("white_background.png%d".format(caseNum)))
+    whiteBackground.saveTo(new File("white_background%d.png".format(caseNum)))
     val metrics = estimateMetrics(partiallyErased, caseNum)
     val yCorrection = determineYCorrection(
       partiallyErased, augmentedBinaryNonStaff, metrics, caseNum)
