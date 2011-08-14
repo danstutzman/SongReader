@@ -171,7 +171,7 @@ object Ocr4Music {
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
     val partiallyErased = whiteBackground.addWithCeiling(
       augmentedBinaryNonStaff.inverse)
-    (binaryNonStaff, whiteBackground, partiallyErased)
+    (binaryNonStaff, whiteBackground, partiallyErased, augmentedBinaryNonStaff)
   }
 
   def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
@@ -356,7 +356,8 @@ object Ocr4Music {
     Metrics(input.w, input.h, bestA, centerB, centerC, cSpacing, bSpacing)
   }
 
-  def annotateCenterY(input:GrayImage, metrics:Metrics) : ColorImage = {
+  def annotateCenterY(input:GrayImage, metrics:Metrics, yCorrection:Array[Float])
+      : ColorImage = {
     val annotated = input.toColorImage
     val color = (255,255,255) // white
     val halfW = annotated.w / 2
@@ -365,7 +366,8 @@ object Ocr4Music {
         val a = metrics.a
         val b = metrics.b + (staffY * metrics.bSpacing)
         val c = metrics.c + (staffY * metrics.cSpacing)
-        val y = Math.round((a * x * x + b * x + c) + (input.h / 2)).intValue
+        val y = Math.round((a * x * x + b * x + c) + yCorrection(x + halfW) +
+          (input.h / 2)).intValue
         if (y >= 0 && y < annotated.h)
           annotated(x + halfW, y) = (255, 255, 255)
       }
@@ -582,8 +584,8 @@ object Ocr4Music {
     boundsCombined
   }
 
-  def recognizeNotesFromBounds(
-      bounds:List[LabeledBoundingBox], metrics:Metrics) = {
+  def recognizeNotesFromBounds(bounds:List[LabeledBoundingBox], metrics:Metrics,
+      yCorrection:Array[Float]) = {
     val boundsSorted = bounds.sort { (bound1, bound2) =>
       val midX1 = (bound1.box.maxX + bound1.box.minX) / 2
       val midX2 = (bound2.box.maxX + bound2.box.minX) / 2
@@ -600,7 +602,7 @@ object Ocr4Music {
       val yCentered = midY - metrics.h / 2
       val displacementY =
         metrics.a * xCentered * xCentered + metrics.b * xCentered + metrics.c
-      val deskewedY = yCentered - displacementY
+      val deskewedY = yCentered - displacementY - yCorrection(midX)
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
       if (Math.abs(midX - lastNoteMidX) >= 12)
@@ -939,16 +941,19 @@ object Ocr4Music {
     //val excerpt = original.crop(540, 180, 60, 60) // diagonal down
     //val excerpt = original.crop(0, 55, 40, 90) // diagonal up
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
-    val (justNotes, whiteBackground, partiallyErased) = separateNotes(excerpt)
+    val (justNotes, whiteBackground, partiallyErased, augmentedBinaryNonStaff) =
+      separateNotes(excerpt)
     partiallyErased.saveTo(new File("partially_erased.png"))
     justNotes.saveTo(new File("just_notes%d.png".format(caseNum)))
     whiteBackground.saveTo(new File("white_background.png%d".format(caseNum)))
     val metrics = estimateMetrics(partiallyErased, caseNum)
-    demoStaffLines(excerpt, metrics, caseNum)
+    val yCorrection = determineYCorrection(
+      partiallyErased, augmentedBinaryNonStaff, metrics, caseNum)
+    demoStaffLines(excerpt, metrics, yCorrection, caseNum)
 
-    demoExtremes(excerpt, metrics)
-    val noteColumns = findNoteColumns(justNotes, caseNum)
-    demoNoteColumns(noteColumns, excerpt, caseNum)
+    //demoExtremes(excerpt, metrics)
+    //val noteColumns = findNoteColumns(justNotes, caseNum)
+    //demoNoteColumns(noteColumns, excerpt, caseNum)
     val darkSpots = findDarkSpots(whiteBackground, metrics, caseNum)
 
     //val translatedPoints = points.map { xy =>
@@ -964,10 +969,11 @@ object Ocr4Music {
     val combinedBounds = combineNoteBounds(labeledBounds)
     //matchNoteTemplateWithBounds(
     //  combinedBounds, whiteBackground, noteTemplate, metrics)
-    val estimatedNotes = recognizeNotesFromBounds(combinedBounds, metrics)
+    val estimatedNotes = recognizeNotesFromBounds(
+      combinedBounds, metrics, yCorrection)
     annotateNotes(estimatedNotes,
-      annotateBounds(annotateCenterY(excerpt, metrics), labeledBounds),
-      caseNum)
+      annotateBounds(annotateCenterY(excerpt, metrics, yCorrection),
+        labeledBounds), caseNum)
     estimatedNotes
     //Set[Note]()
   }
@@ -981,7 +987,7 @@ object Ocr4Music {
     var caseNum = 0
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotationsJson.foreach { annotationJson =>
-//if (caseNum == 8) {
+//if (caseNum == 0) {
       val left = annotationJson("left").asInstanceOf[Int]
       val top = annotationJson("top").asInstanceOf[Int]
       val width = annotationJson("width").asInstanceOf[Int]
@@ -1099,7 +1105,8 @@ object Ocr4Music {
   }
 
 
-  def demoStaffLines(excerpt:GrayImage, metrics:Metrics, caseNum:Int) {
+  def demoStaffLines(excerpt:GrayImage, metrics:Metrics, yCorrection:Array[Float],
+      caseNum:Int) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
     (-2 to 2).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
@@ -1107,7 +1114,8 @@ object Ocr4Music {
         val a = metrics.a
         val b = metrics.b + (staffY * metrics.bSpacing)
         val c = metrics.c + (staffY * metrics.cSpacing)
-        val y = (a * x * x + b * x + c) + (excerpt.h / 2)
+        val y = (a * x * x + b * x + c) + yCorrection(xUncentered) +
+          (excerpt.h / 2)
         if (y >= 0 && Math.round(y * 4).intValue < demo.h)
           demo(xUncentered * 4, Math.round(y * 4).intValue) = 255
 
@@ -1119,6 +1127,85 @@ object Ocr4Music {
       }
     }
     demo.saveTo(new File("staff_lines%d.png".format(caseNum)))
+  }
+
+  def determineYCorrection(
+      partiallyErased:GrayImage, augmentedBinaryNonStaff:GrayImage,
+      metrics:Metrics, caseNum:Int) = {
+    val justStaff = new GrayImage(partiallyErased.w, partiallyErased.h)
+
+    // white background
+    (0 until partiallyErased.h).foreach { y =>
+      (0 until partiallyErased.w).foreach { x =>
+        justStaff(x, y) = 255
+      }
+    }
+
+    val yCorrection = new Array[Float](partiallyErased.w)
+    (0 until partiallyErased.w).foreach { xUncentered =>
+      var sumDarkestYNeighbor = 0
+      var encounteredNote = false
+      var numDarkestYNeighbors = 0
+      (-2 to 2).foreach { staffY =>
+        val x = xUncentered - (partiallyErased.w / 2)
+        val a = metrics.a
+        val b = metrics.b + (staffY * metrics.bSpacing)
+        val c = metrics.c + (staffY * metrics.cSpacing)
+        val y = Math.round(
+          (a * x * x + b * x + c) + (partiallyErased.h / 2)).intValue
+        val staffSeparation = ((x * metrics.bSpacing) + metrics.cSpacing).intValue
+        if (y >= staffSeparation/2 && y < justStaff.h - staffSeparation/2) {
+          var darkestYNeighbor = 0
+          var maxDarkness = 0
+          (-staffSeparation/2 to staffSeparation/2).foreach { yNeighbor =>
+            if (augmentedBinaryNonStaff(xUncentered, y + yNeighbor) != 0) {
+              val v = 255 - partiallyErased(xUncentered, y + yNeighbor)
+              justStaff(xUncentered, y + yNeighbor) = 255 - v
+              if (v > maxDarkness) {
+                maxDarkness = v
+                darkestYNeighbor = yNeighbor
+              }
+            }
+            else
+              encounteredNote = true
+          }
+          if (!encounteredNote) {
+            sumDarkestYNeighbor += darkestYNeighbor
+            numDarkestYNeighbors += 1
+          }
+        }
+      }
+
+      if (numDarkestYNeighbors == 5) {
+        val averageY = sumDarkestYNeighbor / 5.0f
+        //justStaff(xUncentered, 10) = 150
+        //justStaff(xUncentered, (averageY * 5).intValue + 10) = 0
+        yCorrection(xUncentered) = averageY
+      }
+      else
+        yCorrection(xUncentered) = 0.0f
+    }
+    justStaff.saveTo(new File("line_strength.png".format(caseNum)))
+
+    val smoothedYCorrection = new Array[Float](partiallyErased.w)
+    (0 until partiallyErased.w).foreach { outerX =>
+      val x0 = outerX - 20 max 0
+      val x1 = outerX + 20 min partiallyErased.w
+      var values:List[Float] = Nil
+      (x0 until x1).foreach { innerX =>
+        if (yCorrection(innerX) != 0.0f) {
+          values = yCorrection(innerX) :: values
+        }
+      }
+      val median =
+        if (values.length > 0)
+          values.sort { (v1, v2) => v1 < v2 }(values.length / 2)
+        else
+          0.0f
+      smoothedYCorrection(outerX) = median
+    }
+
+    smoothedYCorrection
   }
 
   def trainNoteTemplate : ColorImage = {
