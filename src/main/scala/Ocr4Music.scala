@@ -47,6 +47,16 @@ case class LabeledPoint (
   val y:Int
 ) {}
 
+case class Annotation (
+  val caseNum:Int,
+  val left:Int,
+  val top:Int,
+  val width:Int,
+  val height:Int,
+  val points:List[LabeledPoint],
+  val notes:Set[Note]
+) {}
+
 class Performance (
   val numCorrect:Int,
   val numIncorrect:Int,
@@ -87,6 +97,14 @@ case class NoteColumn (
   val x0:Int,
   val x1:Int,
   val strength:Int
+) {}
+
+case class TemplateMatch (
+  val x:Int,
+  val y:Int,
+  val w:Int,
+  val h:Int,
+  val slope:Float
 ) {}
 
 object Ocr4Music {
@@ -927,130 +945,6 @@ object Ocr4Music {
     darkSpots
   }
 
-  def moveAroundHalfNote(templateOld:GrayImage, input:GrayImage) {
-    val blackest = 50
-    val whitest = 100
-
-    val inputAdjusted = new GrayImage(input.w, input.h)
-    (0 until input.h).foreach { y =>
-      (0 until input.w).foreach { x =>
-        val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
-        inputAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
-      }
-    }
-    inputAdjusted.saveTo(new File("input_adjusted.png"))
-
-/*
-    val templateAdjusted = new GrayImage(template.w, template.h)
-    (0 until template.h).foreach { y =>
-      (0 until template.w).foreach { x =>
-        val v = (template(x, y) - blackest) * 255 / (whitest - blackest)
-        templateAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
-      }
-    }*/
-    val template =
-      ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
-
-    def scaleTemplate(scale:Int) = {
-      val templateScaled = new GrayImage(
-        Math.ceil(template.w / scale).intValue,
-        Math.ceil(template.h / scale).intValue)
-      (0 until templateScaled.h).foreach { templateScaledY =>
-        (0 until templateScaled.w).foreach { templateScaledX =>
-          val y0 = templateScaledY * scale
-          val y1 = ((templateScaledY + 1) * scale) min template.h
-          val x0 = templateScaledX * scale
-          val x1 = ((templateScaledX + 1) * scale) min template.w
-          var sum = 0
-          (y0 until y1).foreach { templateY =>
-            (x0 until x1).foreach { templateX =>
-              sum += template(templateX, templateY)
-            }
-          }
-          val mean = sum / (y1 - y0) / (x1 - x0)
-          templateScaled(templateScaledX, templateScaledY) = mean
-        }
-      }
-      templateScaled
-    }
-
-val demo2 = new ColorImage(input.w, input.h)
-    var bestScale = 0
-    var bestInputCenterX = 0
-    var bestInputCenterY = 0
-    var maxMeanBlackMatch = 0
-    (20 to 20).foreach { scale =>
-      val templateScaled = scaleTemplate(scale)
-
-      //(36 to 46).foreach { imageCenterY =>
-      //(57 to 61).foreach { imageCenterY =>
-      (27 to 71).foreach { imageCenterY =>
-        //(192 to 222).foreach { imageCenterX =>
-        (96 to 600).foreach { imageCenterX =>
-          var sumBlackMatch = 0
-          var sumWhiteMatch = 0
-          var sumBlackMatchX = 0
-          var sumBlackMatchY = 0
-          (0 until templateScaled.h).foreach { templateScaledY =>
-            (0 until templateScaled.w).foreach { templateScaledX =>
-              val inputV = inputAdjusted(
-                imageCenterX + templateScaledX - templateScaled.w / 2,
-                imageCenterY + templateScaledY - templateScaled.h / 2)
-              val templateV = templateScaled(templateScaledX, templateScaledY)
-              sumBlackMatch += (255 - inputV) * (255 - templateV)
-              sumWhiteMatch += inputV * templateV
-              sumBlackMatchX += (255 - inputV) * (255 - templateV) *
-                (templateScaledX - templateScaled.w / 2)
-              sumBlackMatchY += (255 - inputV) * (255 - templateV) *
-                (templateScaledY - templateScaled.h / 2)
-            }
-          }
-          val meanBlackMatch = sumBlackMatch /
-            (255 * templateScaled.w * templateScaled.h)
-          val meanWhiteMatch = sumWhiteMatch /
-            (255 * templateScaled.w * templateScaled.h)
-          val meanBlackMatchX = Math.abs(sumBlackMatchX /
-            (255 * templateScaled.w * templateScaled.h * templateScaled.w))
-          val meanBlackMatchY = Math.abs(sumBlackMatchY /
-            (255 * templateScaled.w * templateScaled.h * templateScaled.h))
-if (meanBlackMatch > 50 && meanWhiteMatch > 50 && meanBlackMatchY < 3 && meanBlackMatchX < 5)
-  demo2(imageCenterX, imageCenterY) = (meanBlackMatch * 2, 0, meanWhiteMatch * 2)
-
-          if (meanBlackMatch > maxMeanBlackMatch) {
-            maxMeanBlackMatch = meanBlackMatch
-            bestScale = scale
-            bestInputCenterX = imageCenterX
-            bestInputCenterY = imageCenterY
-          }
-        }
-      }
-    }
-demo2.saveTo(new File("demo2.png"))
-
-    val demo = new ColorImage(input.w, input.h)
-    (0 until input.h).foreach { y =>
-      (0 until input.w).foreach { x =>
-        val v = inputAdjusted(x, y)
-        demo(x, y) = (v, v, v)
-      }
-    }
-
-    val templateScaled = scaleTemplate(bestScale)
-    (0 until templateScaled.h).foreach { templateScaledY =>
-      (0 until templateScaled.w).foreach { templateScaledX =>
-        val inputV = inputAdjusted(
-          bestInputCenterX + templateScaledX - templateScaled.w / 2,
-          bestInputCenterY + templateScaledY - templateScaled.h / 2)
-        val templateV = templateScaled(templateScaledX, templateScaledY)
-        demo(bestInputCenterX + templateScaledX - templateScaled.w / 2,
-             bestInputCenterY + templateScaledY - templateScaled.h / 2) =
-          (templateV, 255, 255)
-      }
-    }
-
-    demo.saveTo(new File("half_note_match.png"))
-  }
-
   def recognizeNotes(original:GrayImage, box:Annotation,
       points:List[LabeledPoint], caseNum:Int) = {
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
@@ -1066,9 +960,6 @@ demo2.saveTo(new File("demo2.png"))
 
     val darkSpots = findDarkSpots(whiteBackground, metrics, caseNum)
 
-    val halfNote = original.crop(231, 208, 11, 10)
-    moveAroundHalfNote(halfNote, excerpt)
-
     val segments = scanSegments(darkSpots)
     val segmentGroups = groupTouchingSegments(segments)
     val bounds = boundSegmentGroups(segmentGroups)
@@ -1081,16 +972,6 @@ demo2.saveTo(new File("demo2.png"))
         labeledBounds), caseNum)
     estimatedNotes
   }
-
-  case class Annotation (
-    val caseNum:Int,
-    val left:Int,
-    val top:Int,
-    val width:Int,
-    val height:Int,
-    val points:List[LabeledPoint],
-    val notes:Set[Note]
-  ) {}
 
   def loadBoxesJson(filename:String) : List[Annotation] = {
     val annotationsString:String =
@@ -1228,8 +1109,8 @@ demo2.saveTo(new File("demo2.png"))
   }
 
 
-  def demoStaffLines(excerpt:GrayImage, metrics:Metrics, yCorrection:Array[Float],
-      caseNum:Int) {
+  def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
+      yCorrection:Array[Float], caseNum:Int) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
     (-2 to 2).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
@@ -1276,7 +1157,8 @@ demo2.saveTo(new File("demo2.png"))
         val c = metrics.c + (staffY * metrics.cSpacing)
         val y = Math.round(
           (a * x * x + b * x + c) + (partiallyErased.h / 2)).intValue
-        val staffSeparation = ((x * metrics.bSpacing) + metrics.cSpacing).intValue
+        val staffSeparation =
+          ((x * metrics.bSpacing) + metrics.cSpacing).intValue
         if (y >= staffSeparation/2 && y < justStaff.h - staffSeparation/2) {
           var darkestYNeighbor = 0
           var maxDarkness = 0
@@ -1331,10 +1213,197 @@ demo2.saveTo(new File("demo2.png"))
     smoothedYCorrection
   }
 
+  def scaleTemplate(template:GrayImage, templateW:Int, templateH:Int) = {
+    val templateScaled = new GrayImage(templateW, templateH)
+    (0 until templateH).foreach { templateScaledY =>
+      (0 until templateW).foreach { templateScaledX =>
+        val y0 = templateScaledY * template.h / templateH
+        val y1 =
+          ((templateScaledY + 1) * template.h / templateH) min template.h
+        val x0 = templateScaledX * template.w / templateW
+        val x1 =
+          ((templateScaledX + 1) * template.w / templateW) min template.w
+        var sum = 0
+        (y0 until y1).foreach { templateY =>
+          (x0 until x1).foreach { templateX =>
+            sum += template(templateX, templateY)
+          }
+        }
+        val mean = sum / (y1 - y0) / (x1 - x0)
+        templateScaled(templateScaledX, templateScaledY) = mean
+      }
+    }
+    templateScaled
+  }
+
+  def findBestMatch(template:GrayImage, input:GrayImage,
+      expectedX:Int, expectedY:Int,
+      metrics:Metrics, metricsX:Int, metricsY:Int) = {
+
+    val blackest = 50
+    val whitest = 100
+
+    val inputAdjusted = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
+        inputAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
+      }
+    }
+    inputAdjusted.saveTo(new File("input_adjusted.png"))
+
+// Differentiate axx + bx + c to get 2ax + b as slope
+val xCentered = (expectedX - metricsX) - metrics.w / 2
+val slope = (2.0f * metrics.a * xCentered) + metrics.b
+val staffSeparation =
+  ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
+
+    var bestTemplateW = 0
+    var bestTemplateH = 0
+    var bestInputCenterX = 0
+    var bestInputCenterY = 0
+    var maxMeanBlackMatch = 0
+    var maxCombinedMatch = 0
+    (staffSeparation to staffSeparation * 3).foreach { templateW =>
+    (staffSeparation to staffSeparation * 3/2).foreach { templateH =>
+      val templateScaled = scaleTemplate(template, templateW, templateH)
+
+      (expectedY - 2 to expectedY + 2).foreach { inputCenterY =>
+        (expectedX - 2 to expectedX + 2).foreach { inputCenterX =>
+          var sumBlackMatch = 0
+          var sumWhiteMatch = 0
+          var sumBlackMatchX = 0
+          var sumBlackMatchY = 0
+          (0 until templateScaled.h).foreach { templateScaledY =>
+            (0 until templateScaled.w).foreach { templateScaledX =>
+              val yAdjustment = Math.round(
+                (templateScaledX - templateScaled.w / 2) * slope).intValue
+              val inputV = inputAdjusted(
+                inputCenterX + templateScaledX - templateScaled.w / 2,
+                inputCenterY + yAdjustment +
+                  templateScaledY - templateScaled.h / 2)
+              val templateV = templateScaled(templateScaledX, templateScaledY)
+              sumBlackMatch += (255 - inputV) * (255 - templateV)
+              sumWhiteMatch += inputV * templateV
+              sumBlackMatchX += (255 - inputV) * (255 - templateV) *
+                (templateScaledX - templateScaled.w / 2)
+              sumBlackMatchY += (255 - inputV) * (255 - templateV) *
+                (templateScaledY - templateScaled.h / 2)
+            }
+          }
+          val meanBlackMatch = sumBlackMatch /
+            (255 * templateScaled.w * templateScaled.h)
+          val meanWhiteMatch = sumWhiteMatch /
+            (255 * templateScaled.w * templateScaled.h)
+          val meanBlackMatchX = Math.abs(sumBlackMatchX /
+            (255 * templateScaled.w * templateScaled.h * templateScaled.w))
+          val meanBlackMatchY = Math.abs(sumBlackMatchY /
+            (255 * templateScaled.w * templateScaled.h * templateScaled.h))
+//if (meanBlackMatch > 50 && meanWhiteMatch > 50 && meanBlackMatchY < 3 && meanBlackMatchX < 5)
+  ////demo2(inputCenterX, inputCenterY) = (meanBlackMatch * 2, 0, meanWhiteMatch * 2)
+
+          val combinedMatch = meanBlackMatch + meanWhiteMatch
+          //if (meanBlackMatch > maxMeanBlackMatch) {
+          if (combinedMatch > maxCombinedMatch) {
+            //maxMeanBlackMatch = meanBlackMatch
+            maxCombinedMatch = combinedMatch
+            bestTemplateW = templateW
+            bestTemplateH = templateH
+            bestInputCenterX = inputCenterX
+            bestInputCenterY = inputCenterY
+          }
+        }
+      }
+    }
+    }
+    TemplateMatch(
+      bestInputCenterX, bestInputCenterY, bestTemplateW, bestTemplateH,
+      slope)
+  }
+
+  def drawTemplateMatch(_match:TemplateMatch, output:ColorImage,
+      template:GrayImage) {
+    val blackest = 50
+    val whitest = 100
+    val templateScaled = scaleTemplate(template, _match.w, _match.h)
+    (0 until templateScaled.h).foreach { templateScaledY =>
+      (0 until templateScaled.w).foreach { templateScaledX =>
+        val yAdjustment = Math.round((templateScaledX - templateScaled.w / 2) *
+          _match.slope).intValue
+        val inputV = output(
+          _match.x + templateScaledX - templateScaled.w / 2,
+          _match.y + yAdjustment +
+            templateScaledY - templateScaled.h / 2)._1
+        val v2 = (inputV - blackest) * 255 / (whitest - blackest)
+        val inputAdjustedV = (if (v2 < 0) 0 else if (v2 > 255) 255 else v2)
+        val templateV = templateScaled(templateScaledX, templateScaledY)
+        val blackMatch = (255 - inputAdjustedV) * (255 - templateV)
+        val whiteMatch = inputAdjustedV * templateV
+        val demoX = (_match.x + templateScaledX - templateScaled.w / 2)
+        val demoY = (_match.y + yAdjustment +
+          templateScaledY - templateScaled.h / 2)
+        val (r, g, b) = output(demoX, demoY)
+        output(demoX, demoY) = (blackMatch / 255, 0, whiteMatch / 255)
+      }
+    }
+  }
+
+  def loadLabeledPoints() {
+    val annotations = loadBoxesJson("boxes1.json")
+    val templateS = 
+      ColorImage.readFromFile(new File("templateS.png")).toGrayImage
+    val templateSa =
+      ColorImage.readFromFile(new File("templateSa.png")).toGrayImage
+    val templateL = 
+      ColorImage.readFromFile(new File("templateL.png")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
+    val demo = original.toColorImage
+    var i = 0
+    annotations.foreach { annotation =>
+//if (annotation.caseNum == 6) {
+      val excerpt = original.crop(annotation.left, annotation.top,
+        annotation.width, annotation.height)
+      val (_, _, partiallyErased, _) = separateNotes(excerpt)
+      val metrics = estimateMetrics(partiallyErased, annotation.caseNum)
+      val x0 = annotation.left
+      // a*(x-x0)^2 + b*(x-x0) + c
+      // => a*x*x - 2*a*x*x0 + a*x0*x0 + b*x + b*x0 + c
+      // => a*x*x + (b - 2*a*x0) + (c + a*x0*x0 + b*x0)
+      //val absoluteMetrics = Metrics(metrics.w, metrics.h, metrics.a,
+      //  metrics.b - 2 * metrics.a * x0,
+      //  metrics.c + metrics.a * x0 * x0 + metrics.b * x0,
+      //  metrics.cSpacing, metrics.bSpacing)
+      annotation.points.foreach { point =>
+        if (point.label == "S" || point.label == "Sa" || point.label == "L") {
+//if (i == 1) {
+          println(point)
+          val template = point.label match {
+            case "S" => templateS
+            case "Sa" => templateSa
+            case "L" => templateL
+          }
+          // adjust point.y because the label points are the upper-left coords
+          // for the "L" label, not the center of it
+          val _match =
+            findBestMatch(template, original,
+            point.x + 3, point.y + 2,
+            metrics, annotation.left, annotation.top)
+          println(_match)
+          drawTemplateMatch(_match, demo, template)
+          demo.saveTo(new File("find_best_match.png"))
+//}
+          i += 1
+        }
+      }
+//}
+    }
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-      doRecognitionForEachBox()
+      loadLabeledPoints()
+      //doRecognitionForEachBox()
     } catch {
       case e: Exception => e.printStackTrace()
     }
