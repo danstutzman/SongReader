@@ -1268,18 +1268,24 @@ object Ocr4Music {
         (staffSeparation, staffSeparation * 3/2)
       case "#" =>
         (staffSeparation * 3, staffSeparation * 5)
+      case "b" | "N" =>
+        (staffSeparation * 2, staffSeparation * 4)
     }
     val (minX, maxX) = label match {
       case "L" | "S" | "Sa" | "Sb" =>
         (expectedX - 2, expectedX + 2)
       case "#" =>
         (expectedX - 3, expectedX + 3)
+      case "b" | "N" =>
+        (expectedX - 2, expectedX + 2)
     }
     val (minY, maxY) = label match {
       case "L" | "S" | "Sa" | "Sb" =>
         (expectedY - 2, expectedY + 2)
       case "#" =>
         (expectedY + 0, expectedY + 10)
+      case "b" | "N" =>
+        (expectedY + 2, expectedY + 2)
     }
 
     var bestTemplateW = 0
@@ -1382,11 +1388,15 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templateL.png")).toGrayImage
     val templateSharp = 
       ColorImage.readFromFile(new File("templateSharp.png")).toGrayImage
+    val templateFlat =
+      ColorImage.readFromFile(new File("templateFlat.png")).toGrayImage
+    val templateNatural =
+      ColorImage.readFromFile(new File("templateNatural.png")).toGrayImage
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     val demo = original.toColorImage
     var i = 0
     annotations.foreach { annotation =>
-//if (annotation.caseNum == 0) {
+//if (annotation.caseNum == 9) {
       val excerpt = original.crop(annotation.left, annotation.top,
         annotation.width, annotation.height)
       val (_, _, partiallyErased, _) = separateNotes(excerpt)
@@ -1401,7 +1411,7 @@ object Ocr4Music {
       //  metrics.cSpacing, metrics.bSpacing)
       annotation.points.foreach { point =>
         if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
-            point.label == "#") {
+            point.label == "#" || point.label == "b"  || point.label == "N") {
 //if (i == 1) {
           println(point)
           val template = point.label match {
@@ -1409,6 +1419,8 @@ object Ocr4Music {
             case "Sa" => templateSa
             case "L" => templateL
             case "#" => templateSharp
+            case "b" => templateFlat
+            case "N" => templateNatural
           }
           // adjust point.y because the label points are the upper-left coords
           // for the "L" label, not the center of it
