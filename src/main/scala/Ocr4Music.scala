@@ -1242,7 +1242,7 @@ object Ocr4Music {
 
   def findBestMatch(template:GrayImage, input:GrayImage,
       expectedX:Int, expectedY:Int,
-      metrics:Metrics, metricsX:Int, metricsY:Int) = {
+      metrics:Metrics, metricsX:Int, metricsY:Int, label:String) = {
 
     val blackest = 50
     val whitest = 100
@@ -1256,11 +1256,31 @@ object Ocr4Music {
     }
     inputAdjusted.saveTo(new File("input_adjusted.png"))
 
-// Differentiate axx + bx + c to get 2ax + b as slope
-val xCentered = (expectedX - metricsX) - metrics.w / 2
-val slope = (2.0f * metrics.a * xCentered) + metrics.b
-val staffSeparation =
-  ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
+    // Differentiate axx + bx + c to get 2ax + b as slope
+    val xCentered = (expectedX - metricsX) - metrics.w / 2
+    val slope = (2.0f * metrics.a * xCentered) + metrics.b
+    val staffSeparation =
+      ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
+
+    val (minW, maxW) = (staffSeparation, staffSeparation * 3)
+    val (minH, maxH) = label match {
+      case "L" | "S" | "Sa" | "Sb" =>
+        (staffSeparation, staffSeparation * 3/2)
+      case "#" =>
+        (staffSeparation * 3, staffSeparation * 5)
+    }
+    val (minX, maxX) = label match {
+      case "L" | "S" | "Sa" | "Sb" =>
+        (expectedX - 2, expectedX + 2)
+      case "#" =>
+        (expectedX - 3, expectedX + 3)
+    }
+    val (minY, maxY) = label match {
+      case "L" | "S" | "Sa" | "Sb" =>
+        (expectedY - 2, expectedY + 2)
+      case "#" =>
+        (expectedY + 0, expectedY + 10)
+    }
 
     var bestTemplateW = 0
     var bestTemplateH = 0
@@ -1268,12 +1288,12 @@ val staffSeparation =
     var bestInputCenterY = 0
     var maxMeanBlackMatch = 0
     var maxCombinedMatch = 0
-    (staffSeparation to staffSeparation * 3).foreach { templateW =>
-    (staffSeparation * 3 to staffSeparation * 5).foreach { templateH =>
+    (minW to maxW).foreach { templateW =>
+    (minH to maxH).foreach { templateH =>
       val templateScaled = scaleTemplate(template, templateW, templateH)
 
-      (expectedY + 0 to expectedY + 10).foreach { inputCenterY =>
-        (expectedX - 3 to expectedX + 3).foreach { inputCenterX =>
+      (minY to maxY).foreach { inputCenterY =>
+        (minX to maxX).foreach { inputCenterX =>
           var sumBlackMatch = 0
           var sumWhiteMatch = 0
           var sumBlackMatchX = 0
@@ -1380,8 +1400,8 @@ val staffSeparation =
       //  metrics.c + metrics.a * x0 * x0 + metrics.b * x0,
       //  metrics.cSpacing, metrics.bSpacing)
       annotation.points.foreach { point =>
-        //if (point.label == "S" || point.label == "Sa" || point.label == "L") {
-        if (point.label == "#") {
+        if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
+            point.label == "#") {
 //if (i == 1) {
           println(point)
           val template = point.label match {
@@ -1395,7 +1415,7 @@ val staffSeparation =
           val _match =
             findBestMatch(template, original,
             point.x + 3, point.y + 2,
-            metrics, annotation.left, annotation.top)
+            metrics, annotation.left, annotation.top, point.label)
           println(_match)
           drawTemplateMatch(_match, demo, template)
           demo.saveTo(new File("find_best_match.png"))
