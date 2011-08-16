@@ -1223,14 +1223,18 @@ object Ocr4Music {
         val x0 = templateScaledX * template.w / templateW
         val x1 =
           ((templateScaledX + 1) * template.w / templateW) min template.w
-        var sum = 0
-        (y0 until y1).foreach { templateY =>
-          (x0 until x1).foreach { templateX =>
-            sum += template(templateX, templateY)
+        if (y1 > y0 && x1 > x0) {
+          var sum = 0
+          (y0 until y1).foreach { templateY =>
+            (x0 until x1).foreach { templateX =>
+              sum += template(templateX, templateY)
+            }
           }
+            val mean = sum / (y1 - y0) / (x1 - x0)
+          templateScaled(templateScaledX, templateScaledY) = mean
         }
-        val mean = sum / (y1 - y0) / (x1 - x0)
-        templateScaled(templateScaledX, templateScaledY) = mean
+        else
+          templateScaled(templateScaledX, templateScaledY) = 255
       }
     }
     templateScaled
@@ -1265,11 +1269,11 @@ val staffSeparation =
     var maxMeanBlackMatch = 0
     var maxCombinedMatch = 0
     (staffSeparation to staffSeparation * 3).foreach { templateW =>
-    (staffSeparation to staffSeparation * 3/2).foreach { templateH =>
+    (staffSeparation * 3 to staffSeparation * 5).foreach { templateH =>
       val templateScaled = scaleTemplate(template, templateW, templateH)
 
-      (expectedY - 2 to expectedY + 2).foreach { inputCenterY =>
-        (expectedX - 2 to expectedX + 2).foreach { inputCenterX =>
+      (expectedY + 0 to expectedY + 10).foreach { inputCenterY =>
+        (expectedX - 3 to expectedX + 3).foreach { inputCenterX =>
           var sumBlackMatch = 0
           var sumWhiteMatch = 0
           var sumBlackMatchX = 0
@@ -1356,11 +1360,13 @@ val staffSeparation =
       ColorImage.readFromFile(new File("templateSa.png")).toGrayImage
     val templateL = 
       ColorImage.readFromFile(new File("templateL.png")).toGrayImage
+    val templateSharp = 
+      ColorImage.readFromFile(new File("templateSharp.png")).toGrayImage
     val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     val demo = original.toColorImage
     var i = 0
     annotations.foreach { annotation =>
-//if (annotation.caseNum == 6) {
+//if (annotation.caseNum == 0) {
       val excerpt = original.crop(annotation.left, annotation.top,
         annotation.width, annotation.height)
       val (_, _, partiallyErased, _) = separateNotes(excerpt)
@@ -1374,13 +1380,15 @@ val staffSeparation =
       //  metrics.c + metrics.a * x0 * x0 + metrics.b * x0,
       //  metrics.cSpacing, metrics.bSpacing)
       annotation.points.foreach { point =>
-        if (point.label == "S" || point.label == "Sa" || point.label == "L") {
+        //if (point.label == "S" || point.label == "Sa" || point.label == "L") {
+        if (point.label == "#") {
 //if (i == 1) {
           println(point)
           val template = point.label match {
             case "S" => templateS
             case "Sa" => templateSa
             case "L" => templateL
+            case "#" => templateSharp
           }
           // adjust point.y because the label points are the upper-left coords
           // for the "L" label, not the center of it
