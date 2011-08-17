@@ -6,6 +6,7 @@ import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 import com.twitter.json.Json
 import scala.collection.mutable.ArraySeq
+import scala.io.Source
 
 object Colors {
   val underflow = (0, 0, 255) // blue (too cold)
@@ -104,10 +105,25 @@ case class TemplateMatch (
   val y:Int,
   val w:Int,
   val h:Int,
-  val slope:Float
-) {}
+  val blackMatch:Int,
+  val whiteMatch:Int,
+  val blackMatchX:Int,
+  val blackMatchY:Int,
+  val slope:Float,
+  val label:String
+) {
+  def move(deltaX:Int, deltaY:Int) = {
+    TemplateMatch(x + deltaX, y + deltaY, w, h, blackMatch, whiteMatch,
+      blackMatchX, blackMatchY, slope, label)
+  }
+}
 
 object Ocr4Music {
+  def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
+    val p = new java.io.PrintWriter(f)
+    try { op(p) } finally { p.close() }
+  }
+
   def findArgmax[A,B <% Ordered[B]](inputs:Seq[A], block:A=>B) : (A, Int) = {
     var argmaxIndex = 0
     var argmax = inputs(0)
@@ -651,64 +667,6 @@ object Ocr4Music {
     }
   }
 
-  def matchNoteTemplateWithBounds(combinedBounds:List[LabeledBoundingBox],
-      whiteBackground:GrayImage, metrics:Metrics) {
-    var i = 0
-    combinedBounds.foreach { bound =>
-      val box = bound.box
-      val oldWidth  = (box.maxX - box.minX) * 2 // double so we have some margin
-      val oldHeight = (box.maxY - box.minY) * 2
-      val midX = (box.maxX - box.minX) / 2
-      val excerptX0 = (box.minX - oldWidth/4) max 0
-      val excerptY0 = (box.minY - oldHeight/4) max 0
-      val excerpt = whiteBackground.crop(
-        excerptX0, excerptY0, oldWidth, oldHeight)
-
-      // Differentiate axx + bx + c to get 2ax + b as slope
-      val slope = (2.0f * metrics.a * (midX - metrics.w / 2)) + metrics.b
-      // metrics.cSpacing * 1.5 / 100 = oldWidth / x; solve for x
-      val newWidth  = (excerpt.w * 100 / (metrics.cSpacing * 1.5f)).intValue
-      val newHeight = (excerpt.h * 100 / (metrics.cSpacing * 1.5f)).intValue
-      val resized = excerpt.resize(newWidth, newHeight, slope)
-
-      // Draw staff lines on excerpt image (after resizing it not before)
-      (0 until excerpt.w).foreach { excerptX =>
-        val x = excerptX + excerptX0 - (metrics.w / 2)
-        (-2 to 2).foreach { staffY =>
-          val a = metrics.a
-          val b = metrics.b + (staffY * metrics.bSpacing)
-          val c = metrics.c + (staffY * metrics.cSpacing)
-          val y = Math.round((a * x * x + b * x + c) + (metrics.h / 2)).intValue
-          val excerptY = y - excerptY0
-          if (excerptY >= 0 && excerptY < excerpt.h)
-            excerpt(excerptX, excerptY) = 0
-        }
-      }
-      excerpt.saveTo(new File("not_resized%d.png".format(i)))
-
-      // Draw staff lines on resized image
-      (0 until resized.w).foreach { resizedX =>
-        val excerptX = resizedX * excerpt.w / resized.w
-        val x = excerptX + excerptX0 - (metrics.w / 2)
-        (-2 to 2).foreach { staffY =>
-          val a = metrics.a
-          val b = metrics.b + (staffY * metrics.bSpacing)
-          val c = metrics.c + (staffY * metrics.cSpacing)
-          val slopeAdjustment =
-            (resizedX - resized.w/2) * slope * excerpt.h / resized.h
-          val y = (a * x * x + b * x + c) - slopeAdjustment + (metrics.h / 2)
-          val excerptY = y - excerptY0
-          val resizedY = (excerptY * resized.h / excerpt.h).intValue
-          if (resizedY >= 0 && resizedY < resized.h)
-            resized(resizedX, resizedY) = 0
-        }
-      }
-      resized.saveTo(new File("resized%d.png".format(i)))
-
-      i += 1
-    }
-  }
-
   def demoExtremes(input:GrayImage, metrics:Metrics) {
     val expectedNoteW = 15
     val expectedNoteH = 10
@@ -1010,9 +968,9 @@ object Ocr4Music {
 
   def doRecognitionForEachBox() {
     var globalPerformance = new Performance()
-    val annotations = loadBoxesJson("boxes1.json")
+    val annotations = loadBoxesJson("boxes3.json")
     var caseNum = 0
-    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
     annotations.foreach { annotation =>
       if (annotation.caseNum == 0) {
         val estimatedNotes = recognizeNotes(
@@ -1240,9 +1198,42 @@ object Ocr4Music {
     templateScaled
   }
 
+  def findBestMatchAtPoint(template:GrayImage, input:GrayImage,
+      expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
+    findBestMatch(template, input,
+      (expectedX, expectedX), (expectedY, expectedY), metrics, label)
+  }
+
+  def findBestMatchAroundPoint(template:GrayImage, input:GrayImage,
+      expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
+
+    val (minX, maxX) = label match {
+      case "L" | "S" | "Sa" | "Sb" | "2" =>
+        (expectedX - 2, expectedX + 2)
+      case "#" =>
+        (expectedX - 3, expectedX + 3)
+      case "b" | "N" =>
+        (expectedX - 2, expectedX + 2)
+    }
+    val (minY, maxY) = label match {
+      case "L" | "S" | "Sa" | "Sb" =>
+        (expectedY - 2, expectedY + 2)
+      case "2" =>
+        (expectedY - 2, expectedY + 4)
+      case "#" =>
+        (expectedY + 0, expectedY + 10)
+      case "b" | "N" =>
+        (expectedY + 2, expectedY + 2)
+    }
+
+    findBestMatch(template, input, (minX, maxX), (minY, maxY), metrics, label)
+  }
+
   def findBestMatch(template:GrayImage, input:GrayImage,
-      expectedX:Int, expectedY:Int,
-      metrics:Metrics, metricsX:Int, metricsY:Int, label:String) = {
+      minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
+      metrics:Metrics, label:String) = {
+    val (minX, maxX) = minXmaxX
+    val (minY, maxY) = minYmaxY
 
     val blackest = 50
     val whitest = 100
@@ -1257,42 +1248,30 @@ object Ocr4Music {
     inputAdjusted.saveTo(new File("input_adjusted.png"))
 
     // Differentiate axx + bx + c to get 2ax + b as slope
-    val xCentered = (expectedX - metricsX) - metrics.w / 2
+    val expectedX = (minX + maxX) / 2
+    val xCentered = expectedX - metrics.w / 2
     val slope = (2.0f * metrics.a * xCentered) + metrics.b
     val staffSeparation =
       ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
 
     val (minW, maxW) = (staffSeparation, staffSeparation * 3)
     val (minH, maxH) = label match {
-      case "L" | "S" | "Sa" | "Sb" =>
+      case "L" | "S" | "Sa" | "Sb" | "2" =>
         (staffSeparation, staffSeparation * 3/2)
       case "#" =>
         (staffSeparation * 3, staffSeparation * 5)
       case "b" | "N" =>
         (staffSeparation * 2, staffSeparation * 4)
     }
-    val (minX, maxX) = label match {
-      case "L" | "S" | "Sa" | "Sb" =>
-        (expectedX - 2, expectedX + 2)
-      case "#" =>
-        (expectedX - 3, expectedX + 3)
-      case "b" | "N" =>
-        (expectedX - 2, expectedX + 2)
-    }
-    val (minY, maxY) = label match {
-      case "L" | "S" | "Sa" | "Sb" =>
-        (expectedY - 2, expectedY + 2)
-      case "#" =>
-        (expectedY + 0, expectedY + 10)
-      case "b" | "N" =>
-        (expectedY + 2, expectedY + 2)
-    }
 
     var bestTemplateW = 0
     var bestTemplateH = 0
     var bestInputCenterX = 0
     var bestInputCenterY = 0
-    var maxMeanBlackMatch = 0
+    var bestBlackMatch = 0
+    var bestWhiteMatch = 0
+    var bestBlackMatchX = 0
+    var bestBlackMatchY = 0
     var maxCombinedMatch = 0
     (minW to maxW).foreach { templateW =>
     (minH to maxH).foreach { templateH =>
@@ -1333,14 +1312,16 @@ object Ocr4Music {
   ////demo2(inputCenterX, inputCenterY) = (meanBlackMatch * 2, 0, meanWhiteMatch * 2)
 
           val combinedMatch = meanBlackMatch + meanWhiteMatch
-          //if (meanBlackMatch > maxMeanBlackMatch) {
           if (combinedMatch > maxCombinedMatch) {
-            //maxMeanBlackMatch = meanBlackMatch
             maxCombinedMatch = combinedMatch
-            bestTemplateW = templateW
-            bestTemplateH = templateH
             bestInputCenterX = inputCenterX
             bestInputCenterY = inputCenterY
+            bestTemplateW = templateW
+            bestTemplateH = templateH
+            bestBlackMatch = meanBlackMatch
+            bestWhiteMatch = meanWhiteMatch
+            bestBlackMatchX = meanBlackMatchX
+            bestBlackMatchY = meanBlackMatchY
           }
         }
       }
@@ -1348,7 +1329,8 @@ object Ocr4Music {
     }
     TemplateMatch(
       bestInputCenterX, bestInputCenterY, bestTemplateW, bestTemplateH,
-      slope)
+      bestBlackMatch, bestWhiteMatch, bestBlackMatchX, bestBlackMatchY,
+      slope, label)
   }
 
   def drawTemplateMatch(_match:TemplateMatch, output:ColorImage,
@@ -1378,8 +1360,23 @@ object Ocr4Music {
     }
   }
 
+  def printMatch(writer:java.io.PrintWriter, point:TemplateMatch) {
+    writer.print(point.x)
+    writer.print("," + point.y)
+    writer.print("," + point.w)
+    writer.print("," + point.h)
+    writer.print("," + point.blackMatch)
+    writer.print("," + point.whiteMatch)
+    writer.print("," + point.blackMatchX)
+    writer.print("," + point.blackMatchY)
+    writer.print("," + (point.blackMatch + point.whiteMatch))
+    writer.print("," + point.slope)
+    writer.print("," + point.label)
+    writer.println()
+  }
+
   def loadLabeledPoints() {
-    val annotations = loadBoxesJson("boxes1.json")
+    val annotations = loadBoxesJson("boxes3.json")
     val templateS = 
       ColorImage.readFromFile(new File("templateS.png")).toGrayImage
     val templateSa =
@@ -1392,16 +1389,56 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templateFlat.png")).toGrayImage
     val templateNatural =
       ColorImage.readFromFile(new File("templateNatural.png")).toGrayImage
-    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
+    val templateQ =
+      ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
+    val templateHalf =
+      ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
     val demo = original.toColorImage
     var i = 0
+printToFile(new File("points.csv")) { writer =>
+  writer.println(List("x", "y", "w", "h", "blackMatch", "whiteMatch",
+    "blackMatchX", "blackMatchY", "blackPlusWhiteMatch", "slope", "label"
+    ).reduceLeft(_ + "," + _))
     annotations.foreach { annotation =>
-//if (annotation.caseNum == 9) {
+if (annotation.caseNum == 0) {
       val excerpt = original.crop(annotation.left, annotation.top,
         annotation.width, annotation.height)
-      val (_, _, partiallyErased, _) = separateNotes(excerpt)
+      val (_, _, partiallyErased, augmentedBinaryNonStaff) =
+        separateNotes(excerpt)
       val metrics = estimateMetrics(partiallyErased, annotation.caseNum)
-      val x0 = annotation.left
+
+      var badPoints:List[TemplateMatch] = Nil
+List("L", "2").foreach { label =>
+      val template = label match {
+        case "L" => templateL
+        case "2" => templateHalf
+      }
+      (0 until augmentedBinaryNonStaff.h).foreach { y =>
+        println("label", label, "y=", y)
+        (0 until augmentedBinaryNonStaff.w).foreach { x =>
+          // remove the bands at the top and the bottom, which are probably
+          // artifacts from the vertical blurring
+          if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
+              augmentedBinaryNonStaff(x, y) == 0) {
+            val newPoint = 
+              findBestMatchAtPoint(template, excerpt, x, y, metrics, label).
+              move(annotation.left, annotation.top)
+            //if (newPoint.blackMatch >= 109) {
+            //    newPoint.whiteMatch >= 69) {
+            //if (newPoint.blackMatch + newPoint.whiteMatch >= 190) {
+              badPoints = newPoint :: badPoints
+              //drawTemplateMatch(newPoint, demo, templateQ)
+            //}
+          }
+        }
+      }
+}
+
+      // for each point
+      //    run template centered at that point
+      //    and output results
+      //val x0 = annotation.left
       // a*(x-x0)^2 + b*(x-x0) + c
       // => a*x*x - 2*a*x*x0 + a*x0*x0 + b*x + b*x0 + c
       // => a*x*x + (b - 2*a*x0) + (c + a*x0*x0 + b*x0)
@@ -1409,11 +1446,15 @@ object Ocr4Music {
       //  metrics.b - 2 * metrics.a * x0,
       //  metrics.c + metrics.a * x0 * x0 + metrics.b * x0,
       //  metrics.cSpacing, metrics.bSpacing)
+/*
+      var goodPoints:List[TemplateMatch] = Nil
       annotation.points.foreach { point =>
-        if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
-            point.label == "#" || point.label == "b"  || point.label == "N") {
+        //if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
+        //    point.label == "#" || point.label == "b"  || point.label == "N") {
+        //if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
+        //    point.label == "2") {
+        if (point.label == "2") {
 //if (i == 1) {
-          println(point)
           val template = point.label match {
             case "S" => templateS
             case "Sa" => templateSa
@@ -1421,29 +1462,112 @@ object Ocr4Music {
             case "#" => templateSharp
             case "b" => templateFlat
             case "N" => templateNatural
+            case "2" => templateHalf
           }
           // adjust point.y because the label points are the upper-left coords
           // for the "L" label, not the center of it
           val _match =
-            findBestMatch(template, original,
-            point.x + 3, point.y + 2,
-            metrics, annotation.left, annotation.top, point.label)
-          println(_match)
+            findBestMatchAroundPoint(template, excerpt,
+            point.x + 3 - annotation.left, point.y + 2 - annotation.top,
+            metrics, point.label).move(annotation.left, annotation.top)
+          goodPoints = _match :: goodPoints
           drawTemplateMatch(_match, demo, template)
           demo.saveTo(new File("find_best_match.png"))
 //}
           i += 1
         }
       }
-//}
-    }
-  }
+*/
+/*
+      badPointsFiltered.foreach { point =>
+        drawTemplateMatch(point, demo, templateQ)
+      }
+      demo.saveTo(new File("find_best_match.png"))
+*/
+
+      badPoints.foreach { point =>
+        printMatch(writer, point)
+      }
+      //goodPoints.foreach { point =>
+      //  printMatch(writer, point, "true")
+      //}
+} // end if caseNum == whatever
+  } // end foreach annotation
+  } // end printToFile
+  } // end function
 
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-      loadLabeledPoints()
+//      loadLabeledPoints()
       //doRecognitionForEachBox()
+
+if (true) {
+      val templateQ =
+        ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
+      val templateHalf =
+        ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
+
+      var points:List[TemplateMatch] = Nil
+      for (line <- Source.fromFile(new File("points.csv")).getLines()) {
+        val values = line.split(",")
+        if (values(0) != "x") {
+          val x = values(0).toInt
+          val y = values(1).toInt
+          val w = values(2).toInt
+          val h = values(3).toInt
+          val blackMatch = values(4).toInt
+          val whiteMatch = values(5).toInt
+          val blackMatchX = values(6).toInt
+          val blackMatchY = values(7).toInt
+          // values(8) is black + white match
+          val slope = values(9).toFloat
+          val label = values(10)
+          val point = TemplateMatch(x, y, w, h, blackMatch, whiteMatch,
+            blackMatchX, blackMatchY, slope, label)
+          points = point :: points
+        }
+      }
+
+      val pointsFiltered = points.filter { point1 =>
+        var hasBetterNeighbor = false
+        points.foreach { point2 =>
+          if (Math.abs(point2.x - point1.x) <= 1 &&
+              Math.abs(point2.y - point1.y) <= 1 &&
+              point2.label == point1.label) {
+            val score1 = point1.blackMatch + point1.whiteMatch
+            val score2 = point2.blackMatch + point2.whiteMatch
+            if (score1 < score2)
+              hasBetterNeighbor = true
+            else if (score1 == score2 && point1.y < point2.y)
+              hasBetterNeighbor = true
+            else if (score1 == score2 &&
+                point1.y == point2.y && point1.x < point2.x)
+              hasBetterNeighbor = true
+          }
+        }
+
+        val strongEnough = point1.label match {
+          case "L" => point1.blackMatch > 102
+          case "2" => point1.blackMatch > 65 && point1.whiteMatch > 90
+        }
+
+        !hasBetterNeighbor && strongEnough
+      }
+
+      val original =
+        ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
+      val demo = original.toColorImage
+      pointsFiltered.foreach { point =>
+        val template = point.label match {
+          case "L" => templateQ
+          case "2" => templateHalf
+        }
+        drawTemplateMatch(point, demo, template)
+      }
+      demo.saveTo(new File("find_best_match.png"))
+}
+
     } catch {
       case e: Exception => e.printStackTrace()
     }
