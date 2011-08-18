@@ -1259,22 +1259,16 @@ object Ocr4Music {
       ColorImage.readFromFile(new File(imageFilename)).toGrayImage
     val annotations = List(loadAnnotationJson(caseName))
 
-    val templateS = 
-      ColorImage.readFromFile(new File("templateS.png")).toGrayImage
-    val templateSa =
-      ColorImage.readFromFile(new File("templateSa.png")).toGrayImage
-    val templateL = 
-      ColorImage.readFromFile(new File("templateL.png")).toGrayImage
     val templateSharp = 
-      ColorImage.readFromFile(new File("templateSharp.png")).toGrayImage
+      ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
     val templateFlat =
-      ColorImage.readFromFile(new File("templateFlat.png")).toGrayImage
+      ColorImage.readFromFile(new File("templates/flat.png")).toGrayImage
     val templateNatural =
-      ColorImage.readFromFile(new File("templateNatural.png")).toGrayImage
-    val templateQ =
-      ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
-    val templateHalf =
-      ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
+      ColorImage.readFromFile(new File("templates/natural.png")).toGrayImage
+    val templateBlackHead =
+      ColorImage.readFromFile(new File("templates/black_head.png")).toGrayImage
+    val templateWhiteHead =
+      ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
 
     var i = 0
     annotations.foreach { annotation =>
@@ -1296,14 +1290,14 @@ object Ocr4Music {
       }
       inputAdjusted.saveTo(new File("input_adjusted.png"))
 
-      val templateLScaledMatrix = (0 to 40).map { templateH =>
+      val templateBlackHeadScaledMatrix = (0 to 40).map { templateH =>
         (0 to 40).map { templateW =>
-          scaleTemplate(templateL, templateW, templateH)
+          scaleTemplate(templateBlackHead, templateW, templateH)
         }.toArray
       }.toArray
-      val templateHalfScaledMatrix = (0 to 40).map { templateH =>
+      val templateWhiteHeadScaledMatrix = (0 to 40).map { templateH =>
         (0 to 40).map { templateW =>
-          scaleTemplate(templateHalf, templateW, templateH)
+          scaleTemplate(templateWhiteHead, templateW, templateH)
         }.toArray
       }.toArray
 
@@ -1311,8 +1305,8 @@ object Ocr4Music {
       List("L", "2").foreach { label =>
         printf("Processing %s...\n", label)
         val templateScaledMatrix = label match {
-          case "L" => templateLScaledMatrix
-          case "2" => templateHalfScaledMatrix
+          case "L" => templateBlackHeadScaledMatrix
+          case "2" => templateWhiteHeadScaledMatrix
         }
         (0 until augmentedBinaryNonStaff.h).foreach { y =>
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
@@ -1322,12 +1316,7 @@ object Ocr4Music {
                 augmentedBinaryNonStaff(x, y) == 0) {
               val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
                   (x, x), (y, y), metrics, label)
-              //if (newPoint.blackMatch >= 109) {
-              //    newPoint.whiteMatch >= 69) {
-              //if (newPoint.blackMatch + newPoint.whiteMatch >= 190) {
-                points = newPoint :: points
-                //drawTemplateMatch(newPoint, demo, templateQ)
-              //}
+              points = newPoint :: points
             }
           }
         }
@@ -1362,8 +1351,8 @@ object Ocr4Music {
       val demo = input.toColorImage
       pointsFiltered.foreach { point =>
         val template = point.label match {
-          case "L" => templateQ
-          case "2" => templateHalf
+          case "L" => templateBlackHead
+          case "2" => templateWhiteHead
         }
         drawTemplateMatch(point, demo, template)
       }
