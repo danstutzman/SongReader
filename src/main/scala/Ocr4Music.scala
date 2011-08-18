@@ -1252,13 +1252,7 @@ object Ocr4Music {
     writer.println()
   }
 
-  def doTemplateMatching() {
-    val caseName = "3"
-    val imageFilename = "input/%s.jpeg".format(caseName)
-    val input =
-      ColorImage.readFromFile(new File(imageFilename)).toGrayImage
-    val annotations = List(loadAnnotationJson(caseName))
-
+  def doTemplateMatching(caseNames:List[String]) {
     val templateSharp = 
       ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
     val templateFlat =
@@ -1270,8 +1264,13 @@ object Ocr4Music {
     val templateWhiteHead =
       ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
 
-    var i = 0
-    annotations.foreach { annotation =>
+    var globalPerformance = new Performance(0, 0, 0)
+    caseNames.foreach { caseName =>
+      val imageFilename = "input/%s.jpeg".format(caseName)
+      val input =
+        ColorImage.readFromFile(new File(imageFilename)).toGrayImage
+      val annotation = loadAnnotationJson(caseName)
+
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(input)
       val metrics = estimateMetrics(partiallyErased, caseName)
@@ -1303,7 +1302,7 @@ object Ocr4Music {
 
       var points:List[TemplateMatch] = Nil
       List("L", "2").foreach { label =>
-        printf("Processing %s...\n", label)
+        //printf("Processing %s...\n", label)
         val templateScaledMatrix = label match {
           case "L" => templateBlackHeadScaledMatrix
           case "2" => templateWhiteHeadScaledMatrix
@@ -1369,25 +1368,40 @@ object Ocr4Music {
         spurious.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
       println(("missing",
         missing.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
-    } // end foreach annotation
 
-    /*    globalPerformance = new Performance(
-          globalPerformance.numCorrect + performance.numCorrect,
-          globalPerformance.numIncorrect + performance.numIncorrect,
-          globalPerformance.numMissing + performance.numMissing)
-      }
+      globalPerformance = new Performance(
+        globalPerformance.numCorrect + performance.numCorrect,
+        globalPerformance.numIncorrect + performance.numIncorrect,
+        globalPerformance.numMissing + performance.numMissing)
     }
     println("Total:      precision: %.2f -- recall: %.2f".format(
-      globalPerformance.precision, globalPerformance.recall))*/
+      globalPerformance.precision, globalPerformance.recall))
 
   } // end function
+
+  def oneCaseNameOrAllIfEmpty(args:Array[String]) = {
+    args.length match {
+      case 0 =>
+        val filenames = new File("input").listFiles
+        val JsonFilename = """(.*)\.json""".r
+        filenames.foldLeft(List[String]()) { (accum, filename) =>
+          filename.getName match {
+            case JsonFilename(caseName) => caseName :: accum
+            case _ => accum
+          }
+        }.reverse
+      case 1 =>
+        List(args(0))
+      case _ =>
+        throw new RuntimeException("1st arg: name from input/*.json")
+    }
+  }
 
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-
-      doTemplateMatching()
-      //doRecognitionForEachBox()
+      val caseNames = oneCaseNameOrAllIfEmpty(args)
+      doTemplateMatching(caseNames)
     } catch {
       case e: Exception => e.printStackTrace()
     }
