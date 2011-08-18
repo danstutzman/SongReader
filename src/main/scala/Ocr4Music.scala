@@ -50,10 +50,6 @@ case class LabeledPoint (
 
 case class Annotation (
   val caseName:String,
-  val left:Int,
-  val top:Int,
-  val width:Int,
-  val height:Int,
   val points:List[LabeledPoint],
   val notes:Set[Note]
 ) {}
@@ -111,12 +107,7 @@ case class TemplateMatch (
   val blackMatchY:Int,
   val slope:Float,
   val label:String
-) {
-  def move(deltaX:Int, deltaY:Int) = {
-    TemplateMatch(x + deltaX, y + deltaY, w, h, blackMatch, whiteMatch,
-      blackMatchX, blackMatchY, slope, label)
-  }
-}
+) {}
 
 object Ocr4Music {
   def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
@@ -516,13 +507,13 @@ object Ocr4Music {
     annotated
   }
 
-  def annotateNotes(notes:Set[Note], excerpt:ColorImage, caseName:String) {
+  def annotateNotes(notes:Set[Note], input:ColorImage, caseName:String) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
     val brightYellow = (255, 255, 0)
     val staffHeight = 100
-    val image = new ColorImage(excerpt.w, staffHeight + excerpt.h)
+    val image = new ColorImage(input.w, staffHeight + input.h)
 
     // draw notes
     notes.foreach { note =>
@@ -565,10 +556,10 @@ object Ocr4Music {
       }
     }
 
-    // copy excerpt
-    (0 to excerpt.h).foreach { y =>
-      (0 to excerpt.w).foreach { x =>
-        image(x, y + staffHeight) = excerpt(x, y)
+    // copy input
+    (0 to input.h).foreach { y =>
+      (0 to input.w).foreach { x =>
+        image(x, y + staffHeight) = input(x, y)
       }
     }
 
@@ -916,17 +907,12 @@ object Ocr4Music {
   }
 */
 
-  def loadAnnotationJson(caseName:String, overrideW:Int, overrideH:Int)
-      : Annotation = {
+  def loadAnnotationJson(caseName:String) : Annotation = {
     val filename = "input/%s.json".format(caseName)
     val annotationsString:String =
       scala.io.Source.fromFile(filename).mkString
     val annotationJson:Map[String,Any] = 
       Json.parse(annotationsString).asInstanceOf[Map[String,Any]]
-    val left = 0 //annotationJson("left").asInstanceOf[Int]
-    val top = 0 //annotationJson("top").asInstanceOf[Int]
-    val width = overrideW //annotationJson("width").asInstanceOf[Int]
-    val height = overrideH //annotationJson("height").asInstanceOf[Int]
     val points =
       annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
         pointJson => LabeledPoint(
@@ -943,7 +929,7 @@ object Ocr4Music {
       numGroup += 1
     }
 
-    Annotation(caseName, left, top, width, height, points, annotatedNotes)
+    Annotation(caseName, points, annotatedNotes)
   }
 
   def calcPerformance(estimated:Set[Note], annotated:Set[Note]) = {
@@ -1263,12 +1249,11 @@ object Ocr4Music {
   }
 
   def doTemplateMatching() {
-    val caseName = "1a"
+    val caseName = "3"
     val imageFilename = "input/%s.jpeg".format(caseName)
-    val original =
+    val input =
       ColorImage.readFromFile(new File(imageFilename)).toGrayImage
-    val annotations =
-      List(loadAnnotationJson("1a", original.w, original.h))
+    val annotations = List(loadAnnotationJson(caseName))
 
     val templateS = 
       ColorImage.readFromFile(new File("templateS.png")).toGrayImage
@@ -1287,28 +1272,25 @@ object Ocr4Music {
     val templateHalf =
       ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
 
-    val demo = original.toColorImage
     var i = 0
     annotations.foreach { annotation =>
-      val excerpt = original.crop(annotation.left, annotation.top,
-        annotation.width, annotation.height)
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
-        separateNotes(excerpt)
+        separateNotes(input)
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-      demoStaffLines(excerpt, metrics, yCorrection, caseName)
+      demoStaffLines(input, metrics, yCorrection, caseName)
 
       val blackest = 50
       val whitest = 100
-      val excerptAdjusted = new GrayImage(excerpt.w, excerpt.h)
-      (0 until excerpt.h).foreach { y =>
-        (0 until excerpt.w).foreach { x =>
-          val v = (excerpt(x, y) - blackest) * 255 / (whitest - blackest)
-          excerptAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
+      val inputAdjusted = new GrayImage(input.w, input.h)
+      (0 until input.h).foreach { y =>
+        (0 until input.w).foreach { x =>
+          val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
+          inputAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
         }
       }
-      excerptAdjusted.saveTo(new File("excerpt_adjusted.png"))
+      inputAdjusted.saveTo(new File("input_adjusted.png"))
 
       val templateLScaledMatrix = (0 to 40).map { templateH =>
         (0 to 40).map { templateW =>
@@ -1334,10 +1316,8 @@ object Ocr4Music {
             // artifacts from the vertical blurring
             if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
                 augmentedBinaryNonStaff(x, y) == 0) {
-              val newPoint = 
-                findBestMatch(templateScaledMatrix, excerptAdjusted,
-                  (x, x), (y, y), metrics, label).
-                move(annotation.left, annotation.top)
+              val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
+                  (x, x), (y, y), metrics, label)
               //if (newPoint.blackMatch >= 109) {
               //    newPoint.whiteMatch >= 69) {
               //if (newPoint.blackMatch + newPoint.whiteMatch >= 190) {
@@ -1375,7 +1355,7 @@ object Ocr4Music {
         !hasBetterNeighbor && strongEnough
       }
 
-      val demo = original.toColorImage
+      val demo = input.toColorImage
       pointsFiltered.foreach { point =>
         val template = point.label match {
           case "L" => templateQ
@@ -1385,11 +1365,8 @@ object Ocr4Music {
       }
       demo.saveTo(new File("find_best_match.png"))
 
-      val pointsRelativized = pointsFiltered.map { point =>
-        point.move(-annotation.left, -annotation.top)
-      }
       val estimatedNotes = recognizeNotesFromTemplateMatches(
-        pointsRelativized, metrics, yCorrection)
+        pointsFiltered, metrics, yCorrection)
       val performance = calcPerformance(estimatedNotes, annotation.notes)
       println("Case %s: precision: %.2f, recall: %.2f".format(
         annotation.caseName, performance.precision, performance.recall))
