@@ -968,9 +968,9 @@ object Ocr4Music {
 
   def doRecognitionForEachBox() {
     var globalPerformance = new Performance()
-    val annotations = loadBoxesJson("boxes3.json")
+    val annotations = loadBoxesJson("boxes1.json")
     var caseNum = 0
-    val original = ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     annotations.foreach { annotation =>
       if (annotation.caseNum == 0) {
         val estimatedNotes = recognizeNotes(
@@ -1372,7 +1372,7 @@ object Ocr4Music {
   }
 
   def doTemplateMatching() {
-    val annotations = loadBoxesJson("boxes3.json")
+    val annotations = loadBoxesJson("boxes1.json")
     val templateS = 
       ColorImage.readFromFile(new File("templateS.png")).toGrayImage
     val templateSa =
@@ -1389,7 +1389,7 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
     val templateHalf =
       ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
-    val original = ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
+    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
     val demo = original.toColorImage
     var i = 0
     annotations.foreach { annotation =>
@@ -1410,25 +1410,25 @@ if (annotation.caseNum == 0) {
       }
       excerptAdjusted.saveTo(new File("excerpt_adjusted.png"))
 
-      val templateLScaledMatrix = (0 to 25).map { templateH =>
-        (0 to 25).map { templateW =>
+      val templateLScaledMatrix = (0 to 40).map { templateH =>
+        (0 to 40).map { templateW =>
           scaleTemplate(templateL, templateW, templateH)
         }.toArray
       }.toArray
-      val templateHalfScaledMatrix = (0 to 25).map { templateH =>
-        (0 to 25).map { templateW =>
+      val templateHalfScaledMatrix = (0 to 40).map { templateH =>
+        (0 to 40).map { templateW =>
           scaleTemplate(templateHalf, templateW, templateH)
         }.toArray
       }.toArray
 
       var points:List[TemplateMatch] = Nil
       List("L", "2").foreach { label =>
+        printf("Processing %s...\n", label)
         val templateScaledMatrix = label match {
           case "L" => templateLScaledMatrix
           case "2" => templateHalfScaledMatrix
         }
         (0 until augmentedBinaryNonStaff.h).foreach { y =>
-          println("label", label, "y=", y)
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
             // remove the bands at the top and the bottom, which are probably
             // artifacts from the vertical blurring
@@ -1452,8 +1452,8 @@ if (annotation.caseNum == 0) {
       val pointsFiltered = points.filter { point1 =>
         var hasBetterNeighbor = false
         points.foreach { point2 =>
-          if (Math.abs(point2.x - point1.x) <= 1 &&
-              Math.abs(point2.y - point1.y) <= 1 &&
+          if (Math.abs(point2.x - point1.x) <= 3 &&
+              Math.abs(point2.y - point1.y) <= 3 &&
               point2.label == point1.label) {
             val score1 = point1.blackMatch + point1.whiteMatch
             val score2 = point2.blackMatch + point2.whiteMatch
@@ -1491,6 +1491,7 @@ if (annotation.caseNum == 0) {
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
+
       doTemplateMatching()
       //doRecognitionForEachBox()
     } catch {
