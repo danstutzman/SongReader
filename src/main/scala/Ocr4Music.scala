@@ -784,19 +784,29 @@ object Ocr4Music {
     }
   }
 
-  def printMatch(writer:java.io.PrintWriter, point:TemplateMatch) {
-    writer.print(point.x)
-    writer.print("," + point.y)
-    writer.print("," + point.w)
-    writer.print("," + point.h)
-    writer.print("," + point.blackMatch)
-    writer.print("," + point.whiteMatch)
-    writer.print("," + point.blackMatchX)
-    writer.print("," + point.blackMatchY)
-    writer.print("," + (point.blackMatch + point.whiteMatch))
-    writer.print("," + point.slope)
-    writer.print("," + point.label)
-    writer.println()
+  def dedupe(elements:List[Int]):List[Int] = {
+    if (elements.isEmpty)
+      elements
+    else
+      elements.head ::
+        dedupe(for (x <- elements.tail if x != elements.head) yield x)
+  }
+
+  def removeMiddleNotes(noteGroups:List[List[Int]]) = {
+    noteGroups.map { noteGroup =>
+      var toDelete:List[Int] = Nil
+      (noteGroup.min + 1 to noteGroup.max - 1).foreach { i =>
+        if (noteGroup.contains(i - 1) &&
+            noteGroup.contains(i) &&
+            noteGroup.contains(i + 1) &&
+            !toDelete.contains(i - 1)) {
+          toDelete = i :: toDelete
+        }
+      }
+
+      val changed = dedupe(noteGroup).filter { !toDelete.contains(_) }
+      changed
+    }
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -855,8 +865,15 @@ object Ocr4Music {
           case "L" => templateBlackHeadScaledMatrix
           case "2" => templateWhiteHeadScaledMatrix
         }
-        (0 until augmentedBinaryNonStaff.h).foreach { y =>
+        (-8 to 8).foreach { staffYDoubled =>
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
+            val xCentered = x - (input.w / 2)
+            val a = metrics.a
+            val b = metrics.b + (staffYDoubled / 2.0f * metrics.bSpacing)
+            val c = metrics.c + (staffYDoubled / 2.0f * metrics.cSpacing)
+            val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
+              yCorrection(x) + (input.h / 2)).intValue
+
             // remove the bands at the top and the bottom, which are probably
             // artifacts from the vertical blurring
             if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
@@ -872,8 +889,8 @@ object Ocr4Music {
       val pointsFiltered = points.filter { point1 =>
         var hasBetterNeighbor = false
         points.foreach { point2 =>
-          if (Math.abs(point2.x - point1.x) <= 3 &&
-              Math.abs(point2.y - point1.y) <= 3 &&
+          if (Math.abs(point2.x - point1.x) <= 1 &&
+              Math.abs(point2.y - point1.y) == 0 &&
               point2.label == point1.label) {
             val score1 = point1.blackMatch + point1.whiteMatch
             val score2 = point2.blackMatch + point2.whiteMatch
@@ -907,9 +924,11 @@ object Ocr4Music {
 
       val estimatedNotes = recognizeNotesFromTemplateMatches(
         pointsFiltered, metrics, yCorrection)
-      annotateNotes(estimatedNotes, input.toColorImage, caseName)
+      val filteredNotes = removeMiddleNotes(estimatedNotes)
 
-      val performance = calcPerformance(estimatedNotes, annotation.notes)
+      annotateNotes(filteredNotes, input.toColorImage, caseName)
+
+      val performance = calcPerformance(filteredNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
       //printf("  correct: %s\n", performance.correctNotes)
