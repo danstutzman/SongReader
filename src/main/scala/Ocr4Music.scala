@@ -37,11 +37,6 @@ sealed abstract class BoundingBoxLabel
 case object Note extends BoundingBoxLabel
 case object NonNote extends BoundingBoxLabel
 
-case class Note (
-  val staffX:Int, // 0 = far left, n = far right
-  val staffY:Int // 0 = the middle, -4 = top, 4 = bottom
-) {}
-
 case class LabeledPoint (
   val label:String,
   val x:Int,
@@ -51,16 +46,18 @@ case class LabeledPoint (
 case class Annotation (
   val caseName:String,
   val points:List[LabeledPoint],
-  val notes:Set[Note]
+  val notes:List[List[Int]]
 ) {}
 
-class Performance (
-  val numCorrect:Int,
-  val numIncorrect:Int,
-  val numMissing:Int
+case class Performance (
+  val correctNotes:List[(Int,Int)],
+  val spuriousNotes:List[(Int,Int)],
+  val missingNotes:List[(Int,Int)]
 ) {
-  def this() = this(0, 0, 0)
-  def precision() = { numCorrect.floatValue / (numCorrect + numIncorrect) }
+  def numCorrect() = { correctNotes.size }
+  def numSpurious() = { spuriousNotes.size }
+  def numMissing() = { missingNotes.size }
+  def precision() = { numCorrect.floatValue / (numCorrect + numSpurious) }
   def recall() = { numCorrect.floatValue / (numCorrect + numMissing) }
 }
 
@@ -510,7 +507,8 @@ object Ocr4Music {
     annotated
   }
 
-  def annotateNotes(notes:Set[Note], input:ColorImage, caseName:String) {
+  def annotateNotes(
+      noteGroups:List[List[Int]], input:ColorImage, caseName:String) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
@@ -519,13 +517,17 @@ object Ocr4Music {
     val image = new ColorImage(input.w, staffHeight + input.h)
 
     // draw notes
-    notes.foreach { note =>
+    var staffX = -1
+    noteGroups.foreach { noteGroup =>
+      staffX += 1
+    noteGroup.foreach { staffY =>
+    
       val centerY = (staffHeight / 2) +
-        (note.staffY * staffSeparation / 2).intValue
+        (staffY * staffSeparation / 2).intValue
       (-8 to 8).foreach { x =>
         (-8 to 8).foreach { y =>
           if ((x * x) + 2 * (y * y) < 20) {
-            image((note.staffX + 1) * xSeparation + x, centerY + y) =
+            image((staffX + 1) * xSeparation + x, centerY + y) =
               brightYellow
           }
         }
@@ -535,29 +537,30 @@ object Ocr4Music {
         val ledgerLineY = ((staffY / 2).intValue * 2 * staffSeparation / 2) +
           (staffHeight / 2)
         (-8 to 8).foreach { x =>
-          image((note.staffX + 1) * xSeparation + x, ledgerLineY) = darkYellow
+          image((staffX + 1) * xSeparation + x, ledgerLineY) = darkYellow
         }
       }
 
       // draw ledger lines
-      var staffY = note.staffY
-      while (staffY >= 6) {
-        drawLedgerLine(staffY)
-        staffY -= 2
+      var staffYTemp = staffY
+      while (staffYTemp >= 6) {
+        drawLedgerLine(staffYTemp)
+        staffYTemp -= 2
       }
-      while (staffY <= -6) {
-        drawLedgerLine(staffY)
-        staffY += 2
+      while (staffYTemp <= -6) {
+        drawLedgerLine(staffYTemp)
+        staffYTemp += 2
       }
 
       // draw staff (top-most so line vs. space notes are more obvious)
-      (-4 to 4 by 2).foreach { staffY =>
+      (-4 to 4 by 2).foreach { staffYTemp =>
         (0 until image.w).foreach { x =>
-          image(x, (staffHeight / 2) + (staffY * staffSeparation / 2)) =
+          image(x, (staffHeight / 2) + (staffYTemp * staffSeparation / 2)) =
             darkYellow
         }
       }
-    }
+    } // next note in noteGroup
+    } // next noteGroup
 
     // copy input
     (0 to input.h).foreach { y =>
@@ -611,9 +614,9 @@ object Ocr4Music {
       match1.x < match2.x
     }
 
-    var lastNoteX = -99
-    var staffX = -1
-    var notes:List[Note] = Nil
+    var noteGroups:List[List[Int]] = Nil
+    var currentNoteGroup:List[Int] = Nil
+    var lastNoteX = -1
     matchesSorted.foreach { _match =>
       val xCentered = _match.x - metrics.w / 2
       val yCentered = _match.y - metrics.h / 2
@@ -622,14 +625,20 @@ object Ocr4Music {
       val deskewedY = yCentered - displacementY - yCorrection(_match.x)
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
-      if (Math.abs(_match.x - lastNoteX) >= 14)
-        staffX += 1
         
-      notes = Note(staffX, Math.round(staffY)) :: notes
+      if (Math.abs(_match.x - lastNoteX) >= 14 && currentNoteGroup.size > 0) {
+        noteGroups = currentNoteGroup :: noteGroups
+        currentNoteGroup = Nil
+      }
+
+      currentNoteGroup = Math.round(staffY) :: currentNoteGroup
 
       lastNoteX = _match.x
     }
-    Set() ++ notes
+    if (currentNoteGroup.size > 0)
+      noteGroups = currentNoteGroup :: noteGroups
+
+    noteGroups.reverse
   }
 
   def labelBounds(
@@ -925,34 +934,123 @@ object Ocr4Music {
           pointJson("y").asInstanceOf[Int]
         )
       }
-
-    var annotatedNotes:Set[Note] = Set()
-    var numGroup = 0
-    annotationJson("notes").asInstanceOf[List[List[Int]]].foreach { group =>
-      annotatedNotes ++= group.map { staffY => Note(numGroup, staffY) }
-      numGroup += 1
-    }
+    val annotatedNotes = annotationJson("notes").asInstanceOf[List[List[Int]]]
 
     Annotation(caseName, points, annotatedNotes)
   }
 
-  def calcPerformance(estimated:Set[Note], annotated:Set[Note]) = {
-    var numCorrect = 0
-    var numIncorrect = 0
-    var numMissing = 0
-
-    annotated.foreach { annotatedNote =>
-      if (estimated.contains(annotatedNote))
-        numCorrect += 1
-      else
-        numMissing += 1
+  // Levenshtein minimum-edit-distance to determine best alignment
+  // between detected note groups and ground truth note groups.
+  // This ensures that a spurious or missed note only causes one
+  // error instead of throwing off all the notes to the right.
+  def calcPerformance(
+      estimated:List[List[Int]], annotated:List[List[Int]]) = {
+    var w = estimated.size
+    var h = annotated.size
+    var matrix = new Array[Array[Int]](h + 1)
+    var backPointer = new Array[Array[(Int,Int)]](h + 1)
+    (0 to h).foreach { y =>
+      matrix(y) = new Array[Int](w + 1)
+      backPointer(y) = new Array[(Int,Int)](w + 1)
     }
-    estimated.foreach { estimatedNote =>
-      if (!annotated.contains(estimatedNote))
-        numIncorrect += 1
+
+    case class Possibility (val direction:(Int,Int), val score:Int) {}
+    (0 to h).foreach { y =>
+      (0 to w).foreach { x =>
+        var possibilities:List[Possibility] = Nil
+        if (x > 0) {
+          // If this noteGroup is totally spurious
+          val scoreIncrease = estimated.size
+          val score = matrix(y)(x - 1) + scoreIncrease
+          possibilities = Possibility((-1, 0), score) :: possibilities
+        }
+        if (y > 0) {
+          // If this noteGroup is totally missing from prediction
+          val scoreIncrease = annotated.size
+          val score = matrix(y - 1)(x) + scoreIncrease
+          possibilities = Possibility((0, -1), score) :: possibilities
+        }
+        if (y > 0 && x > 0) {
+          // If this predicted noteGroup corresponds with the next
+          // annotated noteGroup
+          var scoreIncrease = 0
+          estimated(x - 1).foreach { i =>
+            if (!(annotated(y - 1).contains(i)))
+              scoreIncrease += 1
+          }
+          annotated(y - 1).foreach { i =>
+            if (!(estimated(x - 1).contains(i)))
+              scoreIncrease += 1
+          }
+
+          val score = matrix(y - 1)(x - 1) + scoreIncrease
+          possibilities = Possibility((-1, -1), score) :: possibilities
+        }
+
+        if (x == 0 && y == 0) {
+          matrix(y)(x) = 0
+          backPointer(y)(x) = (0, 0)
+        } else {
+          var minScore = 99999
+          var bestDirection = (0, 0)
+          possibilities.foreach { possibility =>
+            if (possibility.score < minScore) {
+              minScore = possibility.score
+              bestDirection = possibility.direction
+            }
+          }
+          matrix(y)(x) = minScore
+          backPointer(y)(x) = bestDirection
+        }
+      }
     }
 
-    new Performance(numCorrect, numIncorrect, numMissing)
+    case class PairedNoteGroup (
+      val staffX:Int,
+      val estimatedNotes:List[Int],
+      val annotatedNotes:List[Int]
+    ) {}
+    var pairedNoteGroups:List[PairedNoteGroup] = Nil
+    var x = w
+    var y = h
+    while (x > 0 || y > 0) {
+      backPointer(y)(x) match {
+        case (-1, 0) =>
+          pairedNoteGroups = PairedNoteGroup(x - 1, estimated(x - 1), List()) ::
+            pairedNoteGroups
+          x -= 1
+        case (0, -1) =>
+          pairedNoteGroups = PairedNoteGroup(x - 1, List(), annotated(y - 1)) ::
+            pairedNoteGroups
+          y -= 1
+        case (-1, -1) =>
+          pairedNoteGroups =
+            PairedNoteGroup(x - 1, estimated(x - 1), annotated(y - 1)) ::
+            pairedNoteGroups
+          x -= 1
+          y -= 1
+      }
+    }
+    pairedNoteGroups = pairedNoteGroups.reverse
+
+    var correctNotes:List[(Int,Int)] = Nil
+    var spuriousNotes:List[(Int,Int)] = Nil
+    var missingNotes:List[(Int,Int)] = Nil
+    pairedNoteGroups.foreach { pair =>
+      val PairedNoteGroup(staffX, estimated, annotated) = pair
+      estimated.foreach { i =>
+        if (!(annotated.contains(i)))
+          spuriousNotes = (staffX, i) :: spuriousNotes
+        else
+          correctNotes = (staffX, i) :: spuriousNotes
+      }
+      annotated.foreach { i =>
+        if (!(estimated.contains(i)))
+          missingNotes = (staffX, i) :: missingNotes
+      }
+    }
+
+    Performance(correctNotes, spuriousNotes, missingNotes)
   }
 
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
@@ -1264,7 +1362,7 @@ object Ocr4Music {
     val templateWhiteHead =
       ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
 
-    var globalPerformance = new Performance(0, 0, 0)
+    var globalPerformance = Performance(List(), List(), List())
     caseNames.foreach { caseName =>
       val imageFilename = "input/%s.jpeg".format(caseName)
       val input =
@@ -1360,21 +1458,19 @@ object Ocr4Music {
       val estimatedNotes = recognizeNotesFromTemplateMatches(
         pointsFiltered, metrics, yCorrection)
       val performance = calcPerformance(estimatedNotes, annotation.notes)
-      println("Case %s: precision: %.2f, recall: %.2f".format(
+      println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
-      val spurious = (estimatedNotes -- annotation.notes)
-      val missing = (annotation.notes -- estimatedNotes)
-      println(("spurious",
-        spurious.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
-      println(("missing",
-        missing.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
+      if (performance.spuriousNotes.size > 0)
+        printf("  spurious: %s\n", performance.spuriousNotes)
+      if (performance.missingNotes.size > 0)
+        printf("  missing: %s\n", performance.missingNotes)
 
-      globalPerformance = new Performance(
-        globalPerformance.numCorrect + performance.numCorrect,
-        globalPerformance.numIncorrect + performance.numIncorrect,
-        globalPerformance.numMissing + performance.numMissing)
+      globalPerformance = Performance(
+        globalPerformance.correctNotes ++ performance.correctNotes,
+        globalPerformance.spuriousNotes ++ performance.spuriousNotes,
+        globalPerformance.missingNotes ++ performance.missingNotes)
     }
-    println("Total:      precision: %.2f -- recall: %.2f".format(
+    println("Total:   precision: %.3f -- recall: %.3f".format(
       globalPerformance.precision, globalPerformance.recall))
 
   } // end function
