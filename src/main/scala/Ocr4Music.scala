@@ -49,7 +49,7 @@ case class LabeledPoint (
 ) {}
 
 case class Annotation (
-  val caseNum:Int,
+  val caseName:String,
   val left:Int,
   val top:Int,
   val width:Int,
@@ -200,7 +200,7 @@ object Ocr4Music {
     (binaryNonStaff, whiteBackground, partiallyErased, augmentedBinaryNonStaff)
   }
 
-  def estimateMetrics(input:GrayImage, caseNum:Int) : Metrics = {
+  def estimateMetrics(input:GrayImage, caseName:String) : Metrics = {
     val aspectRatio = input.h / input.w.floatValue
     val params = QuadraticParameterSearch(
       ParameterSearch(-0.001f, 0.001f, 0.0001f), // A
@@ -363,7 +363,7 @@ object Ocr4Music {
         hough2(c, b) = (hough2(c, b) * (250.0 / max2)).intValue
       }
     }
-    hough2.saveTo(new File("hough%d.png".format(caseNum)))
+    hough2.saveTo(new File("hough-%s.png".format(caseName)))
 
     val centerCSteps =
       brightestCSteps + bestStaffSeparationInCAxis * -bestBrightestIsPointN
@@ -516,7 +516,7 @@ object Ocr4Music {
     annotated
   }
 
-  def annotateNotes(notes:Set[Note], excerpt:ColorImage, caseNum:Int) {
+  def annotateNotes(notes:Set[Note], excerpt:ColorImage, caseName:String) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
@@ -572,7 +572,7 @@ object Ocr4Music {
       }
     }
 
-    image.saveTo(new File("notes" + caseNum + ".png"))
+    image.saveTo(new File("notes-%s.png".format(caseName)))
   }
 
   def combineNoteBounds(bounds:List[LabeledBoundingBox]) = {
@@ -916,62 +916,35 @@ object Ocr4Music {
   }
 */
 
-  def loadBoxesJson(filename:String) : List[Annotation] = {
+  def loadAnnotationJson(caseName:String, overrideW:Int, overrideH:Int)
+      : Annotation = {
+    val filename = "input/%s.json".format(caseName)
     val annotationsString:String =
       scala.io.Source.fromFile(filename).mkString
-    val annotationsJson:List[Map[String,Any]] = 
-      Json.parse(annotationsString).asInstanceOf[List[Map[String,Any]]]
-    var caseNum = 0
-    annotationsJson.map { annotationJson =>
-      val left = annotationJson("left").asInstanceOf[Int]
-      val top = annotationJson("top").asInstanceOf[Int]
-      val width = annotationJson("width").asInstanceOf[Int]
-      val height = annotationJson("height").asInstanceOf[Int]
-      val points =
-        annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
-          pointJson => LabeledPoint(
-            pointJson("type").asInstanceOf[String],
-            pointJson("x").asInstanceOf[Int],
-            pointJson("y").asInstanceOf[Int]
-          )
-        }
-
-      var annotatedNotes:Set[Note] = Set()
-      var numGroup = 0
-      annotationJson("notes").asInstanceOf[List[List[Int]]].foreach { group =>
-        annotatedNotes ++= group.map { staffY => Note(numGroup, staffY) }
-        numGroup += 1
+    val annotationJson:Map[String,Any] = 
+      Json.parse(annotationsString).asInstanceOf[Map[String,Any]]
+    val left = 0 //annotationJson("left").asInstanceOf[Int]
+    val top = 0 //annotationJson("top").asInstanceOf[Int]
+    val width = overrideW //annotationJson("width").asInstanceOf[Int]
+    val height = overrideH //annotationJson("height").asInstanceOf[Int]
+    val points =
+      annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
+        pointJson => LabeledPoint(
+          pointJson("type").asInstanceOf[String],
+          pointJson("x").asInstanceOf[Int],
+          pointJson("y").asInstanceOf[Int]
+        )
       }
 
-      val annotation = Annotation(
-        caseNum, left, top, width, height, points, annotatedNotes)
-
-      caseNum += 1
-      annotation
+    var annotatedNotes:Set[Note] = Set()
+    var numGroup = 0
+    annotationJson("notes").asInstanceOf[List[List[Int]]].foreach { group =>
+      annotatedNotes ++= group.map { staffY => Note(numGroup, staffY) }
+      numGroup += 1
     }
+
+    Annotation(caseName, left, top, width, height, points, annotatedNotes)
   }
-
-  /*def doRecognitionForEachBox() {
-    var globalPerformance = new Performance()
-    val annotations = loadBoxesJson("boxes1.json")
-    var caseNum = 0
-    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
-    annotations.foreach { annotation =>
-      if (annotation.caseNum == 0) {
-        val estimatedNotes = recognizeNotes(
-          original, annotation, annotation.points, annotation.caseNum)
-        val performance = calcPerformance(estimatedNotes, annotation.notes)
-        println("Case num %d: precision: %.2f, recall: %.2f".format(
-          annotation.caseNum, performance.precision, performance.recall))
-        globalPerformance = new Performance(
-          globalPerformance.numCorrect + performance.numCorrect,
-          globalPerformance.numIncorrect + performance.numIncorrect,
-          globalPerformance.numMissing + performance.numMissing)
-      }
-    }
-    println("Total:      precision: %.2f -- recall: %.2f".format(
-      globalPerformance.precision, globalPerformance.recall))
-  }*/
 
   def calcPerformance(estimated:Set[Note], annotated:Set[Note]) = {
     var numCorrect = 0
@@ -993,7 +966,7 @@ object Ocr4Music {
   }
 
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
-      yCorrection:Array[Float], caseNum:Int) {
+      yCorrection:Array[Float], caseName:String) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
     (-2 to 2).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
@@ -1013,12 +986,12 @@ object Ocr4Music {
           demo(xUncentered * 4, Math.round(y * 4).intValue) = 255*/
       }
     }
-    demo.saveTo(new File("staff_lines%d.png".format(caseNum)))
+    demo.saveTo(new File("staff_lines-%s.png".format(caseName)))
   }
 
   def determineYCorrection(
       partiallyErased:GrayImage, augmentedBinaryNonStaff:GrayImage,
-      metrics:Metrics, caseNum:Int) = {
+      metrics:Metrics, caseName:String) = {
     val justStaff = new GrayImage(partiallyErased.w, partiallyErased.h)
 
     // white background
@@ -1073,7 +1046,7 @@ object Ocr4Music {
       else
         yCorrection(xUncentered) = 0.0f
     }
-    justStaff.saveTo(new File("line_strength.png".format(caseNum)))
+    //justStaff.saveTo(new File("line_strength.png".format(caseNum)))
 
     val smoothedYCorrection = new Array[Float](partiallyErased.w)
     (0 until partiallyErased.w).foreach { outerX =>
@@ -1290,7 +1263,13 @@ object Ocr4Music {
   }
 
   def doTemplateMatching() {
-    val annotations = loadBoxesJson("boxes1.json")
+    val caseName = "1a"
+    val imageFilename = "input/%s.jpeg".format(caseName)
+    val original =
+      ColorImage.readFromFile(new File(imageFilename)).toGrayImage
+    val annotations =
+      List(loadAnnotationJson("1a", original.w, original.h))
+
     val templateS = 
       ColorImage.readFromFile(new File("templateS.png")).toGrayImage
     val templateSa =
@@ -1307,18 +1286,18 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
     val templateHalf =
       ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
-    val original = ColorImage.readFromFile(new File("photo1.jpeg")).toGrayImage
+
     val demo = original.toColorImage
     var i = 0
     annotations.foreach { annotation =>
-if (annotation.caseNum == 0) {
       val excerpt = original.crop(annotation.left, annotation.top,
         annotation.width, annotation.height)
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(excerpt)
-      val metrics = estimateMetrics(partiallyErased, annotation.caseNum)
+      val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
-        partiallyErased, augmentedBinaryNonStaff, metrics, annotation.caseNum)
+        partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+      demoStaffLines(excerpt, metrics, yCorrection, caseName)
 
       val blackest = 50
       val whitest = 100
@@ -1412,16 +1391,25 @@ if (annotation.caseNum == 0) {
       val estimatedNotes = recognizeNotesFromTemplateMatches(
         pointsRelativized, metrics, yCorrection)
       val performance = calcPerformance(estimatedNotes, annotation.notes)
-      println("Case num %d: precision: %.2f, recall: %.2f".format(
-        annotation.caseNum, performance.precision, performance.recall))
+      println("Case %s: precision: %.2f, recall: %.2f".format(
+        annotation.caseName, performance.precision, performance.recall))
       val spurious = (estimatedNotes -- annotation.notes)
       val missing = (annotation.notes -- estimatedNotes)
       println(("spurious",
         spurious.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
       println(("missing",
         missing.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
-} // end if caseNum == whatever
     } // end foreach annotation
+
+    /*    globalPerformance = new Performance(
+          globalPerformance.numCorrect + performance.numCorrect,
+          globalPerformance.numIncorrect + performance.numIncorrect,
+          globalPerformance.numMissing + performance.numMissing)
+      }
+    }
+    println("Total:      precision: %.2f -- recall: %.2f".format(
+      globalPerformance.precision, globalPerformance.recall))*/
+
   } // end function
 
   def main(args:Array[String]) {
