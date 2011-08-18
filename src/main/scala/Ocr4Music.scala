@@ -628,7 +628,7 @@ object Ocr4Music {
       val deskewedY = yCentered - displacementY - yCorrection(_match.x)
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
-      if (Math.abs(_match.x - lastNoteX) >= 12)
+      if (Math.abs(_match.x - lastNoteX) >= 14)
         staffX += 1
         
       notes = Note(staffX, Math.round(staffY)) :: notes
@@ -992,66 +992,6 @@ object Ocr4Music {
     new Performance(numCorrect, numIncorrect, numMissing)
   }
 
-  def excerptLabeledPointsContext(image:GrayImage, caseNum:Int,
-      points:List[LabeledPoint], metrics:Metrics) {
-    //var pic0Option:Option[GrayImage] = None
-    //var pic1Option:Option[GrayImage] = None
-
-    var i = 0
-    points.foreach { point =>
-      val excerptRadius = (metrics.cSpacing * 1.5).intValue
-      val excerpt = image.crop(
-        point.x + 2 - excerptRadius, point.y + 5 - excerptRadius,
-        excerptRadius * 2, excerptRadius * 2)
-      // Differentiate axx + bx + c to get 2ax + b as slope
-      val slope = (2.0f * metrics.a * (point.x - metrics.w / 2)) + metrics.b
-      val resized = excerpt.resize(100, 100, slope)
-      val filename = "points/%s.%d.%d.png".format(point.label, caseNum, i)
-      resized.saveTo(new File(filename))
-      /*if (i == 0)
-        pic0Option = Some(resized)
-      if (i == 5)
-        pic1Option = Some(resized)*/
-
-      i += 1
-    }
-
-    /*if (caseNum == 4) {
-      val Some(pic0) = pic0Option
-      val Some(pic1) = pic1Option
-
-      // slide example1 around
-      var minDifference = 999999
-      var bestSlideX = 0
-      var bestSlideY = 0
-      (-33 to 33).foreach { slideX =>
-        (-33 to 33).foreach { slideY =>
-          var difference = 0
-          ((slideX max 0) until (100 + slideX min 100)).foreach { x =>
-            ((slideY max 0) until (100 + slideY min 100)).foreach { y =>
-              difference +=
-                (if (Math.abs(pic0(x, y) - pic1(x + slideX, y + slideY)) > 30)
-                1 else 0)
-            }
-          }
-          if (difference < minDifference) {
-            minDifference = difference
-            bestSlideX = slideX
-            bestSlideY = slideY
-          }
-        }
-      }
-      var shiftedPic = new GrayImage(100, 100)
-      (0 max -bestSlideY until (100 min (100 - bestSlideY))).foreach { y =>
-        (0 max -bestSlideX until (100 min (100 - bestSlideX))).foreach { x =>
-          shiftedPic(x, y) = pic1(x + bestSlideX, y + bestSlideY)
-        }
-      }
-      shiftedPic.saveTo(new File("points/shifted_pic.png"))
-    }*/
-  }
-
-
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
       yCorrection:Array[Float], caseNum:Int) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
@@ -1181,13 +1121,6 @@ object Ocr4Music {
       }
     }
     templateScaled
-  }
-
-  def findBestMatchAtPoint(templateScaledMatrix:Array[Array[GrayImage]],
-      inputAdjusted:GrayImage,
-      expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
-    findBestMatch(templateScaledMatrix, inputAdjusted,
-      (expectedX, expectedX), (expectedY, expectedY), metrics, label)
   }
 
   def findBestMatchAroundPoint(templateScaledMatrix:Array[Array[GrayImage]],
@@ -1423,8 +1356,8 @@ if (annotation.caseNum == 0) {
             if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
                 augmentedBinaryNonStaff(x, y) == 0) {
               val newPoint = 
-                findBestMatchAtPoint(templateScaledMatrix, excerptAdjusted,
-                  x, y, metrics, label).
+                findBestMatch(templateScaledMatrix, excerptAdjusted,
+                  (x, x), (y, y), metrics, label).
                 move(annotation.left, annotation.top)
               //if (newPoint.blackMatch >= 109) {
               //    newPoint.whiteMatch >= 69) {
@@ -1481,6 +1414,12 @@ if (annotation.caseNum == 0) {
       val performance = calcPerformance(estimatedNotes, annotation.notes)
       println("Case num %d: precision: %.2f, recall: %.2f".format(
         annotation.caseNum, performance.precision, performance.recall))
+      val spurious = (estimatedNotes -- annotation.notes)
+      val missing = (annotation.notes -- estimatedNotes)
+      println(("spurious",
+        spurious.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
+      println(("missing",
+        missing.toList.sort { (n1, n2) => n1.staffX < n2.staffX }))
 } // end if caseNum == whatever
     } // end foreach annotation
   } // end function
