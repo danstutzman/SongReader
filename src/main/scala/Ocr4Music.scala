@@ -1042,7 +1042,7 @@ object Ocr4Music {
         if (!(annotated.contains(i)))
           spuriousNotes = (staffX, i) :: spuriousNotes
         else
-          correctNotes = (staffX, i) :: spuriousNotes
+          correctNotes = (staffX, i) :: correctNotes
       }
       annotated.foreach { i =>
         if (!(estimated.contains(i)))
@@ -1460,6 +1460,7 @@ object Ocr4Music {
       val performance = calcPerformance(estimatedNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
+      //printf("  correct: %s\n", performance.correctNotes)
       if (performance.spuriousNotes.size > 0)
         printf("  spurious: %s\n", performance.spuriousNotes)
       if (performance.missingNotes.size > 0)
@@ -1472,8 +1473,7 @@ object Ocr4Music {
     }
     println("Total:   precision: %.3f -- recall: %.3f".format(
       globalPerformance.precision, globalPerformance.recall))
-
-  } // end function
+  }
 
   def oneCaseNameOrAllIfEmpty(args:Array[String]) = {
     args.length match {
