@@ -382,8 +382,8 @@ object Ocr4Music {
     Metrics(input.w, input.h, bestA, centerB, centerC, cSpacing, bSpacing)
   }
 
-  def annotateCenterY(input:GrayImage, metrics:Metrics, yCorrection:Array[Float])
-      : ColorImage = {
+  def annotateCenterY(input:GrayImage, metrics:Metrics,
+      yCorrection:Array[Float]) : ColorImage = {
     val annotated = input.toColorImage
     val color = (255,255,255) // white
     val halfW = annotated.w / 2
@@ -610,47 +610,30 @@ object Ocr4Music {
     boundsCombined
   }
 
-  def recognizeNotesFromBounds(bounds:List[LabeledBoundingBox], metrics:Metrics,
+  def recognizeNotesFromTemplateMatches(
+      matches:List[TemplateMatch], metrics:Metrics,
       yCorrection:Array[Float]) = {
-    val boundsSorted = bounds.sort { (bound1, bound2) =>
-      val midX1 = (bound1.box.maxX + bound1.box.minX) / 2
-      val midX2 = (bound2.box.maxX + bound2.box.minX) / 2
-      midX1 < midX2
+    val matchesSorted = matches.sort { (match1, match2) =>
+      match1.x < match2.x
     }
 
-    var lastNoteMidX = -99
+    var lastNoteX = -99
     var staffX = -1
     var notes:List[Note] = Nil
-    boundsSorted.foreach { bound =>
-      val midX = (bound.box.maxX + bound.box.minX) / 2
-      val midY = (bound.box.maxY + bound.box.minY) / 2
-      val xCentered = midX - metrics.w / 2
-      val yCentered = midY - metrics.h / 2
+    matchesSorted.foreach { _match =>
+      val xCentered = _match.x - metrics.w / 2
+      val yCentered = _match.y - metrics.h / 2
       val displacementY =
         metrics.a * xCentered * xCentered + metrics.b * xCentered + metrics.c
-      val deskewedY = yCentered - displacementY - yCorrection(midX)
+      val deskewedY = yCentered - displacementY - yCorrection(_match.x)
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val staffY = deskewedY / (staffSeparation / 2)
-      if (Math.abs(midX - lastNoteMidX) >= 12)
+      if (Math.abs(_match.x - lastNoteX) >= 12)
         staffX += 1
         
-      // guess it's a triad if bounding box is tall
-      if (bound.box.maxY - bound.box.minY > staffSeparation * 2) {
-        notes = Note(staffX, Math.round(staffY) - 2) ::
-                Note(staffX, Math.round(staffY)) ::
-                Note(staffX, Math.round(staffY) + 2) :: notes
-      // guess it's a third if bounding box is a little tall
-      } else if (bound.box.maxY - bound.box.minY >
-                 staffSeparation * 1) {
-        notes = Note(staffX, Math.round(staffY) - 1) ::
-                Note(staffX, Math.round(staffY) + 1) :: notes
-      } else {
-        // if note seems to be 0.3 or further, we're probably guessing wrong
-        //if (Math.abs(staffY - Math.round(staffY)) < 0.3)
-        notes = Note(staffX, Math.round(staffY)) :: notes
-      }
+      notes = Note(staffX, Math.round(staffY)) :: notes
 
-      lastNoteMidX = midX
+      lastNoteX = _match.x
     }
     Set() ++ notes
   }
@@ -903,6 +886,7 @@ object Ocr4Music {
     darkSpots
   }
 
+/*
   def recognizeNotes(original:GrayImage, box:Annotation,
       points:List[LabeledPoint], caseNum:Int) = {
     val excerpt = original.crop(box.left, box.top, box.width, box.height)
@@ -930,6 +914,7 @@ object Ocr4Music {
         labeledBounds), caseNum)
     estimatedNotes
   }
+*/
 
   def loadBoxesJson(filename:String) : List[Annotation] = {
     val annotationsString:String =
@@ -966,7 +951,7 @@ object Ocr4Music {
     }
   }
 
-  def doRecognitionForEachBox() {
+  /*def doRecognitionForEachBox() {
     var globalPerformance = new Performance()
     val annotations = loadBoxesJson("boxes1.json")
     var caseNum = 0
@@ -986,7 +971,7 @@ object Ocr4Music {
     }
     println("Total:      precision: %.2f -- recall: %.2f".format(
       globalPerformance.precision, globalPerformance.recall))
-  }
+  }*/
 
   def calcPerformance(estimated:Set[Note], annotated:Set[Note]) = {
     var numCorrect = 0
@@ -1399,6 +1384,9 @@ if (annotation.caseNum == 0) {
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(excerpt)
       val metrics = estimateMetrics(partiallyErased, annotation.caseNum)
+      val yCorrection = determineYCorrection(
+        partiallyErased, augmentedBinaryNonStaff, metrics, annotation.caseNum)
+
       val blackest = 50
       val whitest = 100
       val excerptAdjusted = new GrayImage(excerpt.w, excerpt.h)
@@ -1484,6 +1472,15 @@ if (annotation.caseNum == 0) {
         drawTemplateMatch(point, demo, template)
       }
       demo.saveTo(new File("find_best_match.png"))
+
+      val pointsRelativized = pointsFiltered.map { point =>
+        point.move(-annotation.left, -annotation.top)
+      }
+      val estimatedNotes = recognizeNotesFromTemplateMatches(
+        pointsRelativized, metrics, yCorrection)
+      val performance = calcPerformance(estimatedNotes, annotation.notes)
+      println("Case num %d: precision: %.2f, recall: %.2f".format(
+        annotation.caseNum, performance.precision, performance.recall))
 } // end if caseNum == whatever
     } // end foreach annotation
   } // end function
