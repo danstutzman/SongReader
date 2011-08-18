@@ -1198,13 +1198,15 @@ object Ocr4Music {
     templateScaled
   }
 
-  def findBestMatchAtPoint(template:GrayImage, input:GrayImage,
+  def findBestMatchAtPoint(templateScaledMatrix:Array[Array[GrayImage]],
+      inputAdjusted:GrayImage,
       expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
-    findBestMatch(template, input,
+    findBestMatch(templateScaledMatrix, inputAdjusted,
       (expectedX, expectedX), (expectedY, expectedY), metrics, label)
   }
 
-  def findBestMatchAroundPoint(template:GrayImage, input:GrayImage,
+  def findBestMatchAroundPoint(templateScaledMatrix:Array[Array[GrayImage]],
+      inputAdjusted:GrayImage,
       expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
 
     val (minX, maxX) = label match {
@@ -1226,26 +1228,16 @@ object Ocr4Music {
         (expectedY + 2, expectedY + 2)
     }
 
-    findBestMatch(template, input, (minX, maxX), (minY, maxY), metrics, label)
+    findBestMatch(templateScaledMatrix, inputAdjusted,
+      (minX, maxX), (minY, maxY), metrics, label)
   }
 
-  def findBestMatch(template:GrayImage, input:GrayImage,
+  def findBestMatch(templateScaledMatrix:Array[Array[GrayImage]],
+      inputAdjusted:GrayImage,
       minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
       metrics:Metrics, label:String) = {
     val (minX, maxX) = minXmaxX
     val (minY, maxY) = minYmaxY
-
-    val blackest = 50
-    val whitest = 100
-
-    val inputAdjusted = new GrayImage(input.w, input.h)
-    (0 until input.h).foreach { y =>
-      (0 until input.w).foreach { x =>
-        val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
-        inputAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
-      }
-    }
-    inputAdjusted.saveTo(new File("input_adjusted.png"))
 
     // Differentiate axx + bx + c to get 2ax + b as slope
     val expectedX = (minX + maxX) / 2
@@ -1275,7 +1267,8 @@ object Ocr4Music {
     var maxCombinedMatch = 0
     (minW to maxW).foreach { templateW =>
     (minH to maxH).foreach { templateH =>
-      val templateScaled = scaleTemplate(template, templateW, templateH)
+      //val templateScaled = scaleTemplate(template, templateW, templateH)
+      val templateScaled = templateScaledMatrix(templateH)(templateW)
 
       (minY to maxY).foreach { inputCenterY =>
         (minX to maxX).foreach { inputCenterX =>
@@ -1283,31 +1276,34 @@ object Ocr4Music {
           var sumWhiteMatch = 0
           var sumBlackMatchX = 0
           var sumBlackMatchY = 0
-          (0 until templateScaled.h).foreach { templateScaledY =>
-            (0 until templateScaled.w).foreach { templateScaledX =>
+          (0 until templateH).foreach { templateScaledY =>
+            (0 until templateW).foreach { templateScaledX =>
               val yAdjustment = Math.round(
-                (templateScaledX - templateScaled.w / 2) * slope).intValue
+                (templateScaledX - templateW / 2) * slope).intValue
               val inputV = inputAdjusted(
-                inputCenterX + templateScaledX - templateScaled.w / 2,
+                inputCenterX + templateScaledX - templateW / 2,
                 inputCenterY + yAdjustment +
-                  templateScaledY - templateScaled.h / 2)
+                  templateScaledY - templateH / 2)
+              //val templateV = template(
+              //  templateScaledX * template.w / templateW,
+              //  templateScaledY * template.h / templateH)
               val templateV = templateScaled(templateScaledX, templateScaledY)
               sumBlackMatch += (255 - inputV) * (255 - templateV)
               sumWhiteMatch += inputV * templateV
               sumBlackMatchX += (255 - inputV) * (255 - templateV) *
-                (templateScaledX - templateScaled.w / 2)
+                (templateScaledX - templateW / 2)
               sumBlackMatchY += (255 - inputV) * (255 - templateV) *
-                (templateScaledY - templateScaled.h / 2)
+                (templateScaledY - templateH / 2)
             }
           }
           val meanBlackMatch = sumBlackMatch /
-            (255 * templateScaled.w * templateScaled.h)
+            (255 * templateW * templateH)
           val meanWhiteMatch = sumWhiteMatch /
-            (255 * templateScaled.w * templateScaled.h)
+            (255 * templateW * templateH)
           val meanBlackMatchX = Math.abs(sumBlackMatchX /
-            (255 * templateScaled.w * templateScaled.h * templateScaled.w))
+            (255 * templateW * templateH * templateW))
           val meanBlackMatchY = Math.abs(sumBlackMatchY /
-            (255 * templateScaled.w * templateScaled.h * templateScaled.h))
+            (255 * templateW * templateH * templateH))
 //if (meanBlackMatch > 50 && meanWhiteMatch > 50 && meanBlackMatchY < 3 && meanBlackMatchX < 5)
   ////demo2(inputCenterX, inputCenterY) = (meanBlackMatch * 2, 0, meanWhiteMatch * 2)
 
@@ -1375,7 +1371,7 @@ object Ocr4Music {
     writer.println()
   }
 
-  def loadLabeledPoints() {
+  def doTemplateMatching() {
     val annotations = loadBoxesJson("boxes3.json")
     val templateS = 
       ColorImage.readFromFile(new File("templateS.png")).toGrayImage
@@ -1396,10 +1392,6 @@ object Ocr4Music {
     val original = ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
     val demo = original.toColorImage
     var i = 0
-printToFile(new File("points.csv")) { writer =>
-  writer.println(List("x", "y", "w", "h", "blackMatch", "whiteMatch",
-    "blackMatchX", "blackMatchY", "blackPlusWhiteMatch", "slope", "label"
-    ).reduceLeft(_ + "," + _))
     annotations.foreach { annotation =>
 if (annotation.caseNum == 0) {
       val excerpt = original.crop(annotation.left, annotation.top,
@@ -1407,125 +1399,53 @@ if (annotation.caseNum == 0) {
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(excerpt)
       val metrics = estimateMetrics(partiallyErased, annotation.caseNum)
-
-      var badPoints:List[TemplateMatch] = Nil
-List("L", "2").foreach { label =>
-      val template = label match {
-        case "L" => templateL
-        case "2" => templateHalf
-      }
-      (0 until augmentedBinaryNonStaff.h).foreach { y =>
-        println("label", label, "y=", y)
-        (0 until augmentedBinaryNonStaff.w).foreach { x =>
-          // remove the bands at the top and the bottom, which are probably
-          // artifacts from the vertical blurring
-          if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
-              augmentedBinaryNonStaff(x, y) == 0) {
-            val newPoint = 
-              findBestMatchAtPoint(template, excerpt, x, y, metrics, label).
-              move(annotation.left, annotation.top)
-            //if (newPoint.blackMatch >= 109) {
-            //    newPoint.whiteMatch >= 69) {
-            //if (newPoint.blackMatch + newPoint.whiteMatch >= 190) {
-              badPoints = newPoint :: badPoints
-              //drawTemplateMatch(newPoint, demo, templateQ)
-            //}
-          }
+      val blackest = 50
+      val whitest = 100
+      val excerptAdjusted = new GrayImage(excerpt.w, excerpt.h)
+      (0 until excerpt.h).foreach { y =>
+        (0 until excerpt.w).foreach { x =>
+          val v = (excerpt(x, y) - blackest) * 255 / (whitest - blackest)
+          excerptAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
         }
       }
-}
+      excerptAdjusted.saveTo(new File("excerpt_adjusted.png"))
 
-      // for each point
-      //    run template centered at that point
-      //    and output results
-      //val x0 = annotation.left
-      // a*(x-x0)^2 + b*(x-x0) + c
-      // => a*x*x - 2*a*x*x0 + a*x0*x0 + b*x + b*x0 + c
-      // => a*x*x + (b - 2*a*x0) + (c + a*x0*x0 + b*x0)
-      //val absoluteMetrics = Metrics(metrics.w, metrics.h, metrics.a,
-      //  metrics.b - 2 * metrics.a * x0,
-      //  metrics.c + metrics.a * x0 * x0 + metrics.b * x0,
-      //  metrics.cSpacing, metrics.bSpacing)
-/*
-      var goodPoints:List[TemplateMatch] = Nil
-      annotation.points.foreach { point =>
-        //if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
-        //    point.label == "#" || point.label == "b"  || point.label == "N") {
-        //if (point.label == "S" || point.label == "Sa" || point.label == "L" ||
-        //    point.label == "2") {
-        if (point.label == "2") {
-//if (i == 1) {
-          val template = point.label match {
-            case "S" => templateS
-            case "Sa" => templateSa
-            case "L" => templateL
-            case "#" => templateSharp
-            case "b" => templateFlat
-            case "N" => templateNatural
-            case "2" => templateHalf
-          }
-          // adjust point.y because the label points are the upper-left coords
-          // for the "L" label, not the center of it
-          val _match =
-            findBestMatchAroundPoint(template, excerpt,
-            point.x + 3 - annotation.left, point.y + 2 - annotation.top,
-            metrics, point.label).move(annotation.left, annotation.top)
-          goodPoints = _match :: goodPoints
-          drawTemplateMatch(_match, demo, template)
-          demo.saveTo(new File("find_best_match.png"))
-//}
-          i += 1
-        }
-      }
-*/
-/*
-      badPointsFiltered.foreach { point =>
-        drawTemplateMatch(point, demo, templateQ)
-      }
-      demo.saveTo(new File("find_best_match.png"))
-*/
-
-      badPoints.foreach { point =>
-        printMatch(writer, point)
-      }
-      //goodPoints.foreach { point =>
-      //  printMatch(writer, point, "true")
-      //}
-} // end if caseNum == whatever
-  } // end foreach annotation
-  } // end printToFile
-  } // end function
-
-  def main(args:Array[String]) {
-    try {
-      println(Colors.ansiEscapeToHighlightProgramOutput)
-//      loadLabeledPoints()
-      //doRecognitionForEachBox()
-
-if (true) {
-      val templateQ =
-        ColorImage.readFromFile(new File("templateQ.png")).toGrayImage
-      val templateHalf =
-        ColorImage.readFromFile(new File("half_note_head.png")).toGrayImage
+      val templateLScaledMatrix = (0 to 25).map { templateH =>
+        (0 to 25).map { templateW =>
+          scaleTemplate(templateL, templateW, templateH)
+        }.toArray
+      }.toArray
+      val templateHalfScaledMatrix = (0 to 25).map { templateH =>
+        (0 to 25).map { templateW =>
+          scaleTemplate(templateHalf, templateW, templateH)
+        }.toArray
+      }.toArray
 
       var points:List[TemplateMatch] = Nil
-      for (line <- Source.fromFile(new File("points.csv")).getLines()) {
-        val values = line.split(",")
-        if (values(0) != "x") {
-          val x = values(0).toInt
-          val y = values(1).toInt
-          val w = values(2).toInt
-          val h = values(3).toInt
-          val blackMatch = values(4).toInt
-          val whiteMatch = values(5).toInt
-          val blackMatchX = values(6).toInt
-          val blackMatchY = values(7).toInt
-          // values(8) is black + white match
-          val slope = values(9).toFloat
-          val label = values(10)
-          val point = TemplateMatch(x, y, w, h, blackMatch, whiteMatch,
-            blackMatchX, blackMatchY, slope, label)
-          points = point :: points
+      List("L", "2").foreach { label =>
+        val templateScaledMatrix = label match {
+          case "L" => templateLScaledMatrix
+          case "2" => templateHalfScaledMatrix
+        }
+        (0 until augmentedBinaryNonStaff.h).foreach { y =>
+          println("label", label, "y=", y)
+          (0 until augmentedBinaryNonStaff.w).foreach { x =>
+            // remove the bands at the top and the bottom, which are probably
+            // artifacts from the vertical blurring
+            if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
+                augmentedBinaryNonStaff(x, y) == 0) {
+              val newPoint = 
+                findBestMatchAtPoint(templateScaledMatrix, excerptAdjusted,
+                  x, y, metrics, label).
+                move(annotation.left, annotation.top)
+              //if (newPoint.blackMatch >= 109) {
+              //    newPoint.whiteMatch >= 69) {
+              //if (newPoint.blackMatch + newPoint.whiteMatch >= 190) {
+                points = newPoint :: points
+                //drawTemplateMatch(newPoint, demo, templateQ)
+              //}
+            }
+          }
         }
       }
 
@@ -1555,8 +1475,6 @@ if (true) {
         !hasBetterNeighbor && strongEnough
       }
 
-      val original =
-        ColorImage.readFromFile(new File("photo3.jpeg")).toGrayImage
       val demo = original.toColorImage
       pointsFiltered.foreach { point =>
         val template = point.label match {
@@ -1566,8 +1484,15 @@ if (true) {
         drawTemplateMatch(point, demo, template)
       }
       demo.saveTo(new File("find_best_match.png"))
-}
+} // end if caseNum == whatever
+    } // end foreach annotation
+  } // end function
 
+  def main(args:Array[String]) {
+    try {
+      println(Colors.ansiEscapeToHighlightProgramOutput)
+      doTemplateMatching()
+      //doRecognitionForEachBox()
     } catch {
       case e: Exception => e.printStackTrace()
     }
