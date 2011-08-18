@@ -196,8 +196,10 @@ object Ocr4Music {
     val params = QuadraticParameterSearch(
       ParameterSearch(-0.001f, 0.001f, 0.0001f), // A
       //ParameterSearch(-0.00000f, 0.00005f, 0.1f), // A, to disable curvature
-      ParameterSearch(-aspectRatio * 0.6f, aspectRatio * 0.6f, aspectRatio / 100.0f), // B
-      ParameterSearch(-input.h.floatValue / 2, input.h.floatValue / 2, 0.25f)) // C
+      ParameterSearch(-aspectRatio * 0.6f,
+                       aspectRatio * 0.6f, aspectRatio / 100.0f), // B
+      ParameterSearch(-input.h.floatValue / 2,
+                       input.h.floatValue / 2, 0.25f)) // C
 
     val numASteps =
       Math.ceil((params.a.max - params.a.min) / params.a.step).intValue + 1
@@ -222,7 +224,8 @@ object Ocr4Music {
               yCentered - (a * xCentered * xCentered) - (b * xCentered)
             val cSteps = ((cSolved - params.c.min) / params.c.step).intValue
             if (cSteps >= 4 && cSteps < numCSteps - 4) {
-              val i = aSteps * numBSteps * numCSteps + bSteps * numCSteps + cSteps
+              val i = aSteps * numBSteps * numCSteps +
+                      bSteps * numCSteps + cSteps
               (-3 to 3).foreach { j =>
                 hough(i + j) += (v * (4 - Math.abs(j)))
               }
@@ -284,9 +287,9 @@ object Ocr4Music {
     var staffSeparationInCAxis = 4.0f / params.c.step
     while (staffSeparationInCAxis <= 20.0f / params.c.step) {
       // 2.0f allows the b/c slope to trace over top of the lines corresponding
-      // with lines all emanating from one point.  On the other hand, a too small
-      // constant doesn't the distance between staffs to change much between the
-      // left side of the image and the right side.
+      // with lines all emanating from one point.  On the other hand, a too
+      // small constant doesn't the distance between staffs to change much
+      // between the left side of the image and the right side.
       val maxBOverCSlope = 1.9f * params.c.step / params.b.step / input.w
       val minBOverCSlope = -maxBOverCSlope
       var bOverCSlope = minBOverCSlope
@@ -335,8 +338,8 @@ object Ocr4Music {
     // Draw 3x3 squares around 5 points, with black dots in the center
     (0 until 5).foreach { i =>
       val offset = i - 2 - bestBrightestIsPointN
-      val cCenter =
-        Math.round(brightestCSteps + bestStaffSeparationInCAxis * offset).intValue
+      val cCenter = Math.round(brightestCSteps +
+        bestStaffSeparationInCAxis * offset).intValue
       val bCenter = Math.round(brightestBSteps +
         bestStaffSeparationInCAxis * bestBOverCSlope * offset).intValue
       (-1 to 1).foreach { bNeighbor =>
@@ -782,7 +785,8 @@ object Ocr4Music {
     noteColumns
   }
 
-  def demoNoteColumns(noteColumns:List[NoteColumn], input:GrayImage, caseNum:Int) {
+  def demoNoteColumns(
+      noteColumns:List[NoteColumn], input:GrayImage, caseNum:Int) {
     val demoImage = new GrayImage(input.w, input.h)
     (0 until input.h).foreach { y =>
       (0 until input.w).foreach { x =>
