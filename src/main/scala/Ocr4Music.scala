@@ -507,7 +507,8 @@ object Ocr4Music {
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
       yCorrection:Array[Float], caseName:String) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
-    (-2 to 2).foreach { staffY =>
+    // -4 to 4 instead of -2 to 2 because we want to include ledger lines
+    (-4 to 4).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
         val x = xUncentered - (excerpt.w / 2)
         val a = metrics.a
@@ -515,8 +516,9 @@ object Ocr4Music {
         val c = metrics.c + (staffY * metrics.cSpacing)
         val y = (a * x * x + b * x + c) + yCorrection(xUncentered) +
           (excerpt.h / 2)
+        val color = (if (Math.abs(staffY) <= 2) 255 else 127)
         if (y >= 0 && Math.round(y * 4).intValue < demo.h)
-          demo(xUncentered * 4, Math.round(y * 4).intValue) = 255
+          demo(xUncentered * 4, Math.round(y * 4).intValue) = color
 
         /*val b = metrics.staffYToB(staffY + 2)
         val c = metrics.staffYToC(staffY + 2)
@@ -878,8 +880,10 @@ object Ocr4Music {
             // artifacts from the vertical blurring
             if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
                 augmentedBinaryNonStaff(x, y) == 0) {
+              val isLedgerLine = Math.abs(staffYDoubled / 2) > 2
+              val yRange = if (isLedgerLine) (y - 1, y + 1) else (y, y)
               val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
-                  (x, x), (y, y), metrics, label)
+                  (x, x), yRange, metrics, label)
               points = newPoint :: points
             }
           }
@@ -890,7 +894,7 @@ object Ocr4Music {
         var hasBetterNeighbor = false
         points.foreach { point2 =>
           if (Math.abs(point2.x - point1.x) <= 1 &&
-              Math.abs(point2.y - point1.y) == 0 &&
+              Math.abs(point2.y - point1.y) <= 1 &&
               point2.label == point1.label) {
             val score1 = point1.blackMatch + point1.whiteMatch
             val score2 = point2.blackMatch + point2.whiteMatch
@@ -905,8 +909,8 @@ object Ocr4Music {
         }
 
         val strongEnough = point1.label match {
-          case "L" => point1.blackMatch > 102
-          case "2" => point1.blackMatch > 65 && point1.whiteMatch > 90
+          case "L" => point1.blackMatch > 98
+          case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
         }
 
         !hasBetterNeighbor && strongEnough
