@@ -73,7 +73,8 @@ case class TemplateMatch (
   val blackMatchX:Int,
   val blackMatchY:Int,
   val slope:Float,
-  val label:String
+  val label:String,
+  val staffYDoubled:Int
 ) {}
 
 object Ocr4Music {
@@ -337,31 +338,21 @@ object Ocr4Music {
     image.saveTo(new File("demos/notes2.%s.png".format(caseName)))
   }
 
-  def recognizeNotesFromTemplateMatches(
-      matches:List[TemplateMatch], metrics:Metrics,
-      yCorrection:Array[Float]) = {
+  def groupTemplateMatches(matches:List[TemplateMatch]) = {
     val matchesSorted = matches.sort { (match1, match2) =>
       match1.x < match2.x
     }
 
-    var noteGroups:List[List[Int]] = Nil
-    var currentNoteGroup:List[Int] = Nil
+    var noteGroups:List[List[TemplateMatch]] = Nil
+    var currentNoteGroup:List[TemplateMatch] = Nil
     var lastNoteX = -1
     matchesSorted.foreach { _match =>
-      val xCentered = _match.x - metrics.w / 2
-      val yCentered = _match.y - metrics.h / 2
-      val displacementY =
-        metrics.a * xCentered * xCentered + metrics.b * xCentered + metrics.c
-      val deskewedY = yCentered - displacementY - yCorrection(_match.x)
-      val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
-      val staffY = deskewedY / (staffSeparation / 2)
-        
       if (Math.abs(_match.x - lastNoteX) >= 15 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
         currentNoteGroup = Nil
       }
 
-      currentNoteGroup = Math.round(staffY) :: currentNoteGroup
+      currentNoteGroup = _match :: currentNoteGroup
 
       lastNoteX = _match.x
     }
@@ -639,7 +630,8 @@ object Ocr4Music {
 
   def findBestMatchAroundPoint(templateScaledMatrix:Array[Array[GrayImage]],
       inputAdjusted:GrayImage,
-      expectedX:Int, expectedY:Int, metrics:Metrics, label:String) = {
+      expectedX:Int, expectedY:Int, metrics:Metrics, label:String,
+      staffYDoubled:Int) = {
 
     val (minX, maxX) = label match {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
@@ -661,13 +653,13 @@ object Ocr4Music {
     }
 
     findBestMatch(templateScaledMatrix, inputAdjusted,
-      (minX, maxX), (minY, maxY), metrics, label)
+      (minX, maxX), (minY, maxY), metrics, label, staffYDoubled)
   }
 
   def findBestMatch(templateScaledMatrix:Array[Array[GrayImage]],
       inputAdjusted:GrayImage,
       minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
-      metrics:Metrics, label:String) = {
+      metrics:Metrics, label:String, staffYDoubled:Int) = {
     val (minX, maxX) = minXmaxX
     val (minY, maxY) = minYmaxY
 
@@ -756,7 +748,7 @@ object Ocr4Music {
     TemplateMatch(
       bestInputCenterX, bestInputCenterY, bestTemplateW, bestTemplateH,
       bestBlackMatch, bestWhiteMatch, bestBlackMatchX, bestBlackMatchY,
-      slope, label)
+      slope, label, staffYDoubled)
   }
 
   def drawTemplateMatch(_match:TemplateMatch, output:ColorImage,
@@ -786,27 +778,36 @@ object Ocr4Music {
     }
   }
 
-  def dedupe(elements:List[Int]):List[Int] = {
-    if (elements.isEmpty)
-      elements
+  def dedupe(points:List[TemplateMatch]) : List[TemplateMatch] = {
+    if (points.isEmpty)
+      points
     else
-      elements.head ::
-        dedupe(for (x <- elements.tail if x != elements.head) yield x)
+      points.head :: dedupe(for (x <- points.tail if x.staffYDoubled != points.head.staffYDoubled) yield x)
   }
 
-  def removeMiddleNotes(noteGroups:List[List[Int]]) = {
+  def removeMiddleNotes(noteGroups:List[List[TemplateMatch]]) = {
+    def containsStaffY(group:List[TemplateMatch], y:Int) : Boolean = {
+      if (group.isEmpty)
+        false
+      else
+        group.head.staffYDoubled == y || containsStaffY(group.tail, y)
+    }
+
     noteGroups.map { noteGroup =>
       var toDelete:List[Int] = Nil
-      (noteGroup.min + 1 to noteGroup.max - 1).foreach { i =>
-        if (noteGroup.contains(i - 1) &&
-            noteGroup.contains(i) &&
-            noteGroup.contains(i + 1) &&
+      var staffYs = noteGroup.map { point => point.staffYDoubled }
+      (staffYs.min + 1 to staffYs.max - 1).foreach { i =>
+        if (containsStaffY(noteGroup, i - 1) &&
+            containsStaffY(noteGroup, i) &&
+            containsStaffY(noteGroup, i + 1) &&
             !toDelete.contains(i - 1)) {
           toDelete = i :: toDelete
         }
       }
 
-      val changed = dedupe(noteGroup).filter { !toDelete.contains(_) }
+      val changed = dedupe(noteGroup).filter { point =>
+        !toDelete.contains(point.staffYDoubled)
+      }
       changed
     }
   }
@@ -883,7 +884,7 @@ object Ocr4Music {
               val isLedgerLine = Math.abs(staffYDoubled / 2) > 2
               val yRange = if (isLedgerLine) (y - 1, y + 1) else (y, y)
               val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
-                  (x, x), yRange, metrics, label)
+                  (x, x), yRange, metrics, label, staffYDoubled)
               points = newPoint :: points
             }
           }
@@ -916,23 +917,25 @@ object Ocr4Music {
         !hasBetterNeighbor && strongEnough
       }
 
+      val groupedPoints = groupTemplateMatches(pointsFiltered)
+      val filteredNotes = removeMiddleNotes(groupedPoints)
+
       val demo = input.toColorImage
-      pointsFiltered.foreach { point =>
-        val template = point.label match {
-          case "L" => templateBlackHead
-          case "2" => templateWhiteHead
+      filteredNotes.foreach { noteGroup =>
+        noteGroup.foreach { point =>
+          val template = point.label match {
+            case "L" => templateBlackHead
+            case "2" => templateWhiteHead
+          }
+          drawTemplateMatch(point, demo, template)
         }
-        drawTemplateMatch(point, demo, template)
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
 
-      val estimatedNotes = recognizeNotesFromTemplateMatches(
-        pointsFiltered, metrics, yCorrection)
-      val filteredNotes = removeMiddleNotes(estimatedNotes)
+      val estimatedStaffYs = filteredNotes.map { _.map { _.staffYDoubled } }
+      annotateNotes(estimatedStaffYs, input.toColorImage, caseName)
 
-      annotateNotes(filteredNotes, input.toColorImage, caseName)
-
-      val performance = calcPerformance(filteredNotes, annotation.notes)
+      val performance = calcPerformance(estimatedStaffYs, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
       //printf("  correct: %s\n", performance.correctNotes)
