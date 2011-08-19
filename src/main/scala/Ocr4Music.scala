@@ -74,7 +74,7 @@ case class TemplateMatch (
   val blackMatchY:Int,
   val slope:Float,
   val label:String,
-  val staffYDoubled:Int
+  val staffY:Int
 ) {}
 
 object Ocr4Music {
@@ -287,9 +287,7 @@ object Ocr4Music {
     noteGroups.foreach { noteGroup =>
       staffX += 1
     noteGroup.foreach { staffY =>
-    
-      val centerY = (staffHeight / 2) +
-        (staffY * staffSeparation / 2).intValue
+      val centerY = (staffHeight / 2) + (staffY * staffSeparation / 2).intValue
       (-8 to 8).foreach { x =>
         (-8 to 8).foreach { y =>
           if ((x * x) + 2 * (y * y) < 20) {
@@ -498,13 +496,13 @@ object Ocr4Music {
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
       yCorrection:Array[Float], caseName:String) {
     val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
-    // -4 to 4 instead of -2 to 2 because we want to include ledger lines
-    (-4 to 4).foreach { staffY =>
+    // -8 to 8 instead of -4 to 4 because we want to include ledger lines
+    (-8 to 8 by 2).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
         val x = xUncentered - (excerpt.w / 2)
         val a = metrics.a
-        val b = metrics.b + (staffY * metrics.bSpacing)
-        val c = metrics.c + (staffY * metrics.cSpacing)
+        val b = metrics.b + (staffY / 2 * metrics.bSpacing)
+        val c = metrics.c + (staffY / 2 * metrics.cSpacing)
         val y = (a * x * x + b * x + c) + yCorrection(xUncentered) +
           (excerpt.h / 2)
         val color = (if (Math.abs(staffY) <= 2) 255 else 127)
@@ -538,11 +536,11 @@ object Ocr4Music {
       var sumDarkestYNeighbor = 0
       var encounteredNote = false
       var numDarkestYNeighbors = 0
-      (-2 to 2).foreach { staffY =>
+      (-4 to 4 by 2).foreach { staffY =>
         val x = xUncentered - (partiallyErased.w / 2)
         val a = metrics.a
-        val b = metrics.b + (staffY * metrics.bSpacing)
-        val c = metrics.c + (staffY * metrics.cSpacing)
+        val b = metrics.b + (staffY / 2 * metrics.bSpacing)
+        val c = metrics.c + (staffY / 2 * metrics.cSpacing)
         val y = Math.round(
           (a * x * x + b * x + c) + (partiallyErased.h / 2)).intValue
         val staffSeparation =
@@ -571,8 +569,6 @@ object Ocr4Music {
 
       if (numDarkestYNeighbors == 5) {
         val averageY = sumDarkestYNeighbor / 5.0f
-        //justStaff(xUncentered, 10) = 150
-        //justStaff(xUncentered, (averageY * 5).intValue + 10) = 0
         yCorrection(xUncentered) = averageY
       }
       else
@@ -631,7 +627,7 @@ object Ocr4Music {
   def findBestMatchAroundPoint(templateScaledMatrix:Array[Array[GrayImage]],
       inputAdjusted:GrayImage,
       expectedX:Int, expectedY:Int, metrics:Metrics, label:String,
-      staffYDoubled:Int) = {
+      staffY:Int) = {
 
     val (minX, maxX) = label match {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
@@ -653,13 +649,13 @@ object Ocr4Music {
     }
 
     findBestMatch(templateScaledMatrix, inputAdjusted,
-      (minX, maxX), (minY, maxY), metrics, label, staffYDoubled)
+      (minX, maxX), (minY, maxY), metrics, label, staffY)
   }
 
   def findBestMatch(templateScaledMatrix:Array[Array[GrayImage]],
       inputAdjusted:GrayImage,
       minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
-      metrics:Metrics, label:String, staffYDoubled:Int) = {
+      metrics:Metrics, label:String, staffY:Int) = {
     val (minX, maxX) = minXmaxX
     val (minY, maxY) = minYmaxY
 
@@ -748,7 +744,7 @@ object Ocr4Music {
     TemplateMatch(
       bestInputCenterX, bestInputCenterY, bestTemplateW, bestTemplateH,
       bestBlackMatch, bestWhiteMatch, bestBlackMatchX, bestBlackMatchY,
-      slope, label, staffYDoubled)
+      slope, label, staffY)
   }
 
   def drawTemplateMatch(_match:TemplateMatch, output:ColorImage,
@@ -782,7 +778,8 @@ object Ocr4Music {
     if (points.isEmpty)
       points
     else
-      points.head :: dedupe(for (x <- points.tail if x.staffYDoubled != points.head.staffYDoubled) yield x)
+      points.head :: dedupe(
+        for (x <- points.tail if x.staffY != points.head.staffY) yield x)
   }
 
   def removeMiddleNotes(noteGroups:List[List[TemplateMatch]]) = {
@@ -790,12 +787,12 @@ object Ocr4Music {
       if (group.isEmpty)
         false
       else
-        group.head.staffYDoubled == y || containsStaffY(group.tail, y)
+        group.head.staffY == y || containsStaffY(group.tail, y)
     }
 
     noteGroups.map { noteGroup =>
       var toDelete:List[Int] = Nil
-      var staffYs = noteGroup.map { point => point.staffYDoubled }
+      var staffYs = noteGroup.map { point => point.staffY }
       (staffYs.min + 1 to staffYs.max - 1).foreach { i =>
         if (containsStaffY(noteGroup, i - 1) &&
             containsStaffY(noteGroup, i) &&
@@ -806,7 +803,7 @@ object Ocr4Music {
       }
 
       val changed = dedupe(noteGroup).filter { point =>
-        !toDelete.contains(point.staffYDoubled)
+        !toDelete.contains(point.staffY)
       }
       changed
     }
@@ -868,12 +865,12 @@ object Ocr4Music {
           case "L" => templateBlackHeadScaledMatrix
           case "2" => templateWhiteHeadScaledMatrix
         }
-        (-8 to 8).foreach { staffYDoubled =>
+        (-8 to 8).foreach { staffY =>
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
             val xCentered = x - (input.w / 2)
             val a = metrics.a
-            val b = metrics.b + (staffYDoubled / 2.0f * metrics.bSpacing)
-            val c = metrics.c + (staffYDoubled / 2.0f * metrics.cSpacing)
+            val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
+            val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
             val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
               yCorrection(x) + (input.h / 2)).intValue
 
@@ -881,10 +878,10 @@ object Ocr4Music {
             // artifacts from the vertical blurring
             if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
                 augmentedBinaryNonStaff(x, y) == 0) {
-              val isLedgerLine = Math.abs(staffYDoubled / 2) > 2
+              val isLedgerLine = Math.abs(staffY / 2) > 2
               val yRange = if (isLedgerLine) (y - 1, y + 1) else (y, y)
               val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
-                  (x, x), yRange, metrics, label, staffYDoubled)
+                  (x, x), yRange, metrics, label, staffY)
               points = newPoint :: points
             }
           }
@@ -932,7 +929,7 @@ object Ocr4Music {
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
 
-      val estimatedStaffYs = filteredNotes.map { _.map { _.staffYDoubled } }
+      val estimatedStaffYs = filteredNotes.map { _.map { _.staffY } }
       annotateNotes(estimatedStaffYs, input.toColorImage, caseName)
 
       val performance = calcPerformance(estimatedStaffYs, annotation.notes)
