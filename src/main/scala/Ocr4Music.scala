@@ -624,8 +624,7 @@ object Ocr4Music {
     templateScaled
   }
 
-  def findBestMatchAroundPoint(templateScaledMatrix:Array[Array[GrayImage]],
-      inputAdjusted:GrayImage,
+  def findBestMatchAroundPoint(templateSum:GrayImage, inputAdjusted:GrayImage,
       expectedX:Int, expectedY:Int, metrics:Metrics, label:String,
       staffY:Int) = {
 
@@ -648,12 +647,11 @@ object Ocr4Music {
         (expectedY + 2, expectedY + 2)
     }
 
-    findBestMatch(templateScaledMatrix, inputAdjusted,
+    findBestMatch(templateSum, inputAdjusted,
       (minX, maxX), (minY, maxY), metrics, label, staffY)
   }
 
-  def findBestMatch(templateScaledMatrix:Array[Array[GrayImage]],
-      inputAdjusted:GrayImage,
+  def findBestMatch(templateSum:GrayImage, inputAdjusted:GrayImage,
       minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
       metrics:Metrics, label:String, staffY:Int) = {
     val (minX, maxX) = minXmaxX
@@ -687,9 +685,6 @@ object Ocr4Music {
     var maxCombinedMatch = 0
     (minW to maxW).foreach { templateW =>
     (minH to maxH).foreach { templateH =>
-      //val templateScaled = scaleTemplate(template, templateW, templateH)
-      val templateScaled = templateScaledMatrix(templateH)(templateW)
-
       (minY to maxY).foreach { inputCenterY =>
         (minX to maxX).foreach { inputCenterX =>
           var sumBlackMatch = 0
@@ -704,10 +699,24 @@ object Ocr4Music {
                 inputCenterX + templateScaledX - templateW / 2,
                 inputCenterY + yAdjustment +
                   templateScaledY - templateH / 2)
-              //val templateV = template(
-              //  templateScaledX * template.w / templateW,
-              //  templateScaledY * template.h / templateH)
-              val templateV = templateScaled(templateScaledX, templateScaledY)
+
+              val templateFullX0 =
+                templateScaledX * templateSum.w / templateW - 1
+              val templateFullX1 =
+                (templateScaledX + 1) * templateSum.w / templateW - 1
+              val templateFullY0 =
+                templateScaledY * templateSum.h / templateH - 1
+              val templateFullY1 =
+                (templateScaledY + 1) * templateSum.h / templateH - 1
+              val templateVSum =
+                templateSum(templateFullX1, templateFullY1) -
+                templateSum(templateFullX0, templateFullY1) -
+                templateSum(templateFullX1, templateFullY0) +
+                templateSum(templateFullX0, templateFullY0)
+              val templateV = templateVSum /
+                (templateFullX1 - templateFullX0) /
+                (templateFullY1 - templateFullY0)
+
               sumBlackMatch += (255 - inputV) * (255 - templateV)
               sumWhiteMatch += inputV * templateV
               sumBlackMatchX += (255 - inputV) * (255 - templateV) *
@@ -809,6 +818,30 @@ object Ocr4Music {
     }
   }
 
+  def sumTemplate(input:GrayImage) : GrayImage = {
+    val sum = new GrayImage(input.w, input.h)
+
+    (0 until sum.h).foreach { y =>
+      (0 until sum.w).foreach { x =>
+        sum(x, y) = input(x, y)
+      }
+    }
+
+    (1 until sum.h).foreach { y =>
+      (0 until sum.w).foreach { x =>
+        sum(x, y) = sum(x, y) + sum(x, y - 1)
+      }
+    }
+
+    (0 until sum.h).foreach { y =>
+      (1 until sum.w).foreach { x =>
+        sum(x, y) = sum(x, y) + sum(x - 1, y)
+      }
+    }
+
+    sum
+  }
+
   def doTemplateMatching(caseNames:List[String]) {
     val templateSharp = 
       ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
@@ -847,24 +880,13 @@ object Ocr4Music {
       inputAdjusted.saveTo(new File(
         "demos/input_adjusted.%s.png".format(caseName)))
 
-      val templateBlackHeadScaledMatrix = (0 to 40).map { templateH =>
-        (0 to 40).map { templateW =>
-          scaleTemplate(templateBlackHead, templateW, templateH)
-        }.toArray
-      }.toArray
-      val templateWhiteHeadScaledMatrix = (0 to 40).map { templateH =>
-        (0 to 40).map { templateW =>
-          scaleTemplate(templateWhiteHead, templateW, templateH)
-        }.toArray
-      }.toArray
-
       var points:List[TemplateMatch] = Nil
       List("L", "2").foreach { label =>
-        //printf("Processing %s...\n", label)
-        val templateScaledMatrix = label match {
-          case "L" => templateBlackHeadScaledMatrix
-          case "2" => templateWhiteHeadScaledMatrix
+        val templateSum = label match {
+          case "L" => sumTemplate(templateBlackHead)
+          case "2" => sumTemplate(templateWhiteHead)
         }
+
         (-8 to 8).foreach { staffY =>
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
             val xCentered = x - (input.w / 2)
@@ -880,7 +902,7 @@ object Ocr4Music {
                 augmentedBinaryNonStaff(x, y) == 0) {
               val isLedgerLine = Math.abs(staffY / 2) > 2
               val yRange = if (isLedgerLine) (y - 1, y + 1) else (y, y)
-              val newPoint = findBestMatch(templateScaledMatrix, inputAdjusted,
+              val newPoint = findBestMatch(templateSum, inputAdjusted,
                   (x, x), yRange, metrics, label, staffY)
               points = newPoint :: points
             }
