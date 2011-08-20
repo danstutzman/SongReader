@@ -505,7 +505,7 @@ object Ocr4Music {
         val c = metrics.c + (staffY / 2 * metrics.cSpacing)
         val y = (a * x * x + b * x + c) + yCorrection(xUncentered) +
           (excerpt.h / 2)
-        val color = (if (Math.abs(staffY) <= 2) 255 else 127)
+        val color = (if (Math.abs(staffY) <= 4) 255 else 127)
         if (y >= 0 && Math.round(y * 4).intValue < demo.h)
           demo(xUncentered * 4, Math.round(y * 4).intValue) = color
 
