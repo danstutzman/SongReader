@@ -27,8 +27,8 @@ case class Annotation (
 ) {}
 
 case class Performance (
-  val correctNotes:List[(Int,Int)],
-  val spuriousNotes:List[(Int,Int)],
+  val correctNotes:List[(Int,TemplateMatch)],
+  val spuriousNotes:List[(Int,TemplateMatch)],
   val missingNotes:List[(Int,Int)]
 ) {
   def numCorrect() = { correctNotes.size }
@@ -273,8 +273,8 @@ object Ocr4Music {
     Metrics(input.w, input.h, bestA, centerB, centerC, cSpacing, bSpacing)
   }
 
-  def annotateNotes(
-      noteGroups:List[List[Int]], input:ColorImage, caseName:String) {
+  def demoNotes(
+      noteGroups:List[List[TemplateMatch]], input:ColorImage, caseName:String) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
@@ -286,7 +286,8 @@ object Ocr4Music {
     var staffX = -1
     noteGroups.foreach { noteGroup =>
       staffX += 1
-    noteGroup.foreach { staffY =>
+    noteGroup.foreach { note =>
+      val staffY = note.staffY
       val centerY = (staffHeight / 2) + (staffY * staffSeparation / 2).intValue
       (-8 to 8).foreach { x =>
         (-8 to 8).foreach { y =>
@@ -384,7 +385,8 @@ object Ocr4Music {
   // This ensures that a spurious or missed note only causes one
   // error instead of throwing off all the notes to the right.
   def calcPerformance(
-      estimated:List[List[Int]], annotated:List[List[Int]]) = {
+      estimatedNotes:List[List[TemplateMatch]], annotated:List[List[Int]]) = {
+    val estimated = estimatedNotes.map { _.map { _.staffY } }
     var w = estimated.size
     var h = annotated.size
     var matrix = new Array[Array[Int]](h + 1)
@@ -447,8 +449,8 @@ object Ocr4Music {
 
     case class PairedNoteGroup (
       val staffX:Int,
-      val estimatedNotes:List[Int],
-      val annotatedNotes:List[Int]
+      val estimatedNotes:List[TemplateMatch],
+      val annotated:List[Int]
     ) {}
     var pairedNoteGroups:List[PairedNoteGroup] = Nil
     var x = w
@@ -456,16 +458,18 @@ object Ocr4Music {
     while (x > 0 || y > 0) {
       backPointer(y)(x) match {
         case (-1, 0) =>
-          pairedNoteGroups = PairedNoteGroup(x - 1, estimated(x - 1), List()) ::
+          pairedNoteGroups =
+            PairedNoteGroup(x - 1, estimatedNotes(x - 1), List()) ::
             pairedNoteGroups
           x -= 1
         case (0, -1) =>
-          pairedNoteGroups = PairedNoteGroup(x - 1, List(), annotated(y - 1)) ::
+          pairedNoteGroups =
+            PairedNoteGroup(x - 1, List(), annotated(y - 1)) ::
             pairedNoteGroups
           y -= 1
         case (-1, -1) =>
           pairedNoteGroups =
-            PairedNoteGroup(x - 1, estimated(x - 1), annotated(y - 1)) ::
+            PairedNoteGroup(x - 1, estimatedNotes(x - 1), annotated(y - 1)) ::
             pairedNoteGroups
           x -= 1
           y -= 1
@@ -473,19 +477,20 @@ object Ocr4Music {
     }
     pairedNoteGroups = pairedNoteGroups.reverse
 
-    var correctNotes:List[(Int,Int)] = Nil
-    var spuriousNotes:List[(Int,Int)] = Nil
-    var missingNotes:List[(Int,Int)] = Nil
+    var correctNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
+    var spuriousNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
+    var missingNotes:List[(Int,Int)] = Nil // staffX, staffY
     pairedNoteGroups.foreach { pair =>
-      val PairedNoteGroup(staffX, estimated, annotated) = pair
-      estimated.foreach { i =>
-        if (!(annotated.contains(i)))
-          spuriousNotes = (staffX, i) :: spuriousNotes
+      val PairedNoteGroup(staffX, estimatedNotes, annotated) = pair
+      estimatedNotes.foreach { note =>
+        if (!(annotated.contains(note.staffY)))
+          spuriousNotes = (staffX, note) :: spuriousNotes
         else
-          correctNotes = (staffX, i) :: correctNotes
+          correctNotes = (staffX, note) :: correctNotes
       }
+      val estimatedStaffYs = estimatedNotes.map { _.staffY }
       annotated.foreach { i =>
-        if (!(estimated.contains(i)))
+        if (!(estimatedStaffYs.contains(i)))
           missingNotes = (staffX, i) :: missingNotes
       }
     }
@@ -950,11 +955,9 @@ object Ocr4Music {
         }
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+      demoNotes(filteredNotes, input.toColorImage, caseName)
 
-      val estimatedStaffYs = filteredNotes.map { _.map { _.staffY } }
-      annotateNotes(estimatedStaffYs, input.toColorImage, caseName)
-
-      val performance = calcPerformance(estimatedStaffYs, annotation.notes)
+      val performance = calcPerformance(filteredNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
       //printf("  correct: %s\n", performance.correctNotes)
