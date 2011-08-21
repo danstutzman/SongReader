@@ -684,7 +684,7 @@ object Ocr4Music {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
         (staffSeparation, staffSeparation * 3/2)
       case "#" =>
-        (staffSeparation * 5/2, staffSeparation * 3)
+        (staffSeparation * 5/2, staffSeparation * 7/2)
       case "b" | "N" =>
         (staffSeparation * 2, staffSeparation * 4)
       case "TC" =>
@@ -722,11 +722,13 @@ object Ocr4Music {
               val templateFullX0 =
                 templateScaledX * templateSum.w / templateW - 1
               val templateFullX1 =
-                (templateScaledX + 1) * templateSum.w / templateW - 1
+                ((templateScaledX + 1) * templateSum.w / templateW - 1) max
+                (templateFullX0 + 1)
               val templateFullY0 =
                 templateScaledY * templateSum.h / templateH - 1
               val templateFullY1 =
-                (templateScaledY + 1) * templateSum.h / templateH - 1
+                ((templateScaledY + 1) * templateSum.h / templateH - 1) max
+                (templateFullY0 + 1)
               val templateVSum =
                 templateSum(templateFullX1, templateFullY1) -
                 templateSum(templateFullX0, templateFullY1) -
@@ -1020,7 +1022,7 @@ object Ocr4Music {
         val strongEnough = point1.label match {
           case "L" => point1.blackMatch > 98
           case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
-          case "#" => point1.blackMatch > 30 && point1.whiteMatch > 140
+          case "#" => point1.blackMatch > 40 && point1.whiteMatch > 100
           case "TC" => point1.blackMatch > 30 && point1.whiteMatch > 120
           case "44" => point1.blackMatch > 70 && point1.whiteMatch > 100
         }
