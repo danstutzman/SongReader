@@ -677,6 +677,8 @@ object Ocr4Music {
         (staffSeparation * 3/4, staffSeparation * 3/2)
       case "TC" =>
         (staffSeparation * 3, staffSeparation * 3)
+      case "44" =>
+        (staffSeparation, staffSeparation * 2)
     }
     val (minH, maxH) = label match {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
@@ -687,6 +689,8 @@ object Ocr4Music {
         (staffSeparation * 2, staffSeparation * 4)
       case "TC" =>
         (staffSeparation * 7, staffSeparation * 7)
+      case "44" =>
+        (staffSeparation * 4, staffSeparation * 4)
     }
 
     var bestTemplateW = 0
@@ -932,6 +936,8 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
     val templateTrebleClef =
       ColorImage.readFromFile(new File("templates/treble_clef.png")).toGrayImage
+    val template44 =
+      ColorImage.readFromFile(new File("templates/44.png")).toGrayImage
 
     var globalPerformance = Performance(List(), List(), List())
     caseNames.foreach { caseName =>
@@ -960,13 +966,14 @@ object Ocr4Music {
         "demos/input_adjusted.%s.png".format(caseName)))
 
       var points:List[TemplateMatch] = Nil
-      List("L", "2", "#", "TC").foreach { label =>
+      List("L", "2", "#", "TC", "44").foreach { label =>
         println(label)
         val templateSum = label match {
           case "L" => sumTemplate(templateBlackHead)
           case "2" => sumTemplate(templateWhiteHead)
           case "#" => sumTemplate(templateSharp)
           case "TC" => sumTemplate(templateTrebleClef)
+          case "44" => sumTemplate(template44)
         }
 
         (-8 to 8).foreach { staffY =>
@@ -1015,6 +1022,7 @@ object Ocr4Music {
           case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
           case "#" => point1.blackMatch > 30 && point1.whiteMatch > 140
           case "TC" => point1.blackMatch > 30 && point1.whiteMatch > 120
+          case "44" => point1.blackMatch > 70 && point1.whiteMatch > 100
         }
 
         !hasBetterNeighbor && strongEnough
@@ -1053,6 +1061,7 @@ object Ocr4Music {
             case "2" => templateWhiteHead
             case "#" => templateSharp
             case "TC" => templateTrebleClef
+            case "44" => template44
           }
           drawTemplateMatch(point, demo, template)
         }
@@ -1061,7 +1070,7 @@ object Ocr4Music {
       demoNotes(filteredNotes, input.toColorImage, caseName)
 
       val realNotes = filteredNotes.map { _.filter { note =>
-        note.label != "#" && note.label != "TC" } }
+        note.label == "L" || note.label == "2" } }
       val performance = calcPerformance(realNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
