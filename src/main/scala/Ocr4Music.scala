@@ -657,33 +657,6 @@ object Ocr4Music {
     templateScaled
   }
 
-  def findBestMatchAroundPoint(templateSum:GrayImage, inputAdjusted:GrayImage,
-      expectedX:Int, expectedY:Int, metrics:Metrics, label:String,
-      staffY:Int) = {
-
-    val (minX, maxX) = label match {
-      case "L" | "S" | "Sa" | "Sb" | "2" =>
-        (expectedX - 2, expectedX + 2)
-      case "#" =>
-        (expectedX - 3, expectedX + 3)
-      case "b" | "N" =>
-        (expectedX - 2, expectedX + 2)
-    }
-    val (minY, maxY) = label match {
-      case "L" | "S" | "Sa" | "Sb" =>
-        (expectedY - 2, expectedY + 2)
-      case "2" =>
-        (expectedY - 2, expectedY + 4)
-      case "#" =>
-        (expectedY + 0, expectedY + 10)
-      case "b" | "N" =>
-        (expectedY + 2, expectedY + 2)
-    }
-
-    findBestMatch(templateSum, inputAdjusted,
-      (minX, maxX), (minY, maxY), metrics, label, staffY)
-  }
-
   def findBestMatch(templateSum:GrayImage, inputAdjusted:GrayImage,
       minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
       metrics:Metrics, label:String, staffY:Int) = {
@@ -702,6 +675,8 @@ object Ocr4Music {
         (staffSeparation, staffSeparation * 3)
       case "#" | "b" | "N" =>
         (staffSeparation * 3/4, staffSeparation * 3/2)
+      case "TC" =>
+        (staffSeparation * 3, staffSeparation * 3)
     }
     val (minH, maxH) = label match {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
@@ -710,6 +685,8 @@ object Ocr4Music {
         (staffSeparation * 5/2, staffSeparation * 3)
       case "b" | "N" =>
         (staffSeparation * 2, staffSeparation * 4)
+      case "TC" =>
+        (staffSeparation * 7, staffSeparation * 7)
     }
 
     var bestTemplateW = 0
@@ -953,6 +930,8 @@ object Ocr4Music {
       ColorImage.readFromFile(new File("templates/black_head.png")).toGrayImage
     val templateWhiteHead =
       ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
+    val templateTrebleClef =
+      ColorImage.readFromFile(new File("templates/treble_clef.png")).toGrayImage
 
     var globalPerformance = Performance(List(), List(), List())
     caseNames.foreach { caseName =>
@@ -981,15 +960,16 @@ object Ocr4Music {
         "demos/input_adjusted.%s.png".format(caseName)))
 
       var points:List[TemplateMatch] = Nil
-      List("L", "2", "#").foreach { label =>
+      List("L", "2", "#", "TC").foreach { label =>
+        println(label)
         val templateSum = label match {
           case "L" => sumTemplate(templateBlackHead)
           case "2" => sumTemplate(templateWhiteHead)
           case "#" => sumTemplate(templateSharp)
+          case "TC" => sumTemplate(templateTrebleClef)
         }
 
         (-8 to 8).foreach { staffY =>
-println(("label", label, "staffY", staffY))
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
             val xCentered = x - (input.w / 2)
             val a = metrics.a
@@ -1034,6 +1014,7 @@ println(("label", label, "staffY", staffY))
           case "L" => point1.blackMatch > 98
           case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
           case "#" => point1.blackMatch > 30 && point1.whiteMatch > 140
+          case "TC" => point1.blackMatch > 30 && point1.whiteMatch > 120
         }
 
         !hasBetterNeighbor && strongEnough
@@ -1071,6 +1052,7 @@ println(("label", label, "staffY", staffY))
             case "L" => templateBlackHead
             case "2" => templateWhiteHead
             case "#" => templateSharp
+            case "TC" => templateTrebleClef
           }
           drawTemplateMatch(point, demo, template)
         }
@@ -1078,8 +1060,9 @@ println(("label", label, "staffY", staffY))
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
       demoNotes(filteredNotes, input.toColorImage, caseName)
 
-      val nonAccidentalNotes = filteredNotes.map { _.filter { _.label != "#" } }
-      val performance = calcPerformance(nonAccidentalNotes, annotation.notes)
+      val realNotes = filteredNotes.map { _.filter { note =>
+        note.label != "#" && note.label != "TC" } }
+      val performance = calcPerformance(realNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
       //printf("  correct: %s\n", performance.correctNotes)
