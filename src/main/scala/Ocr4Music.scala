@@ -5,7 +5,6 @@ import java.lang.Math
 import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 import com.twitter.json.Json
-import scala.collection.mutable.ArraySeq
 import scala.io.Source
 
 object Colors {
@@ -335,6 +334,35 @@ object Ocr4Music {
     }
 
     image.saveTo(new File("demos/notes2.%s.png".format(caseName)))
+  }
+
+  def demoPointGroups(groups:List[Set[TemplateMatch]], input:GrayImage,
+      caseName:String) {
+    val demo = input.toColorImage
+    groups.foreach { group =>
+      val x0 = group.foldLeft(9999) { (accum, point) =>
+        accum min (point.x - (point.w+1)/2)
+      }
+      val x1 = group.foldLeft(-9999) { (accum, point) =>
+        accum max (point.x + (point.w+1)/2)
+      }
+      val y0 = group.foldLeft(9999) { (accum, point) =>
+        accum min (point.y - (point.h+1)/2)
+      }
+      val y1 = group.foldLeft(-9999) { (accum, point) =>
+        accum max (point.y + (point.h+1)/2)
+      }
+
+      (x0 to x1).foreach { x =>
+        demo(x, y0) = (255, 0, 0)
+        demo(x, y1) = (255, 0, 0)
+      }
+      (y0 to y1).foreach { y =>
+        demo(x0, y) = (255, 0, 0)
+        demo(x1, y) = (255, 0, 0)
+      }
+    }
+    demo.saveTo(new File("demos/point_groups.%s.png".format(caseName)))
   }
 
   def groupTemplateMatches(matches:List[TemplateMatch]) = {
@@ -669,12 +697,17 @@ object Ocr4Music {
     val staffSeparation =
       ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
 
-    val (minW, maxW) = (staffSeparation, staffSeparation * 3)
+    val (minW, maxW) = label match {
+      case "L" | "S" | "Sa" | "Sb" | "2" =>
+        (staffSeparation, staffSeparation * 3)
+      case "#" | "b" | "N" =>
+        (staffSeparation * 3/4, staffSeparation * 3/2)
+    }
     val (minH, maxH) = label match {
       case "L" | "S" | "Sa" | "Sb" | "2" =>
         (staffSeparation, staffSeparation * 3/2)
       case "#" =>
-        (staffSeparation * 3, staffSeparation * 5)
+        (staffSeparation * 5/2, staffSeparation * 3)
       case "b" | "N" =>
         (staffSeparation * 2, staffSeparation * 4)
     }
@@ -796,33 +829,6 @@ object Ocr4Music {
         for (x <- points.tail if x.staffY != points.head.staffY) yield x)
   }
 
-  def removeMiddleNotes(noteGroups:List[List[TemplateMatch]]) = {
-    def containsStaffY(group:List[TemplateMatch], y:Int) : Boolean = {
-      if (group.isEmpty)
-        false
-      else
-        group.head.staffY == y || containsStaffY(group.tail, y)
-    }
-
-    noteGroups.map { noteGroup =>
-      var toDelete:List[Int] = Nil
-      var staffYs = noteGroup.map { point => point.staffY }
-      (staffYs.min + 1 to staffYs.max - 1).foreach { i =>
-        if (containsStaffY(noteGroup, i - 1) &&
-            containsStaffY(noteGroup, i) &&
-            containsStaffY(noteGroup, i + 1) &&
-            !toDelete.contains(i - 1)) {
-          toDelete = i :: toDelete
-        }
-      }
-
-      val changed = dedupe(noteGroup).filter { point =>
-        !toDelete.contains(point.staffY)
-      }
-      changed
-    }
-  }
-
   def sumTemplate(input:GrayImage) : GrayImage = {
     val sum = new GrayImage(input.w, input.h)
 
@@ -845,6 +851,95 @@ object Ocr4Music {
     }
 
     sum
+  }
+
+  // returns area of overlap divided by total area of two points
+  def overlapAmount(point1:TemplateMatch, point2:TemplateMatch) = {
+    val (x10, x11) = (point1.x - point1.w/2.0f, point1.x + point1.w/2.0f)
+    val (y10, y11) = (point1.y - point1.h/2.0f, point1.y + point1.h/2.0f)
+    val (x20, x21) = (point2.x - point2.w/2.0f, point2.x + point2.w/2.0f)
+    val (y20, y21) = (point2.y - point2.h/2.0f, point2.y + point2.h/2.0f)
+    val (x30, x31) = (x10 max x20, x11 min x21)
+    val (y30, y31) = (y10 max y20, y11 min y21)
+    val (overlapW, overlapH) = ((x31 - x30) max 0, (y31 - y30) max 0)
+    (overlapW * overlapH).floatValue /
+      ((point1.w min point2.w) * (point1.h min point2.h))
+  }
+
+  def groupOverlappingPoints(points:List[TemplateMatch]) = {
+    var groups:List[Set[TemplateMatch]] = Nil
+    points.foreach { point =>
+      groups.filter { group =>
+        group.exists { overlapAmount(point, _) >= 0.1f }
+      } match {
+        case Nil =>
+          groups = Set(point) :: groups
+        case oneGroup :: Nil =>
+          groups = (oneGroup + point) :: (groups - oneGroup)
+        case manyGroups =>
+          val merged = manyGroups.reduceLeft { _ ++ _ } ++ Set(point)
+          groups = merged :: groups -- manyGroups
+      }
+    }
+    groups
+  }
+
+  def listNonOverlappingAlternatives(points:List[TemplateMatch])
+      : Set[Set[TemplateMatch]] = {
+    points match {
+      case Nil => Set(Set[TemplateMatch]())
+      case point :: otherPoints =>
+        val overlapping = otherPoints.filter { otherPoint =>
+          overlapAmount(point, otherPoint) >= 0.3f
+        }
+        val ifPointKept = listNonOverlappingAlternatives(
+            otherPoints -- overlapping).map { set => set ++ Set(point) }
+        if (overlapping.isEmpty)
+          ifPointKept
+        else
+          ifPointKept ++ listNonOverlappingAlternatives(otherPoints)
+    }
+  }
+
+  def demoAlternatives(overlappingPointGroups:List[Set[TemplateMatch]],
+      input:GrayImage, caseName:String) {
+    val demo2 = input.toColorImage
+    overlappingPointGroups.foreach { group =>
+      val alternatives = listNonOverlappingAlternatives(group.toList)
+      var i = 0
+      alternatives.foreach { group2 =>
+        val color = i match {
+          case 0 => (255,0,0)
+          case 1 => (0,255,0)
+          case 2 => (0,0,255)
+          case _ => (255,255,255)
+        }
+
+        // for example: gray + red drawn lightly = reddish gray
+        def drawLightly(x:Int, y:Int) = {
+          val (r, g, b) = demo2(x, y)
+          demo2(x, y) = ((r + color._1) min 255,
+                         (g + color._2) min 255,
+                         (b + color._3) min 255)
+        }
+
+        group2.foreach { point =>
+          val (x0, x1) = (point.x - (point.w+1)/2, point.x + (point.w+1)/2)
+          val (y0, y1) = (point.y - (point.h+1)/2, point.y + (point.h+1)/2)
+          (x0 to x1).foreach { x =>
+            drawLightly(x, y0)
+            drawLightly(x, y1)
+          }
+          (y0 to y1).foreach { y =>
+            drawLightly(x0, y)
+            drawLightly(x1, y)
+          }
+        }
+
+        i += 1
+      }
+    }
+    demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -886,13 +981,15 @@ object Ocr4Music {
         "demos/input_adjusted.%s.png".format(caseName)))
 
       var points:List[TemplateMatch] = Nil
-      List("L", "2").foreach { label =>
+      List("L", "2", "#").foreach { label =>
         val templateSum = label match {
           case "L" => sumTemplate(templateBlackHead)
           case "2" => sumTemplate(templateWhiteHead)
+          case "#" => sumTemplate(templateSharp)
         }
 
         (-8 to 8).foreach { staffY =>
+println(("label", label, "staffY", staffY))
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
             val xCentered = x - (input.w / 2)
             val a = metrics.a
@@ -936,13 +1033,36 @@ object Ocr4Music {
         val strongEnough = point1.label match {
           case "L" => point1.blackMatch > 98
           case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
+          case "#" => point1.blackMatch > 30 && point1.whiteMatch > 140
         }
 
         !hasBetterNeighbor && strongEnough
       }
 
-      val groupedPoints = groupTemplateMatches(pointsFiltered)
-      val filteredNotes = removeMiddleNotes(groupedPoints)
+      val overlappingPointGroups = groupOverlappingPoints(pointsFiltered)
+      demoAlternatives(overlappingPointGroups, input, caseName)
+      demoPointGroups(overlappingPointGroups, input, caseName)
+
+      val culledPointGroups = overlappingPointGroups.map { group =>
+        val alternatives = listNonOverlappingAlternatives(group.toList)
+        var bestAlternative = alternatives.toList(0)
+        var maxScore = 0
+        alternatives.foreach { group2 =>
+          var score = 0
+          group2.foreach { point =>
+            score += point.blackMatch * point.w * point.h
+          }
+
+          if (score > maxScore) {
+            maxScore = score
+            bestAlternative = group2
+          }
+        }
+        bestAlternative
+      }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
+
+      val groupedPoints = groupTemplateMatches(culledPointGroups)
+      val filteredNotes = groupedPoints
 
       val demo = input.toColorImage
       filteredNotes.foreach { noteGroup =>
@@ -950,6 +1070,7 @@ object Ocr4Music {
           val template = point.label match {
             case "L" => templateBlackHead
             case "2" => templateWhiteHead
+            case "#" => templateSharp
           }
           drawTemplateMatch(point, demo, template)
         }
@@ -957,7 +1078,8 @@ object Ocr4Music {
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
       demoNotes(filteredNotes, input.toColorImage, caseName)
 
-      val performance = calcPerformance(filteredNotes, annotation.notes)
+      val nonAccidentalNotes = filteredNotes.map { _.filter { _.label != "#" } }
+      val performance = calcPerformance(nonAccidentalNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
       //printf("  correct: %s\n", performance.correctNotes)
