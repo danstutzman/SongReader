@@ -55,9 +55,6 @@ case class Metrics (
   val a:Float, // x^2 term
   val b:Float, // x term
   val c:Float,  // constant term
-  // The amount of separation between each staff line is not constant.
-  // It's computed with the linear function:
-  //   b = bOverCSlope*c + bIntercept
   val cSpacing:Float,
   val bSpacing:Float
 ) {}
