@@ -78,12 +78,24 @@ case class TemplateMatch (
 
 object Ocr4Music {
   // returns image with just notes, just notes grayscale, and without notes
-  def separateNotes(input:GrayImage) = {
-    val whiteBackground = input.brighten(130)
+  def separateNotes(input:GrayImage, caseName:String) = {
+    val whiteBackground = input.brighten(100)
+    whiteBackground.saveTo(new File(
+      "demos/white_background.%s.png".format(caseName)))
+
     val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
+    binaryNonStaff.saveTo(new File(
+      "demos/binary_non_staff.%s.png".format(caseName)))
+
     val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
+    augmentedBinaryNonStaff.saveTo(new File(
+      "demos/augmented_binary_non_staff.%s.png".format(caseName)))
+
     val partiallyErased = whiteBackground.addWithCeiling(
       augmentedBinaryNonStaff.inverse)
+    partiallyErased.saveTo(new File(
+      "demos/partially_erased.%s.png".format(caseName)))
+
     (binaryNonStaff, whiteBackground, partiallyErased, augmentedBinaryNonStaff)
   }
 
@@ -702,8 +714,8 @@ object Ocr4Music {
     var bestBlackMatchX = 0
     var bestBlackMatchY = 0
     var maxCombinedMatch = 0
-    (minW to maxW).foreach { templateW =>
-    (minH to maxH).foreach { templateH =>
+    ((minW max 1) to maxW).foreach { templateW =>
+    ((minH max 1) to maxH).foreach { templateH =>
       (minY to maxY).foreach { inputCenterY =>
         (minX to maxX).foreach { inputCenterX =>
           var sumBlackMatch = 0
@@ -949,7 +961,7 @@ object Ocr4Music {
       val annotation = loadAnnotationJson(caseName)
 
       val (_, _, partiallyErased, augmentedBinaryNonStaff) =
-        separateNotes(input)
+        separateNotes(input, caseName)
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
@@ -1091,28 +1103,27 @@ object Ocr4Music {
       globalPerformance.precision, globalPerformance.recall))
   }
 
-  def oneCaseNameOrAllIfEmpty(args:Array[String]) = {
-    args.length match {
-      case 0 =>
-        val filenames = new File("input").listFiles
-        val JsonFilename = """(.*)\.json""".r
-        filenames.foldLeft(List[String]()) { (accum, filename) =>
-          filename.getName match {
-            case JsonFilename(caseName) => caseName :: accum
-            case _ => accum
-          }
-        }.reverse
-      case 1 =>
-        List(args(0))
-      case _ =>
-        throw new RuntimeException("1st arg: name from input/*.json")
+  def expandCaseNames(args:Array[String]) = {
+    var caseNames:List[String] = Nil
+    val filenames = new File("input").listFiles
+    args.foreach { arg =>
+      val GlobMatch = ("(" + arg.replaceAll("\\*", ".*") + ")\\.json").r
+      filenames.foreach { filename =>
+        filename.getName match {
+          case GlobMatch(caseName) => caseNames = caseName :: caseNames
+          case _ => ()
+        }
+      }
     }
+    if (args.length == 0)
+      throw new RuntimeException("1st arg: case name from input/*.json")
+    caseNames.reverse
   }
 
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
-      val caseNames = oneCaseNameOrAllIfEmpty(args)
+      val caseNames = expandCaseNames(args)
       doTemplateMatching(caseNames)
     } catch {
       case e: Exception => e.printStackTrace()
