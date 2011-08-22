@@ -7,6 +7,10 @@ require 'sinatra'
 get '/' do
   send_file 'index.html'
 end
+get '/slider.html' do
+  send_file 'slider.html'
+end
+
 get '/photo1.jpeg' do
   send_file 'photo1.jpeg'
 end
