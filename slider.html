@@ -8,17 +8,82 @@
     <script src='http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/jquery-ui.min.js'></script> 
     <link rel='stylesheet' href='http://ajax.googleapis.com/ajax/libs/jqueryui/1.8.16/themes/base/jquery-ui.css' type='text/css' media='all' /> 
     <script>
+      image = null;
+      function drawOnCanvas() {
+        var floorV = $('#floor-slider').slider('value');
+        var ceilingV = $('#ceiling-slider').slider('value');
+
+        var canvas = document.getElementsByTagName('canvas')[0];
+        var context = canvas.getContext('2d');
+        var w = canvas.width;
+        var h = canvas.height;
+
+        context.drawImage(image, 0, 0);
+        var input = context.getImageData(0, 0, canvas.width, canvas.height);
+        var inputData = input.data;
+
+        var output = context.createImageData(canvas.width, canvas.height);
+        var outputData = output.data;
+        for (var y = 0; y < h; y += 1) {
+          for (var x = 0; x < w; x += 1) {
+            var offset = (y*w + x)*4;
+            var inputV = (inputData[offset] +
+              inputData[offset + 1] + inputData[offset + 2]) / 3;
+            var truncated = ((inputV - floorV) * 255 / (ceilingV - floorV));
+            var r, g, b;
+            if (truncated < 0) { // before floor, blue = too cold
+              r = 0;
+              g = 0;
+              b = 255;
+            } else if (truncated > 255) { // above ceiling, red = too hot
+              r = 255;
+              g = 0;
+              b = 0;
+            } else {
+              r = truncated;
+              g = truncated;
+              b = truncated;
+            }
+
+            outputData[offset + 0] = r;
+            outputData[offset + 1] = g;
+            outputData[offset + 2] = b;
+            outputData[offset + 3] = 255; // full opacity
+          }
+        }
+        context.putImageData(output, 0, 0);
+      }
       $(document).ready(function() {
-        $('#slider').slider();
+        image = new Image();
+        image.src = 'input/3h.jpeg';
+        image.onload = drawOnCanvas;
+
+        $('#floor-slider').slider({
+          value: 0,
+          max: 255,
+          stop: function(event, ui) { drawOnCanvas(); }
+        });
+        $('#ceiling-slider').slider({
+          value: 255,
+          max: 255,
+          stop: function(event, ui) { drawOnCanvas(); }
+        });
       });
     </script>
     <style>
-      #slider {
-        width: 300px;
-      }
+      #floor-slider { width: 300px; }
+      #ceiling-slider { width: 300px; }
     </style>
   </head>
   <body>
-    <div id='slider'></div>
+    floor
+    <div id='floor-slider'></div>
+    ceiling
+    <div id='ceiling-slider'></div>
+<br/>
+<br/>
+<br/>
+<br/>
+    <canvas height='108' width='712' style='border:1px black solid'></canvas>
   </body>
 </html>

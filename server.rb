@@ -38,3 +38,6 @@ end
 get '/annotation.js' do
   send_file 'annotation.js'
 end
+get '/input/3h.jpeg' do
+  send_file 'input/3h.jpeg'
+end
