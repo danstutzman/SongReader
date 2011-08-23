@@ -1112,10 +1112,10 @@ object Ocr4Music {
         }
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
-      demoNotes(filteredNotes, inputAdjusted.toColorImage, caseName)
 
       val realNotes = filteredNotes.map { _.filter { note =>
         note.label == "L" || note.label == "2" } }
+      demoNotes(realNotes, inputAdjusted.toColorImage, caseName)
       val performance = calcPerformance(realNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         annotation.caseName, performance.precision, performance.recall))
