@@ -6,6 +6,7 @@ import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 import com.twitter.json.Json
 import scala.io.Source
+import scala.util.Sorting
 
 object Colors {
   val underflow = (0, 0, 255) // blue (too cold)
@@ -74,26 +75,70 @@ case class TemplateMatch (
 ) {}
 
 object Ocr4Music {
-  // returns image with just notes, just notes grayscale, and without notes
   def separateNotes(input:GrayImage, caseName:String) = {
-    val whiteBackground = input.brighten(100)
-    whiteBackground.saveTo(new File(
-      "demos/white_background.%s.png".format(caseName)))
+    val ceilings = new Array[Int](input.w)
+    (0 until input.w).foreach { x =>
+      val x0 = (x - 50) max 0
+      val x1 = (x + 50) min (input.w - 1)
+      val values = new Array[Int]((x1 - x0 + 1) * input.h)
+      var i = 0
+      (x0 to x1).foreach { xNeighbor =>
+        (0 until input.h).foreach { y =>
+          values(i) = input(xNeighbor, y)
+          i += 1
+        }
+      }
+      Sorting.quickSort(values)
+      ceilings(x) = values(values.length * 1/4)
+    }
 
-    val binaryNonStaff = whiteBackground.blurVertically1.binarize(200)
-    binaryNonStaff.saveTo(new File(
-      "demos/binary_non_staff.%s.png".format(caseName)))
+    val floors = new Array[Int](input.w)
+    (0 until input.w).foreach { x =>
+      floors(x) = ceilings(x) * 1/2
+    }
 
-    val augmentedBinaryNonStaff = binaryNonStaff.blurVertically4.binarize(254)
-    augmentedBinaryNonStaff.saveTo(new File(
-      "demos/augmented_binary_non_staff.%s.png".format(caseName)))
+    val adjusted = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val v = input(x, y)
+        val newV = (v - floors(x)) * 255 / (ceilings(x) - floors(x) + 1)
+        adjusted(x, y) = if (newV < 0) 0 else if (newV > 255) 255 else newV
+      }
+    }
+    adjusted.saveTo(new File("demos/adjusted.%s.png".format(caseName)))
 
-    val partiallyErased = whiteBackground.addWithCeiling(
-      augmentedBinaryNonStaff.inverse)
+    val augmentedBinaryNonStaff = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val v = input(x, y)
+        val newV = (v - floors(x)) * 255 / (ceilings(x) - floors(x) + 1)
+        val x0 = (x - 3) max 0
+        val x1 = (x + 3) min (input.w - 1)
+        val y0 = (y - 3) max 0
+        val y1 = (y + 3) min (input.h - 1)
+ 
+        val isCloseToFloor = (x0 to x1).exists { xNeighbor =>
+          (y0 to y1).exists { yNeighbor =>
+            input(xNeighbor, yNeighbor) <= floors(x)
+          }
+        }
+
+        augmentedBinaryNonStaff(x, y) = if (isCloseToFloor) 0 else 255
+      }
+    }
+    
+    val partiallyErased = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        partiallyErased(x, y) =
+          if (augmentedBinaryNonStaff(x, y) == 0) 255
+          else adjusted(x, y)
+      }
+    }
     partiallyErased.saveTo(new File(
       "demos/partially_erased.%s.png".format(caseName)))
 
-    (binaryNonStaff, whiteBackground, partiallyErased, augmentedBinaryNonStaff)
+    (adjusted, partiallyErased, augmentedBinaryNonStaff)
   }
 
   def estimateMetrics(input:GrayImage, caseName:String) : Metrics = {
@@ -957,7 +1002,7 @@ object Ocr4Music {
         ColorImage.readFromFile(new File(imageFilename)).toGrayImage
       val annotation = loadAnnotationJson(caseName)
 
-      val (_, _, partiallyErased, augmentedBinaryNonStaff) =
+      val (_, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(input, caseName)
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
