@@ -742,9 +742,9 @@ object Ocr4Music {
       case "b" | "N" =>
         (staffSeparation * 2, staffSeparation * 4)
       case "TC" =>
-        (staffSeparation * 7, staffSeparation * 7)
+        (staffSeparation * 8, staffSeparation * 9)
       case "44" =>
-        (staffSeparation * 4, staffSeparation * 4)
+        (staffSeparation * 4, staffSeparation * 5)
     }
 
     var bestTemplateW = 0
@@ -1076,8 +1076,8 @@ object Ocr4Music {
         val strongEnough = point1.label match {
           case "L" => point1.blackMatch > 98
           case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
-          case "#" => point1.blackMatch > 40 && point1.whiteMatch > 100
-          case "TC" => point1.blackMatch > 30 && point1.whiteMatch > 120
+          case "#" => point1.blackMatch > 50 && point1.whiteMatch > 100
+          case "TC" => point1.blackMatch > 40 && point1.whiteMatch > 130
           case "44" => point1.blackMatch > 70 && point1.whiteMatch > 100
         }
 
