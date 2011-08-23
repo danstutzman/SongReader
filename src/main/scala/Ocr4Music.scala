@@ -537,7 +537,7 @@ object Ocr4Music {
 
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
       yCorrection:Array[Float], caseName:String) {
-    val demo = excerpt.resize(excerpt.w * 4, excerpt.h * 4, 0)
+    val demo = excerpt.resize(excerpt.w * 2, excerpt.h * 2, 0)
     // -8 to 8 instead of -4 to 4 because we want to include ledger lines
     (-8 to 8 by 2).foreach { staffY =>
       (0 until excerpt.w).foreach { xUncentered =>
@@ -548,8 +548,8 @@ object Ocr4Music {
         val y = (a * x * x + b * x + c) + yCorrection(xUncentered) +
           (excerpt.h / 2)
         val color = (if (Math.abs(staffY) <= 4) 255 else 127)
-        if (y >= 0 && Math.round(y * 4).intValue < demo.h)
-          demo(xUncentered * 4, Math.round(y * 4).intValue) = color
+        if (y >= 0 && Math.round(y * 2).intValue < demo.h)
+          demo(xUncentered * 2, Math.round(y * 2).intValue) = color
 
         /*val b = metrics.staffYToB(staffY + 2)
         val c = metrics.staffYToC(staffY + 2)
