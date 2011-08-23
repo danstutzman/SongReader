@@ -1002,27 +1002,16 @@ object Ocr4Music {
         ColorImage.readFromFile(new File(imageFilename)).toGrayImage
       val annotation = loadAnnotationJson(caseName)
 
-      val (_, partiallyErased, augmentedBinaryNonStaff) =
+      val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
         separateNotes(input, caseName)
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-      demoStaffLines(input, metrics, yCorrection, caseName)
-
-      val blackest = 50
-      val whitest = 100
-      val inputAdjusted = new GrayImage(input.w, input.h)
-      (0 until input.h).foreach { y =>
-        (0 until input.w).foreach { x =>
-          val v = (input(x, y) - blackest) * 255 / (whitest - blackest)
-          inputAdjusted(x, y) = (if (v < 0) 0 else if (v > 255) 255 else v)
-        }
-      }
-      inputAdjusted.saveTo(new File(
-        "demos/input_adjusted.%s.png".format(caseName)))
+      demoStaffLines(inputAdjusted, metrics, yCorrection, caseName)
 
       var points:List[TemplateMatch] = Nil
       List("L", "2", "#", "TC", "44").foreach { label =>
+      //List("#").foreach { label =>
         println(label)
         val templateSum = label match {
           case "L" => sumTemplate(templateBlackHead)
@@ -1034,12 +1023,12 @@ object Ocr4Music {
 
         (-8 to 8).foreach { staffY =>
           (0 until augmentedBinaryNonStaff.w).foreach { x =>
-            val xCentered = x - (input.w / 2)
+            val xCentered = x - (inputAdjusted.w / 2)
             val a = metrics.a
             val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
             val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
             val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
-              yCorrection(x) + (input.h / 2)).intValue
+              yCorrection(x) + (inputAdjusted.h / 2)).intValue
 
             // remove the bands at the top and the bottom, which are probably
             // artifacts from the vertical blurring
@@ -1085,8 +1074,8 @@ object Ocr4Music {
       }
 
       val overlappingPointGroups = groupOverlappingPoints(pointsFiltered)
-      demoAlternatives(overlappingPointGroups, input, caseName)
-      demoPointGroups(overlappingPointGroups, input, caseName)
+      demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
+      demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
 
       val culledPointGroups = overlappingPointGroups.map { group =>
         val alternatives = listNonOverlappingAlternatives(group.toList)
@@ -1109,7 +1098,7 @@ object Ocr4Music {
       val groupedPoints = groupTemplateMatches(culledPointGroups)
       val filteredNotes = groupedPoints
 
-      val demo = input.toColorImage
+      val demo = inputAdjusted.toColorImage
       filteredNotes.foreach { noteGroup =>
         noteGroup.foreach { point =>
           val template = point.label match {
@@ -1123,7 +1112,7 @@ object Ocr4Music {
         }
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
-      demoNotes(filteredNotes, input.toColorImage, caseName)
+      demoNotes(filteredNotes, inputAdjusted.toColorImage, caseName)
 
       val realNotes = filteredNotes.map { _.filter { note =>
         note.label == "L" || note.label == "2" } }
