@@ -1126,10 +1126,10 @@ object Ocr4Music {
     demo2.saveTo(new File("demos/erase2.%s.png".format(caseName)))
 
     // Draw staff lines on image to see if they look right
-    val demo = new GrayImage(input.w, input.h)
+    val demo3 = new GrayImage(input.w, input.h)
     (0 until input.h).foreach { y =>
       (0 until input.w).foreach { x =>
-        demo(x, y) = input(x, y)
+        demo3(x, y) = input(x, y)
       }
     }
     (0 until input.w).foreach { x =>
@@ -1142,11 +1142,11 @@ object Ocr4Music {
         yCorrection(x) + (input.h / 2)).intValue
 
       (0 until halfStaffSpacing).foreach { yInner =>
-        demo(x, y - yInner) = yNeighborToMedians(yInner)(x)
-        demo(x, y + yInner) = yNeighborToMedians(yInner)(x)
+        demo3(x, y - yInner) = yNeighborToMedians(yInner)(x)
+        demo3(x, y + yInner) = yNeighborToMedians(yInner)(x)
       }
     }
-    demo.saveTo(new File("demos/erase3.%s.png".format(caseName)))
+    demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
