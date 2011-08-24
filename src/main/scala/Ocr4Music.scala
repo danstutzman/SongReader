@@ -1271,6 +1271,59 @@ object Ocr4Music {
     demo.saveTo(new File("demos/segment_groups.%s.png".format(caseName)))
   }
 
+/*
+  def fitOvalsInSegmentGroups(segmentGroups:List[List[Segment]], 
+      justNotes:GrayImage, caseName:String) {
+    val w = 11
+    val h = 11
+    val yToOvalWidth = (0 until h).map { y =>
+      (Math.sqrt(1.0 - Math.pow(((y + 0.5) / h) * 2 - 1, 2)) * w).intValue
+    }
+    val demo = justNotes.toColorImage
+    segmentGroups.foreach { segmentGroup =>
+      val minX = segmentGroup.foldLeft(segmentGroup(0).x0) { _ min _.x0 }
+      val maxX = segmentGroup.foldLeft(segmentGroup(0).x1) { _ max _.x1 }
+      val minY = segmentGroup.foldLeft(segmentGroup(0).y) { _ min _.y }
+      val maxY = segmentGroup.foldLeft(segmentGroup(0).y) { _ max _.y }
+      val yToSegments = (minY to maxY).map { y =>
+        segmentGroup.filter { _.y == y }
+      }
+
+      var centerXSegments:List[Segment] = Nil
+      (minY to maxY - h).foreach { topY =>
+        var possibleCenterXs = (minX to maxX).toList
+        (0 until h).foreach { ovalY =>
+          val segmentsOnThisLine = yToSegments(topY + ovalY - minY)
+          val ovalWidth = yToOvalWidth(ovalY)
+          possibleCenterXs = possibleCenterXs.filter { centerX =>
+            segmentsOnThisLine.find { segment =>
+              val x0 = segment.x0 + ovalWidth/2
+              val x1 = segment.x1 - ovalWidth/2
+              centerX >= x0 && centerX <= x1
+            }.isDefined
+          }
+        }
+
+        possibleCenterXs.foreach { centerX =>
+          demo(centerX, topY + h/2) = (0, 0, 255)
+        }
+
+        var previousX = -1
+        var startOfSegment = possibleCenterXs.min
+        var newCenterXSegments:List[Segment] = Nil
+        val centerY = topY + h/2
+        possibleCenterXs.toList.sort.foreach { x =>
+          if (x > previousX + 1) {
+            newCenterXSegments = Segment(centerY, startOfSegment, previousX) ::
+              newCenterXSegments
+          }
+        }
+      }
+    }
+    demo.saveTo(new File("demos/center_xs.%s.png".format(caseName)))
+  }
+*/
+
   def boundSegmentGroups(segmentGroups:List[List[Segment]]) = {
     segmentGroups.map { segments =>
       val minX = segments.foldLeft(segments(0).x0) { (minX, segment) =>
