@@ -1126,15 +1126,19 @@ object Ocr4Music {
     val dx = 2
     val dy = 3
     val threshold = 25 // unit-less value since the differences were normalized
-    (dy until input.h - dy).foreach { y =>
-      (dx until input.w - dx).foreach { x =>
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
         var sumRedness = 0
-        (-dy to dy).foreach { yNeighbor =>
-          (-dx to dx).foreach { xNeighbor =>
-            sumRedness += demo(x + xNeighbor, y + yNeighbor)._1
+        val y0 = (y - dy) max 0
+        val y1 = (y + dy) min (input.h - 1)
+        val x0 = (x - dx) max 0
+        val x1 = (x + dx) min (input.w - 1)
+        (y0 to y1).foreach { yNeighbor =>
+          (x0 to x1).foreach { xNeighbor =>
+            sumRedness += demo(xNeighbor, yNeighbor)._1
           }
         }
-        if (sumRedness / ((dx * 2 + 1) * (dy * 2 + 1)) > threshold)
+        if (sumRedness / ((x1 - x0 + 1) * (y1 - y0 + 1)) > threshold)
           demo2(x, y) = demo(x, y)._3
         else
           demo2(x, y) = 255
