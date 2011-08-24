@@ -6,6 +6,7 @@ import javax.imageio.ImageIO
 import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
 import com.twitter.json.Json
 import scala.io.Source
+import scala.util.Random
 import scala.util.Sorting
 
 object Colors {
@@ -13,6 +14,19 @@ object Colors {
   val overflow = (255, 0, 0) // red (too hot)
   val ansiEscapeToHighlightProgramOutput = "\u001b" + "[1;37m" // bright white
 }
+
+case class Segment (
+  val y:Int,
+  val x0:Int,
+  val x1:Int
+) {}
+
+case class BoundingBox (
+  val minX:Int,
+  val maxX:Int,
+  val minY:Int,
+  val maxY:Int
+) {}
 
 case class LabeledPoint (
   val label:String,
@@ -1017,7 +1031,7 @@ object Ocr4Music {
   }
 */
   def eraseStaffLines(input:GrayImage, whereNotesAre:GrayImage,
-      metrics:Metrics, yCorrection:Array[Float], caseName:String) {
+      metrics:Metrics, yCorrection:Array[Float], caseName:String) = {
     val maxStaffSpacing =
         Math.abs(metrics.bSpacing) * (input.w / 2) + metrics.cSpacing
     val halfStaffSpacing = Math.ceil(maxStaffSpacing / 2).intValue
@@ -1150,6 +1164,130 @@ object Ocr4Music {
       }
     }
     demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
+
+    demo2
+  }
+
+  def scanSegments(input:GrayImage) : List[Segment] = {
+    var segments:List[Segment] = Nil
+    val background = 255
+    (0 until input.h).foreach { y =>
+      var previousPixel = background
+      var startOfSegment = 0
+      (0 until input.w).foreach { x =>
+        val currentPixel = input(x, y)
+        if (currentPixel != background) { // if new pixel isn't background,
+          if (previousPixel == background) // ... but previous was ...
+            startOfSegment = x // then start a new start
+        }
+        else { // if new pixel is the background,
+          if (previousPixel != background) // ... and if the previous wasn't...
+            segments = Segment(y, startOfSegment, x) :: segments // end segment
+        }
+        previousPixel = currentPixel
+      }
+    }
+    segments
+  }
+
+  def groupTouchingSegments(segments:List[Segment]) : List[List[Segment]] = {
+    case class SegmentGroup (
+      var earlierLayers:List[Segment],
+      var previousLayer:List[Segment],
+      var currentLayer:List[Segment]
+    ) {}
+
+    var maxY = segments.foldLeft(0) { (maxY, segment) =>
+      if (segment.y > maxY) segment.y else maxY
+    }
+    var yToSegments:Array[List[Segment]] = new Array[List[Segment]](maxY + 1)
+    (0 to maxY).foreach { y => yToSegments(y) = Nil }
+    segments.foreach { segment =>
+      yToSegments(segment.y) = segment :: yToSegments(segment.y)
+    }
+
+    var activeGroups:List[SegmentGroup] = Nil
+    var inactiveGroups:List[SegmentGroup] = Nil
+    (0 to maxY).foreach { y =>
+      yToSegments(y).foreach { segment =>
+        val touchingGroupIfAny = activeGroups.find { group =>
+          group.previousLayer.find { previousSegment =>
+            segment.x0 < previousSegment.x1 && segment.x1 > previousSegment.x0
+          }.isDefined
+        }
+        val group = touchingGroupIfAny.getOrElse {
+          val newGroup = SegmentGroup(Nil, Nil, Nil)
+          activeGroups = newGroup :: activeGroups
+          newGroup
+        }
+        group.currentLayer = segment :: group.currentLayer
+      }
+
+      val (newActiveGroups, newInactiveGroups) =
+        activeGroups.partition { group => group.currentLayer.size > 0 }
+      inactiveGroups = newInactiveGroups ::: inactiveGroups
+      activeGroups = newActiveGroups.map { group =>
+        SegmentGroup(
+          group.previousLayer ::: group.earlierLayers,
+          group.currentLayer,
+          Nil)
+      }
+    }
+
+    (inactiveGroups ::: activeGroups).map { group =>
+      group.earlierLayers ::: group.previousLayer ::: group.currentLayer
+    }
+  }
+
+  def demoSegmentGroups(segmentGroups:List[List[Segment]], 
+      justNotes:GrayImage, caseName:String) {
+    val demo = new ColorImage(justNotes.w, justNotes.h)
+    val random = new Random(0)
+    segmentGroups.foreach { segmentGroup =>
+      val color =
+        (random.nextInt(256), random.nextInt(256), random.nextInt(256))
+      segmentGroup.foreach { segment =>
+        (segment.x0 until segment.x1).foreach { x =>
+          demo(x, segment.y) = color
+        }
+      }
+    }
+    demo.saveTo(new File("demos/segment_groups.%s.png".format(caseName)))
+  }
+
+  def boundSegmentGroups(segmentGroups:List[List[Segment]]) = {
+    segmentGroups.map { segments =>
+      val minX = segments.foldLeft(segments(0).x0) { (minX, segment) =>
+        if (segment.x0 < minX) segment.x0 else minX
+      }
+      val maxX = segments.foldLeft(segments(0).x1) { (maxX, segment) =>
+        if (segment.x1 > maxX) segment.x1 else maxX
+      }
+      val minY = segments.foldLeft(segments(0).y) { (minY, segment) =>
+        if (segment.y < minY) segment.y else minY
+      }
+      val maxY = segments.foldLeft(segments(0).y) { (maxY, segment) =>
+        if (segment.y > maxY) segment.y else maxY
+      }
+      BoundingBox(minX, maxX, minY, maxY)
+    }
+  }
+
+  def demoBounds(baseImage:ColorImage, bounds:List[BoundingBox],
+      caseName:String) {
+    val demo = baseImage.copy
+    bounds.foreach { bound =>
+      val color = (255, 0, 0)
+      (bound.minX to bound.maxX).foreach { x =>
+        demo(x, bound.minY) = color
+        demo(x, bound.maxY) = color
+      }
+      (bound.minY to bound.maxY).foreach { y =>
+        demo(bound.minX, y) = color
+        demo(bound.maxX, y) = color
+      }
+    }
+    demo.saveTo(new File("demos/bounds.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -1180,8 +1318,11 @@ object Ocr4Music {
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-      eraseStaffLines(input, augmentedBinaryNonStaff,
+      val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
+      val segments = scanSegments(justNotes)
+      val segmentGroups = groupTouchingSegments(segments)
+      demoSegmentGroups(segmentGroups, justNotes, caseName)
 /*
       demoStaffLines(inputAdjusted, metrics, yCorrection, caseName)
 
