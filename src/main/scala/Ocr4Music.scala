@@ -1210,17 +1210,29 @@ object Ocr4Music {
     var inactiveGroups:List[SegmentGroup] = Nil
     (0 to maxY).foreach { y =>
       yToSegments(y).foreach { segment =>
-        val touchingGroupIfAny = activeGroups.find { group =>
+        val touchingGroups = activeGroups.filter { group =>
           group.previousLayer.find { previousSegment =>
             segment.x0 < previousSegment.x1 && segment.x1 > previousSegment.x0
           }.isDefined
         }
-        val group = touchingGroupIfAny.getOrElse {
-          val newGroup = SegmentGroup(Nil, Nil, Nil)
-          activeGroups = newGroup :: activeGroups
-          newGroup
+        val assignedGroup = touchingGroups match {
+          case Nil =>
+            val newGroup = SegmentGroup(Nil, Nil, Nil)
+            activeGroups = newGroup :: activeGroups
+            newGroup
+          case matchedGroup :: otherGroups =>
+            activeGroups = activeGroups -- (matchedGroup :: otherGroups)
+            val mergedGroup =
+                otherGroups.foldLeft(matchedGroup) { (accum, toAdd) =>
+              SegmentGroup(
+                accum.earlierLayers ++ toAdd.earlierLayers,
+                accum.previousLayer ++ toAdd.previousLayer,
+                accum.currentLayer ++ toAdd.currentLayer)
+            }
+            activeGroups = mergedGroup :: activeGroups
+            mergedGroup
         }
-        group.currentLayer = segment :: group.currentLayer
+        assignedGroup.currentLayer = segment :: assignedGroup.currentLayer
       }
 
       val (newActiveGroups, newInactiveGroups) =
