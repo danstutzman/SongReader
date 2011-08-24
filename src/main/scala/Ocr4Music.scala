@@ -1111,7 +1111,9 @@ object Ocr4Music {
         // reverse and scale the pixel's color,
         // so its darkest black is full white (255)
         // and its lightest white is full black (0)
-        val normalizedV1 = 255 - (v * 255 / white)
+        val otherBlack = white / 2
+        val normalizedV1 =
+          255 - ((v - otherBlack) * 255 / ((white - otherBlack) max 10))
         val normalizedV2 =
           if (normalizedV1 > 255) 255
           else if (normalizedV1 < 0) 0
