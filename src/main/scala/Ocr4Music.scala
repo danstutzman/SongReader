@@ -1060,47 +1060,50 @@ object Ocr4Music {
     }
 
     val demo = new ColorImage(input.w, input.h)
-    (-8 to 8 by 2).foreach { staffY =>
+    (0 until input.h).foreach { y =>
       (0 until input.w).foreach { x =>
         // black means the darkest/middle color in the staff lines
         val black = yNeighborToMedians(0)(x)
         // white means the lightest color; the color outside the staff lines
         val white = yNeighborToMedians(halfStaffSpacing - 1)(x)
 
-        val xCentered = x - (input.w / 2)
-        val a = metrics.a
-        val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
-        val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
-        val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
-          yCorrection(x) + (input.h / 2)).intValue
-
-        (-halfStaffSpacing to halfStaffSpacing).foreach { yNeighbor =>
-          val v = input(x, y + yNeighbor)
-
-          // predict the color at this pixel given its location relative
-          // to the staff lines
-          val expectedV =
-            if (Math.abs(staffY) <= 4 && Math.abs(yNeighbor) < halfStaffSpacing)
-              yNeighborToMedians(Math.abs(yNeighbor))(x)
-            else
-              white
-
-          // was pixel darker than the staff line?  Positive means darker.
-          val diff = expectedV - v
-          val normalizedDiff = diff * 80 / ((white - black) max 10)
-          val positiveDiff = if (diff > 0) normalizedDiff else 0
-
-          // reverse and scale the pixel's color,
-          // so its darkest black is full white (255)
-          // and its lightest white is full black (0)
-          val normalizedV1 = 255 - (v * 255 / white)
-          val normalizedV2 =
-            if (normalizedV1 > 255) 255
-            else if (normalizedV1 < 0) 0
-            else normalizedV1
-
-          demo(x, y + yNeighbor) = (positiveDiff, 0, normalizedV2)
+        // find out the distance to the closest staff line
+        var minDistance = 9999
+        (-4 to 4 by 2).foreach { staffY =>
+          val xCentered = x - (input.w / 2)
+          val a = metrics.a
+          val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
+          val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
+          val yOfStaff =
+            Math.round((a * xCentered * xCentered + b * xCentered + c) +
+            yCorrection(x) + (input.h / 2)).intValue
+          minDistance = minDistance min Math.abs(y - yOfStaff)
         }
+        // if it's far from the staff (in ledger-line land), just use
+        // the distance corresponding to half way between staff lines
+        val distanceFromStaff = minDistance min (halfStaffSpacing - 1)
+
+        val v = input(x, y)
+
+        // predict the color at this pixel given its location relative
+        // to the staff lines
+        val expectedV = yNeighborToMedians(distanceFromStaff)(x)
+
+        // was pixel darker than the staff line?  Positive diff means darker.
+        val diff = expectedV - v
+        val normalizedDiff = diff * 80 / ((white - black) max 10)
+        val positiveDiff = if (diff > 0) normalizedDiff else 0
+
+        // reverse and scale the pixel's color,
+        // so its darkest black is full white (255)
+        // and its lightest white is full black (0)
+        val normalizedV1 = 255 - (v * 255 / white)
+        val normalizedV2 =
+          if (normalizedV1 > 255) 255
+          else if (normalizedV1 < 0) 0
+          else normalizedV1
+
+        demo(x, y) = (positiveDiff, 0, normalizedV2)
       }
     }
     demo.saveTo(new File("demos/erase.%s.png".format(caseName)))
