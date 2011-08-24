@@ -1112,8 +1112,12 @@ object Ocr4Music {
         // so its darkest black is full white (255)
         // and its lightest white is full black (0)
         val otherBlack = white / 2
+        // the ink at this spot is a little darker than it would be if it
+        // weren't overlapping a staff line, so subtract out the expected
+        // darkness contribution of the staff line ink
+        val v2 = v - (expectedV - white)
         val normalizedV1 =
-          255 - ((v - otherBlack) * 255 / ((white - otherBlack) max 10))
+          255 - ((v2 - otherBlack) * 255 / ((white - otherBlack) max 10))
         val normalizedV2 =
           if (normalizedV1 > 255) 255
           else if (normalizedV1 < 0) 0
