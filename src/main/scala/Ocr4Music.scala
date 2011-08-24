@@ -112,10 +112,10 @@ object Ocr4Music {
       (0 until input.h).foreach { y =>
         val v = input(x, y)
         val newV = (v - floors(x)) * 255 / (ceilings(x) - floors(x) + 1)
-        val x0 = (x - 3) max 0
-        val x1 = (x + 3) min (input.w - 1)
-        val y0 = (y - 3) max 0
-        val y1 = (y + 3) min (input.h - 1)
+        val x0 = (x - 1) max 0
+        val x1 = (x + 1) min (input.w - 1)
+        val y0 = (y - 1) max 0
+        val y1 = (y + 1) min (input.h - 1)
  
         val isCloseToFloor = (x0 to x1).exists { xNeighbor =>
           (y0 to y1).exists { yNeighbor =>
@@ -979,6 +979,176 @@ object Ocr4Music {
     demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
   }
 
+/*
+  def verticalHough(input:GrayImage, caseName:String) {
+    val white = new GrayImage(input.h, input.w)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        val v = 255 - input(x, y)
+        val closeToDark = (-3 to 3).exists { yNeighbor =>
+          (-3 to 3).exists { xNeighbor =>
+            (255 - input(x + xNeighbor, y + yNeighbor)) > 200
+          }
+        }
+        white(y, x) = if (closeToDark) 0 else if (v < 100) 0 else (v - 100)
+      }
+    }
+    white.saveTo(new File("demos/vertical.%s.png".format(caseName)))
+    
+    val hough = new GrayImage(40, input.w)
+    (0 until white.h).foreach { y =>
+      (0 until white.w).foreach { x =>
+        val v = white(x, y)// - 150
+        (-20 until 20).foreach { mCents =>
+          val intercept = Math.round(y - (mCents / 30.0f * x)).intValue
+          if (intercept >= 0 && intercept < hough.h)
+            hough(mCents + 20, intercept) = hough(mCents + 20, intercept) + v
+        }
+      }
+    }
+
+    val max = hough.data.max
+    (0 until hough.h).foreach { y =>
+      (0 until hough.w).foreach { x =>
+        hough(x, y) = hough(x, y) * 255 / max
+      }
+    }
+    hough.saveTo(new File("demos/vhough.%s.png".format(caseName)))
+  }
+*/
+  def eraseStaffLines(input:GrayImage, whereNotesAre:GrayImage,
+      metrics:Metrics, yCorrection:Array[Float], caseName:String) {
+    val maxStaffSpacing =
+        Math.abs(metrics.bSpacing) * (input.w / 2) + metrics.cSpacing
+    val halfStaffSpacing = Math.ceil(maxStaffSpacing / 2).intValue
+
+    val yNeighborToMedians = new Array[Array[Int]](halfStaffSpacing)
+    (0 until halfStaffSpacing).foreach { i =>
+      yNeighborToMedians(i) = new Array[Int](input.w)
+    }
+
+    (0 until input.w).foreach { xOuter =>
+      val x0 = (xOuter - 50) max 0
+      val x1 = (xOuter + 50) min (input.w - 1)
+      val yNeighborToValues = new Array[List[Int]](halfStaffSpacing)
+      (0 until halfStaffSpacing).foreach { i =>
+        yNeighborToValues(i) = Nil
+      }
+
+      (-4 to 4 by 2).foreach { staffY =>
+        (x0 to x1).foreach { x =>
+          val xCentered = x - (input.w / 2)
+          val a = metrics.a
+          val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
+          val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
+          val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
+            yCorrection(x) + (input.h / 2)).intValue
+          (0 until halfStaffSpacing).foreach { yNeighbor =>
+            val v = input(x, y + yNeighbor)
+            if (whereNotesAre(x, y + yNeighbor) != 0)
+              yNeighborToValues(yNeighbor) = v :: yNeighborToValues(yNeighbor)
+          }
+        }
+      }
+      
+      (0 until halfStaffSpacing).foreach { yNeighbor =>
+        val values = yNeighborToValues(yNeighbor).toArray
+        Sorting.quickSort(values)
+        val median = values(values.length / 2)
+        yNeighborToMedians(yNeighbor)(xOuter) = median
+      }
+    }
+
+    val demo = new ColorImage(input.w, input.h)
+    (-8 to 8 by 2).foreach { staffY =>
+      (0 until input.w).foreach { x =>
+        // black means the darkest/middle color in the staff lines
+        val black = yNeighborToMedians(0)(x)
+        // white means the lightest color; the color outside the staff lines
+        val white = yNeighborToMedians(halfStaffSpacing - 1)(x)
+
+        val xCentered = x - (input.w / 2)
+        val a = metrics.a
+        val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
+        val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
+        val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
+          yCorrection(x) + (input.h / 2)).intValue
+
+        (-halfStaffSpacing to halfStaffSpacing).foreach { yNeighbor =>
+          val v = input(x, y + yNeighbor)
+
+          // predict the color at this pixel given its location relative
+          // to the staff lines
+          val expectedV =
+            if (Math.abs(staffY) <= 4 && Math.abs(yNeighbor) < halfStaffSpacing)
+              yNeighborToMedians(Math.abs(yNeighbor))(x)
+            else
+              white
+
+          // was pixel darker than the staff line?  Positive means darker.
+          val diff = expectedV - v
+          val normalizedDiff = diff * 80 / ((white - black) max 10)
+          val positiveDiff = if (diff > 0) normalizedDiff else 0
+
+          // reverse and scale the pixel's color,
+          // so its darkest black is full white (255)
+          // and its lightest white is full black (0)
+          val normalizedV1 = 255 - (v * 255 / white)
+          val normalizedV2 =
+            if (normalizedV1 > 255) 255
+            else if (normalizedV1 < 0) 0
+            else normalizedV1
+
+          demo(x, y + yNeighbor) = (positiveDiff, 0, normalizedV2)
+        }
+      }
+    }
+    demo.saveTo(new File("demos/erase.%s.png".format(caseName)))
+
+    val demo2 = new GrayImage(input.w, input.h)
+    val dx = 2
+    val dy = 3
+    val threshold = 25 // unit-less value since the differences were normalized
+    (dy until input.h - dy).foreach { y =>
+      (dx until input.w - dx).foreach { x =>
+        var sumRedness = 0
+        (-dy to dy).foreach { yNeighbor =>
+          (-dx to dx).foreach { xNeighbor =>
+            sumRedness += demo(x + xNeighbor, y + yNeighbor)._1
+          }
+        }
+        if (sumRedness / ((dx * 2 + 1) * (dy * 2 + 1)) > threshold)
+          demo2(x, y) = demo(x, y)._3
+        else
+          demo2(x, y) = 255
+      }
+    }
+    demo2.saveTo(new File("demos/erase2.%s.png".format(caseName)))
+
+    // Draw staff lines on image to see if they look right
+    val demo = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        demo(x, y) = input(x, y)
+      }
+    }
+    (0 until input.w).foreach { x =>
+      val staffY = 0.0f
+      val xCentered = x - (input.w / 2)
+      val a = metrics.a
+      val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
+      val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
+      val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
+        yCorrection(x) + (input.h / 2)).intValue
+
+      (0 until halfStaffSpacing).foreach { yInner =>
+        demo(x, y - yInner) = yNeighborToMedians(yInner)(x)
+        demo(x, y + yInner) = yNeighborToMedians(yInner)(x)
+      }
+    }
+    demo.saveTo(new File("demos/erase3.%s.png".format(caseName)))
+  }
+
   def doTemplateMatching(caseNames:List[String]) {
     val templateSharp = 
       ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
@@ -1007,6 +1177,9 @@ object Ocr4Music {
       val metrics = estimateMetrics(partiallyErased, caseName)
       val yCorrection = determineYCorrection(
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+      eraseStaffLines(input, augmentedBinaryNonStaff,
+        metrics, yCorrection, caseName)
+/*
       demoStaffLines(inputAdjusted, metrics, yCorrection, caseName)
 
       var points:List[TemplateMatch] = Nil
@@ -1129,6 +1302,7 @@ object Ocr4Music {
         globalPerformance.correctNotes ++ performance.correctNotes,
         globalPerformance.spuriousNotes ++ performance.spuriousNotes,
         globalPerformance.missingNotes ++ performance.missingNotes)
+*/
     }
     println("Total:   precision: %.3f -- recall: %.3f".format(
       globalPerformance.precision, globalPerformance.recall))
