@@ -1145,7 +1145,7 @@ object Ocr4Music {
           }
         }
         if (sumRedness / ((x1 - x0 + 1) * (y1 - y0 + 1)) > threshold)
-          demo2(x, y) = demo(x, y)._3
+          demo2(x, y) = 255 - demo(x, y)._3
         else
           demo2(x, y) = 255
       }
@@ -1365,6 +1365,379 @@ object Ocr4Music {
     demo.saveTo(new File("demos/bounds.%s.png".format(caseName)))
   }
 
+  case class Transform (
+    val targetW:Int,
+    val targetH:Int,
+    val targetMidX:Int,
+    val targetMidY:Int,
+    val blurTenths:Int,
+    val brightenTenths:Int
+  ) {}
+
+  def shrinkHalfSize(input:GrayImage) = {
+    val output = new GrayImage(input.w / 2, input.h / 2)
+    (0 until output.h).foreach { y =>
+      (0 until output.w).foreach { x =>
+        val v = (input(x*2, y*2    ) + input(x*2 + 1, y*2) +
+                 input(x*2, y*2 + 1) + input(x*2 + 1, y*2 + 1)) / 4
+        output(x, y) = v
+      }
+    }
+    output
+  }
+
+  def matchTrebleTemplate(justNotes:GrayImage, caseName:String) {
+    val template = ColorImage.readFromFile(new File(
+      "templates/treble_clef.png")).toGrayImage
+    val templateSum = sumTemplate(template.inverse)
+
+    val halfSize = shrinkHalfSize(justNotes.inverse)
+    //halfSize.saveTo(new File("demos/half_size.png"))
+    val quarterSize = shrinkHalfSize(halfSize)
+    //quarterSize.saveTo(new File("demos/quarter_size.png"))
+    val eighthSize = shrinkHalfSize(quarterSize)
+    //eighthSize.saveTo(new File("demos/eighth_size.png"))
+
+    case class TM ( // TemplateMatch
+      val w:Int,
+      val h:Int,
+      val x0:Int,
+      val y0:Int,
+      val meanDiff:Int
+    ) {}
+
+    def shrinkTemplate(templateW:Int, templateH:Int) = {
+      val smallTemplate = new GrayImage(templateW, templateH)
+      (0 until templateH).foreach { y =>
+        (0 until templateW).foreach { x =>
+          val templateX0 = x * template.w / templateW - 1
+          val templateX1 = (x + 1) * template.w / templateW - 1
+          val templateY0 = y * template.h / templateH - 1
+          val templateY1 = (y + 1) * template.h / templateH - 1
+          val templateV = (
+            templateSum(templateX1, templateY1) -
+            templateSum(templateX1, templateY0) -
+            templateSum(templateX0, templateY1) +
+            templateSum(templateX0, templateY0)) /
+            ((templateX1 - templateX0) * (templateY1 - templateY0))
+          smallTemplate(x, y) = templateV
+        }
+      }
+      smallTemplate
+    }
+
+          //(0 until currentSize.h - templateH).foreach { inputY0 =>
+           // (0 until currentSize.w - templateW).foreach { inputX0 =>
+    def makeMatches(input:GrayImage, wRange:(Int,Int), hRange:(Int,Int),
+        x0Range:(Int,Int), y0Range:(Int,Int)) = {
+      var tms:List[TM] = Nil
+      (hRange._1 to hRange._2).foreach { templateH =>
+        (wRange._1 to wRange._2).foreach { templateW =>
+          val smallTemplate = shrinkTemplate(templateW, templateH)
+          val newX0Range =
+            (x0Range._1 max 0, x0Range._2 min (input.w - templateW - 1))
+          val newY0Range =
+            (y0Range._1 max 0, y0Range._2 min (input.h - templateH - 1))
+          (newY0Range._1 to newY0Range._2).foreach { inputY0 =>
+            (newX0Range._1 to newX0Range._2).foreach { inputX0 =>
+              var sumDiff = 0
+              (0 until templateH).foreach { y =>
+                (0 until templateH).foreach { x =>
+                  val inputV = input(inputX0 + x, inputY0 + y)
+                  val templateV = smallTemplate(x, y)
+                  sumDiff += Math.abs(inputV - templateV)
+                }
+              }
+              val meanDiff = sumDiff / (templateW * templateH)
+              val newTM = TM(templateW, templateH, inputX0, inputY0, meanDiff)
+              tms = newTM :: tms
+            }
+          }
+        }
+      }
+      tms.toArray
+    }
+
+    val eighthTms = makeMatches(
+      eighthSize, (4,4), (8,10), (0,eighthSize.w-1), (0,eighthSize.h-1))
+    val sorted = eighthTms.sortBy { _.meanDiff }
+    println(sorted(0))
+    val filteredEighthTms = eighthTms.filter { tm => tm.meanDiff < 60 }
+
+    def drawMatch(output:ColorImage, _match:TM) {
+      val TM(bestW, bestH, bestX0, bestY0, bestMeanDiff) = _match
+      val smallTemplate = shrinkTemplate(bestW, bestH)
+      (0 until smallTemplate.h).foreach { y =>
+        (0 until smallTemplate.w).foreach { x =>
+          val (r, g, b) = output(bestX0 + x, bestY0 + y)
+          val templateV = smallTemplate(x, y)
+          output(bestX0 + x, bestY0 + y) = (templateV, g, b)
+        }
+      }
+    }
+    //filteredEighthTms.foreach { match_ =>
+//    currentSize.saveTo(new File("demos/treble.%s.png".format(caseName)))
+
+    def doubleMatch(_match:TM) = {
+      val TM(w, h, x0, y0, meanDiff) = _match
+      TM(w * 2, h * 2, x0 * 2, y0 * 2, meanDiff)
+    }
+
+    /*val demo = eighthSize.toColorImage
+    filteredEighthTms.foreach { eighthMatch =>
+      drawMatch(demo, eighthMatch)
+    }
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
+
+    val quarterMatches = filteredEighthTms.map { eighthMatch =>
+      val TM(w, h, x0, y0, meanDiff) = doubleMatch(eighthMatch)
+      val allMatches = makeMatches(quarterSize,
+        (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
+
+      var bestMatch = TM(0,0,0,0,999999)
+      allMatches.foreach { match_ =>
+        if (match_.meanDiff < bestMatch.meanDiff)
+          bestMatch = match_
+      }
+      bestMatch
+    }
+    val filteredQuarterMatches = quarterMatches.filter { _.meanDiff < 70 }
+
+    /*val demo = quarterSize.toColorImage
+    filteredQuarterMatches.foreach { match_ =>
+      drawMatch(demo, match_)
+    }
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
+
+    val halfMatches = filteredQuarterMatches.map { quarterMatch =>
+      val TM(w, h, x0, y0, meanDiff) = doubleMatch(quarterMatch)
+      val allMatches = makeMatches(halfSize,
+        (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
+
+      var bestMatch = TM(0,0,0,0,999999)
+      allMatches.foreach { match_ =>
+        if (match_.meanDiff < bestMatch.meanDiff)
+          bestMatch = match_
+      }
+      bestMatch
+    }
+    val filteredHalfMatches = halfMatches.filter { _.meanDiff < 90 }
+
+    /*val demo = halfSize.toColorImage
+    filteredHalfMatches.foreach { match_ =>
+      drawMatch(demo, match_)
+    }
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
+
+    val fullMatches = filteredHalfMatches.map { halfMatch =>
+      val TM(w, h, x0, y0, meanDiff) = doubleMatch(halfMatch)
+      val allMatches = makeMatches(justNotes.inverse,
+        (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
+
+      var bestMatch = TM(0,0,0,0,999999)
+      allMatches.foreach { match_ =>
+        if (match_.meanDiff < bestMatch.meanDiff)
+          bestMatch = match_
+      }
+      bestMatch
+    }
+    val filteredFullMatches = fullMatches.filter { _.meanDiff < 120 }
+
+    val demo = justNotes.inverse.toColorImage
+    filteredFullMatches.foreach { match_ =>
+      drawMatch(demo, match_)
+    }
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
+
+/*
+    filteredEighthTms.foreach { eighthMatch =>
+      val TM(bestW, bestH, bestX0, bestY0, bestMeanDiff) = match_
+      val smallTemplate = shrinkTemplate(bestW * 2, bestH * 2).inverse
+      (0 until smallTemplate.h).foreach { y =>
+        (0 until smallTemplate.w).foreach { x =>
+          quarterSize(bestX0 * 2 + x, bestY0 * 2 + y) = smallTemplate(x, y)
+        }
+      }
+    }*/
+
+/*
+    //val (x0, y0, x1, y1) = (20, 24, 50, 88)
+    //val (x0, y0, x1, y1) = (20 / 2, 24 / 2, 50 / 2, 88 / 2)
+    //val (x0, y0, x1, y1) = (20 / 4, 24 / 4, 50 / 4, 88 / 4)
+    val (x0, y0, x1, y1) = (20 / 8, 24 / 8, 50 / 8, 88 / 8)
+    //val demo = justNotes.toColorImage
+    //val demo = shrinkHalfSize(justNotes).toColorImage
+    //val demo = shrinkHalfSize(shrinkHalfSize(justNotes)).toColorImage
+    val demo =
+      shrinkHalfSize(shrinkHalfSize(shrinkHalfSize(justNotes))).toColorImage
+
+    def applyTransform(t:Transform)(block:((Int,Int,Int) => Unit)) = {
+      (y0 to y1).foreach { sourceY =>
+        (x0 to x1).foreach { sourceX =>
+          val Transform(targetW, targetH, targetMidX, targetMidY,
+               blurTenths_, brightenTenths_) = t
+          val blurTenths = 0
+          val brightenTenths = 10
+
+          val targetX0 = targetMidX - targetW / 2
+          val targetY0 = targetMidY - targetH / 2
+          val templateX0 =
+            Math.round((sourceX - x0 - blurTenths/10.0) *
+            template.w / targetW - targetX0).intValue
+          val templateX1 =
+            Math.round((sourceX - x0 + 1 + blurTenths/10.0) *
+            template.w / targetW - targetX0).intValue
+          val templateY0 =
+            Math.round((sourceY - y0 - blurTenths/10.0) *
+            template.h / targetH - targetY0).intValue
+          val templateY1 =
+            Math.round((sourceY - y0 + 1 + blurTenths/10.0) *
+            template.h / targetH - targetY0).intValue
+          val templateX0New = (templateX0 max 0) min (template.w - 1)
+          val templateX1New = (templateX1 max 0) min (template.w - 1)
+          val templateY0New = (templateY0 max 0) min (template.h - 1)
+          val templateY1New = (templateY1 max 0) min (template.h - 1)
+          val templateVSum =
+            templateSum(templateX1New, templateY1New) -
+            templateSum(templateX0New, templateY1New) -
+            templateSum(templateX1New, templateY0New) +
+            templateSum(templateX0New, templateY0New)
+          val denom = (templateX1 - templateX0) * (templateY1 - templateY0)
+          val templateV = templateVSum / (denom max 1)
+          val templateVNew =
+            (templateV * brightenTenths / 10) min 255
+
+          block(sourceX, sourceY, templateVNew)
+        }
+      }
+    }
+
+    def setTargetW(t0:Transform, x:Int) = {
+      Transform(t0.targetW + x, t0.targetH, t0.targetMidX, t0.targetMidY,
+        t0.blurTenths, t0.brightenTenths)
+    }
+    def setTargetH(t0:Transform, x:Int) = {
+      Transform(t0.targetW, t0.targetH + x, t0.targetMidX, t0.targetMidY,
+        t0.blurTenths, t0.brightenTenths)
+    }
+    def setTargetX(t0:Transform, x:Int) = {
+      Transform(t0.targetW, t0.targetH, t0.targetMidX + x, t0.targetMidY,
+        t0.blurTenths, t0.brightenTenths)
+    }
+    def setTargetY(t0:Transform, x:Int) = {
+      Transform(t0.targetW, t0.targetH, t0.targetMidX, t0.targetMidY + x,
+        t0.blurTenths, t0.brightenTenths)
+    }
+    def setBlurTenths(t0:Transform, x:Int) = {
+      Transform(t0.targetW, t0.targetH, t0.targetMidX, t0.targetMidY,
+        t0.blurTenths + x, t0.brightenTenths)
+    }
+    def setBrightenTenths(t0:Transform, x:Int) = {
+      Transform(t0.targetW, t0.targetH, t0.targetMidX, t0.targetMidY,
+        t0.blurTenths, t0.brightenTenths + x)
+    }
+
+    case class TRange (
+      val setter:((Transform,Int)=>Transform),
+      val min:Int,
+      val max:Int
+    ) {}
+
+    case class SetterPair (
+      val first:(Transform,Int)=>Transform,
+      val second:(Transform,Int)=>Transform
+    )
+
+    def findBestTransformFor(initialTransform:Transform,
+        setterPairs:List[SetterPair])(transformScorer:(Transform=>Int)) = {
+      var minDiff = 999999
+      var bestTransform = initialTransform
+      var numIterations = 0
+      (1 to 6).foreach { i =>
+        setterPairs.foreach { setterPair =>
+          val SetterPair(setter1, setter2) = setterPair
+          List(5, 2, 1).foreach { changeAmount =>
+            var newBestTransform = bestTransform
+            List(-changeAmount, 0, changeAmount).foreach { change1 =>
+              List(-changeAmount, 0, changeAmount).foreach { change2 =>
+                val newTransform1 = setter1(bestTransform, change1)
+                val newTransform2 = setter2(newTransform1, change2)
+                val diff = transformScorer(newTransform2)
+                numIterations += 1
+                if (diff < minDiff) {
+                  minDiff = diff
+                  newBestTransform = newTransform2
+                }
+              }
+            }
+            bestTransform = newBestTransform
+          }
+        }
+      }
+      (bestTransform, minDiff, numIterations)
+    }
+
+    val setters:List[SetterPair] = List(
+      SetterPair(setTargetW, setTargetH),
+      SetterPair(setTargetX, setTargetY),
+      SetterPair(setBlurTenths, setBrightenTenths)
+    )
+
+//(bestTransform,Transform(25,62,17,11,19,12))
+//(minDiff,52383)
+
+    val t0 = Transform(x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2, 10, 10)
+    val (bestTransform, minDiff, numIterations) =
+        findBestTransformFor(t0, setters) { transform =>
+      var diff = 0
+      applyTransform(transform) { (sourceX, sourceY, templateV) =>
+        val (r, g, b) = demo(sourceX, sourceY)
+        diff += Math.abs((255 - r) - templateV)
+      }
+      diff
+    }
+
+*/
+/*
+    var minDiff = 999999
+    var bestTransform = Transform(0, 0, 0, 0, 0, 0)
+    var numTests = 0
+    (25 to 25).foreach { targetW =>
+    (62 to 62).foreach { targetH =>
+    (10 to 20).foreach { targetX =>
+    (11 to 11).foreach { targetY =>
+    (19 to 19).foreach { blurTenths =>
+    (12 to 12).foreach { brightenTenths =>
+      var transform = Transform(
+        targetW, targetH, targetX, targetY, blurTenths, brightenTenths)
+      var diff = 0
+      applyTransform(transform) { (sourceX, sourceY, templateV) =>
+        val (r, g, b) = demo(sourceX - x0 + (x1 - x0), sourceY - y0)
+        diff += Math.abs(r - templateV)
+      }
+      numTests += 1
+      if (diff < minDiff) {
+        minDiff = diff
+        bestTransform = transform
+      }
+    }}}}}}
+*/
+/*
+
+    println(("bestTransform", bestTransform))
+    println(("minDiff by pixel",
+      minDiff / bestTransform.targetW / bestTransform.targetH))
+    println(("numIterations", numIterations))
+
+    applyTransform(bestTransform) { (sourceX, sourceY, templateV) =>
+      val (r, g, b) = demo(sourceX, sourceY)
+      demo(sourceX, sourceY) = (templateV, 0, 0)
+    }
+
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
+*/
+  }
+
   def doTemplateMatching(caseNames:List[String]) {
     val templateSharp = 
       ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
@@ -1395,10 +1768,12 @@ object Ocr4Music {
         partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
+
+      matchTrebleTemplate(justNotes, caseName)
+/*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
       demoSegmentGroups(segmentGroups, justNotes, caseName)
-/*
       demoStaffLines(inputAdjusted, metrics, yCorrection, caseName)
 
       var points:List[TemplateMatch] = Nil
