@@ -715,11 +715,44 @@ object Ocr4Music {
               sum += template(templateX, templateY)
             }
           }
-            val mean = sum / (y1 - y0) / (x1 - x0)
+          val mean = sum / (y1 - y0) / (x1 - x0)
           templateScaled(templateScaledX, templateScaledY) = mean
         }
         else
           templateScaled(templateScaledX, templateScaledY) = 255
+      }
+    }
+    templateScaled
+  }
+
+  def scaleTemplateColor(template:ColorImage, templateW:Int, templateH:Int) = {
+    val templateScaled = new ColorImage(templateW, templateH)
+    (0 until templateH).foreach { templateScaledY =>
+      (0 until templateW).foreach { templateScaledX =>
+        val y0 = templateScaledY * template.h / templateH
+        val y1 =
+          ((templateScaledY + 1) * template.h / templateH) min template.h
+        val x0 = templateScaledX * template.w / templateW
+        val x1 =
+          ((templateScaledX + 1) * template.w / templateW) min template.w
+        if (y1 > y0 && x1 > x0) {
+          var (rSum, gSum, bSum) = (0, 0, 0)
+          (y0 until y1).foreach { templateY =>
+            (x0 until x1).foreach { templateX =>
+              val (r, g, b) = template(templateX, templateY)
+              rSum += r
+              gSum += g
+              bSum += b
+            }
+          }
+          val rMean = rSum / (y1 - y0) / (x1 - x0)
+          val gMean = gSum / (y1 - y0) / (x1 - x0)
+          val bMean = bSum / (y1 - y0) / (x1 - x0)
+          templateScaled(templateScaledX, templateScaledY) =
+            (rMean, gMean, bMean)
+        }
+        else
+          templateScaled(templateScaledX, templateScaledY) = (0, 0, 0)
       }
     }
     templateScaled
@@ -1375,7 +1408,10 @@ object Ocr4Music {
   ) {}
 
   def shrinkHalfSize(input:GrayImage) = {
-    val output = new GrayImage(input.w / 2, input.h / 2)
+    // add one before halving because we want to round up not down
+    // when you access a pixel that's out of bounds, it returns 0;
+    // otherwise this technique wouldn't work
+    val output = new GrayImage((input.w + 1) / 2, (input.h + 1) / 2)
     (0 until output.h).foreach { y =>
       (0 until output.w).foreach { x =>
         val v = (input(x*2, y*2    ) + input(x*2 + 1, y*2) +
@@ -1386,7 +1422,8 @@ object Ocr4Music {
     output
   }
 
-  def matchTrebleTemplate(justNotes:GrayImage, caseName:String) {
+  def matchTrebleTemplate(justNotes:GrayImage, metrics:Metrics,
+      caseName:String) {
     val template = ColorImage.readFromFile(new File(
       "templates/treble_clef.png")).toGrayImage
     val templateSum = sumTemplate(template.inverse)
@@ -1403,6 +1440,7 @@ object Ocr4Music {
       val h:Int,
       val x0:Int,
       val y0:Int,
+      val brightenTenths:Int,
       val meanDiff:Int
     ) {}
 
@@ -1435,21 +1473,32 @@ object Ocr4Music {
         (wRange._1 to wRange._2).foreach { templateW =>
           val smallTemplate = shrinkTemplate(templateW, templateH)
           val newX0Range =
-            (x0Range._1 max 0, x0Range._2 min (input.w - templateW - 1))
+            (x0Range._1 max 0, x0Range._2 min (input.w - templateW))
           val newY0Range =
-            (y0Range._1 max 0, y0Range._2 min (input.h - templateH - 1))
+            (y0Range._1 max 0, y0Range._2 min (input.h - templateH))
           (newY0Range._1 to newY0Range._2).foreach { inputY0 =>
             (newX0Range._1 to newX0Range._2).foreach { inputX0 =>
-              var sumDiff = 0
-              (0 until templateH).foreach { y =>
-                (0 until templateH).foreach { x =>
-                  val inputV = input(inputX0 + x, inputY0 + y)
-                  val templateV = smallTemplate(x, y)
-                  sumDiff += Math.abs(inputV - templateV)
+              var minMeanDiff = 999999
+              var bestBrightenTenths = 0
+              (6 to 20 by 1).foreach { brightenTenths =>
+                var sumDiff = 0
+                (0 until templateH).foreach { y =>
+                  (0 until templateH).foreach { x =>
+                    val inputV = input(inputX0 + x - y/5, inputY0 + y)
+                    val templateV =
+                      (smallTemplate(x, y) * brightenTenths / 10) min 255
+                    //sumDiff += Math.abs(inputV - templateV)
+                    sumDiff += (inputV - templateV) * (inputV - templateV)
+                  }
+                }
+                val meanDiff = sumDiff / (templateW * templateH)
+                if (meanDiff < minMeanDiff) {
+                  minMeanDiff = meanDiff
+                  bestBrightenTenths = brightenTenths
                 }
               }
-              val meanDiff = sumDiff / (templateW * templateH)
-              val newTM = TM(templateW, templateH, inputX0, inputY0, meanDiff)
+              val newTM = TM(templateW, templateH, inputX0, inputY0,
+                bestBrightenTenths, minMeanDiff)
               tms = newTM :: tms
             }
           }
@@ -1458,50 +1507,78 @@ object Ocr4Music {
       tms.toArray
     }
 
-    val eighthTms = makeMatches(
-      eighthSize, (4,4), (8,10), (0,eighthSize.w-1), (0,eighthSize.h-1))
+    /*val eighthTms = makeMatches(
+      //eighthSize, (4,4), (6,10), (0,eighthSize.w-1), (0,eighthSize.h-1))
+      eighthSize, (3,5), (6,10), (0,5), (0,5))
     val sorted = eighthTms.sortBy { _.meanDiff }
-    println(sorted(0))
-    val filteredEighthTms = eighthTms.filter { tm => tm.meanDiff < 60 }
+    //println(sorted(0))
+    val filteredEighthTms = eighthTms.filter { tm => tm.meanDiff < 40 }
+    //filteredEighthTms.foreach { tm => println(tm) }*/
+
 
     def drawMatch(output:ColorImage, _match:TM) {
-      val TM(bestW, bestH, bestX0, bestY0, bestMeanDiff) = _match
+      val TM(bestW, bestH, bestX0, bestY0, bestBrightenTenths, bestMeanDiff) =
+        _match
       val smallTemplate = shrinkTemplate(bestW, bestH)
       (0 until smallTemplate.h).foreach { y =>
         (0 until smallTemplate.w).foreach { x =>
-          val (r, g, b) = output(bestX0 + x, bestY0 + y)
-          val templateV = smallTemplate(x, y)
-          output(bestX0 + x, bestY0 + y) = (templateV, g, b)
+          val (r, g, b) = output(bestX0 + x - y/5, bestY0 + y)
+          val templateV =
+            (smallTemplate(x, y) * bestBrightenTenths / 10) min 255
+          val diff =
+            if (templateV > r)
+              (templateV - r, 0, 0)
+            else
+              (0, 0, r - templateV)
+          output(bestX0 + x - y/5, bestY0 + y) = diff //(templateV, templateV, templateV)//g, b)
         }
       }
     }
     //filteredEighthTms.foreach { match_ =>
 //    currentSize.saveTo(new File("demos/treble.%s.png".format(caseName)))
 
+    val minHeight = (metrics.cSpacing / 4 * 6).intValue
+    val maxHeight = (metrics.cSpacing / 4 * 9).intValue
+    println(("minHeight", minHeight, "maxHeight", maxHeight))
+    val quarterTms = makeMatches(
+      //eighthSize, (4,4), (6,10), (0,eighthSize.w-1), (0,eighthSize.h-1))
+      //quarterSize, (4,6), (11,13), (5,15), (2,8))
+      //quarterSize, (minHeight / 2,maxHeight / 2), (minHeight,maxHeight),
+      quarterSize, (9, 10), (20, 22),
+      //(0,quarterSize.w), (0,quarterSize.h))
+      (12,14), (3,5))
+    val sorted = quarterTms.sortBy { _.meanDiff }
+    println(sorted(0))
+    //val filteredQuarterTms = quarterTms.filter { tm => tm.meanDiff < 17100 }
+    val filteredQuarterTms = List(sorted(0))
+    filteredQuarterTms.foreach { tm => println(tm) }
+
     def doubleMatch(_match:TM) = {
-      val TM(w, h, x0, y0, meanDiff) = _match
-      TM(w * 2, h * 2, x0 * 2, y0 * 2, meanDiff)
+      val TM(w, h, x0, y0, brightenTenths, meanDiff) = _match
+      TM(w * 2, h * 2, x0 * 2, y0 * 2, brightenTenths, meanDiff)
     }
 
-    /*val demo = eighthSize.toColorImage
-    filteredEighthTms.foreach { eighthMatch =>
-      drawMatch(demo, eighthMatch)
+    val demo = quarterSize.toColorImage
+    filteredQuarterTms.foreach { quarterMatch =>
+      drawMatch(demo, quarterMatch)
     }
-    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
 
+/*
     val quarterMatches = filteredEighthTms.map { eighthMatch =>
-      val TM(w, h, x0, y0, meanDiff) = doubleMatch(eighthMatch)
+      val TM(w, h, x0, y0, brightenTenths, meanDiff) = doubleMatch(eighthMatch)
       val allMatches = makeMatches(quarterSize,
         (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
 
-      var bestMatch = TM(0,0,0,0,999999)
+      var bestMatch = TM(0,0,0,0,0,999999)
       allMatches.foreach { match_ =>
         if (match_.meanDiff < bestMatch.meanDiff)
           bestMatch = match_
       }
       bestMatch
     }
-    val filteredQuarterMatches = quarterMatches.filter { _.meanDiff < 70 }
+    val filteredQuarterMatches = quarterMatches.filter { _.meanDiff < 99999 }
+*/
 
     /*val demo = quarterSize.toColorImage
     filteredQuarterMatches.foreach { match_ =>
@@ -1509,19 +1586,21 @@ object Ocr4Music {
     }
     demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
 
+/*
     val halfMatches = filteredQuarterMatches.map { quarterMatch =>
-      val TM(w, h, x0, y0, meanDiff) = doubleMatch(quarterMatch)
+      val TM(w, h, x0, y0, brightenTenths, meanDiff) = doubleMatch(quarterMatch)
       val allMatches = makeMatches(halfSize,
         (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
 
-      var bestMatch = TM(0,0,0,0,999999)
+      var bestMatch = TM(0,0,0,0,0,999999)
       allMatches.foreach { match_ =>
         if (match_.meanDiff < bestMatch.meanDiff)
           bestMatch = match_
       }
       bestMatch
     }
-    val filteredHalfMatches = halfMatches.filter { _.meanDiff < 90 }
+    val filteredHalfMatches = halfMatches.filter { _.meanDiff < 999999 }
+*/
 
     /*val demo = halfSize.toColorImage
     filteredHalfMatches.foreach { match_ =>
@@ -1529,25 +1608,27 @@ object Ocr4Music {
     }
     demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
 
+/*
     val fullMatches = filteredHalfMatches.map { halfMatch =>
-      val TM(w, h, x0, y0, meanDiff) = doubleMatch(halfMatch)
+      val TM(w, h, x0, y0, brightenTenths, meanDiff) = doubleMatch(halfMatch)
       val allMatches = makeMatches(justNotes.inverse,
         (w-2,w+2), (h-2,h+2), (x0-2,x0+2), (y0-2,y0+2))
 
-      var bestMatch = TM(0,0,0,0,999999)
+      var bestMatch = TM(0,0,0,0,0,999999)
       allMatches.foreach { match_ =>
         if (match_.meanDiff < bestMatch.meanDiff)
           bestMatch = match_
       }
       bestMatch
     }
-    val filteredFullMatches = fullMatches.filter { _.meanDiff < 120 }
+    val filteredFullMatches = fullMatches.filter { _.meanDiff < 999999 }
+*/
 
-    val demo = justNotes.inverse.toColorImage
+    /*val demo = justNotes.inverse.toColorImage
     filteredFullMatches.foreach { match_ =>
       drawMatch(demo, match_)
     }
-    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
+    demo.saveTo(new File("demos/treble.%s.png".format(caseName)))*/
 
 /*
     filteredEighthTms.foreach { eighthMatch =>
@@ -1738,6 +1819,134 @@ object Ocr4Music {
 */
   }
 
+  def rainbow(input:GrayImage, range:Int) = {
+    val output = new ColorImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        var sumX = 0
+        var sumY = 0
+        (-range to range).foreach { xNeighbor =>
+          (-range to range).foreach { yNeighbor =>
+            val v = input(x + xNeighbor, y + yNeighbor)
+            val xSign =
+              if (xNeighbor == 0) 0 else (xNeighbor / Math.abs(xNeighbor))
+            val ySign =
+              if (yNeighbor == 0) 0 else (yNeighbor / Math.abs(yNeighbor))
+            sumX += v * xSign
+            sumY += v * ySign
+          }
+        }
+        var meanX = sumX / (range * 2) / (range * 2 + 1)
+        var meanY = sumY / (range * 2) / (range * 2 + 1)
+
+        val norm = Math.sqrt(meanX * meanX + meanY * meanY)
+        output(x, y) =
+          if (norm == 0)
+            (0, 0, 0)
+          else
+            ((meanX * 100 / norm).intValue + 100,
+             (meanY * 100 / norm).intValue + 100, norm.intValue)
+
+        /*var angle255 =
+          ((Math.atan2(meanY, meanX) + Math.PI) / Math.PI * 127).intValue
+        output(x, y) = (angle255, if (norm > 0.0) 255 else 0, 0)*/
+
+        /*if (meanX == 0 && meanY == 0) {
+          if (input(x, y) > 128)
+            output(x - x0, y - y0) = (255, 255, 255)
+          else
+            output(x - x0, y - y0) = (0, 0, 0)
+        }
+        else {
+          var angle255 =
+            ((Math.atan2(meanY, meanX) + Math.PI) / Math.PI * 127).intValue
+          //var r = 128 - Math.abs(angle255 - 128)
+          //var b = 255 - r
+          var (r, g, b) =
+            if (angle255 < 64)
+              (255, angle255 * 4, 0)
+            else if (angle255 < 128)
+              ((127 - angle255) * 4, 255, 0)
+            else if (angle255 < 192)
+              (0, (191 - angle255) * 4, (angle255 - 128) * 4)
+            else
+              ((angle255 - 192) * 4, 0, (255 - angle255) * 4)
+          output(x - x0, y - y0) = (r, g, b)
+        }*/
+      }
+    }
+    output
+  }
+
+  def colorTrebleTemplate(justNotes:GrayImage, caseName:String) {
+    val input = ColorImage.readFromFile(
+      new File("templates/treble_clef.png")).toGrayImage.inverse
+    val range = 13
+    val (x0, y0, x1, y1) =
+      (0 - range, 0 - range, input.w + range, input.h + range)
+
+    val demo = new ColorImage(x1 - x0 + 1, y1 - y0 + 1)
+    demo.saveTo(new File("demos/color_treble.%s.png".format(caseName)))
+  }
+
+  def trebleHough(justNotes:GrayImage, staffSeparation:Int, caseName:String) {
+    val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
+    val bigTemplate = ColorImage.readFromFile(new File(
+      "templates/treble_clef.png")).toGrayImage.inverse
+    val template = scaleTemplate(bigTemplate, templateW, templateH)
+    val hough = new GrayImage(justNotes.w, justNotes.h)
+    val input = justNotes.inverse
+
+    val bigTemplateRainbow = rainbow(bigTemplate, 13)
+    val templateRainbow =
+      scaleTemplateColor(bigTemplateRainbow, templateW, templateH)
+    templateRainbow.saveTo(new File(
+      "demos/template_rainbow.%s.png".format(caseName)))
+    val inputRainbow = rainbow(input, 3)
+    inputRainbow.saveTo(new File(
+      "demos/input_rainbow.%s.png".format(caseName)))
+
+    (0 until input.w).foreach { inputX =>
+      (0 until input.h).foreach { inputY =>
+        val (inputR, inputG, inputB) = inputRainbow(inputX, inputY)
+        (0 until template.w).foreach { templateX =>
+          (0 until template.h).foreach { templateY =>
+            val (templateR, templateG, templateB) =
+              templateRainbow(templateX, templateY)
+            val scored = (templateR > 0 && templateG > 0 &&
+              inputR > 0 && inputG > 0 &&
+              Math.abs(templateR - inputR) < 2 &&
+              Math.abs(templateG - inputG) < 2)
+              //inputB > 40)
+
+            val houghX = inputX - (templateX - template.w/2)
+            val houghY = inputY - (templateY - template.h/2)
+            if (scored &&
+                houghX >= 0 && houghX < hough.w &&
+                houghY >= 0 && houghY < hough.h) {
+              hough(houghX, houghY) = hough(houghX, houghY) + 1
+            }
+          }
+        }
+      }
+    }
+
+
+    // Scale down the hough image so it's between 0-255
+    val max = hough.data.max 
+    if (max > 0) {
+      (0 until hough.w).foreach { x =>
+        (0 until hough.h).foreach { y =>
+          hough(x, y) = hough(x, y) * 255 / max
+        }
+      }
+    }
+    println(("max of hough", max))
+    println(("normalized max of hough", max / template.w / template.h))
+
+    hough.saveTo(new File("demos/treble_hough.%s.png".format(caseName)))
+  }
+
   def doTemplateMatching(caseNames:List[String]) {
     val templateSharp = 
       ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
@@ -1769,7 +1978,9 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      matchTrebleTemplate(justNotes, caseName)
+      //matchTrebleTemplate(justNotes, metrics, caseName)
+      //colorTrebleTemplate(justNotes, caseName)
+      trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
 /*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
