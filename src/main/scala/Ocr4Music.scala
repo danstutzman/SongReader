@@ -1847,13 +1847,14 @@ object Ocr4Music {
         var meanX = sumX / denom
         var meanY = sumY / denom
 
-        val norm = Math.sqrt(meanX * meanX + meanY * meanY)
-        output(x, y) =
+        val norm = Math.sqrt(meanX * meanX + meanY * meanY).intValue
+        output(x, y) = (meanX + 100, meanY + 100, norm)
+        /*output(x, y) =
           if (norm == 0)
             (0, 0, 0)
           else
             ((meanX * 100 / norm).intValue + 100,
-             (meanY * 100 / norm).intValue + 100, norm.intValue)
+             (meanY * 100 / norm).intValue + 100, norm.intValue)*/
 
         /*var angle255 =
           ((Math.atan2(meanY, meanX) + Math.PI) / Math.PI * 127).intValue
