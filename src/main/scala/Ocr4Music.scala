@@ -1825,6 +1825,7 @@ object Ocr4Music {
       (0 until input.h).foreach { y =>
         var sumX = 0
         var sumY = 0
+        var denom = 0
         (-range to range).foreach { xNeighbor =>
           (-range to range).foreach { yNeighbor =>
             val v = input(x + xNeighbor, y + yNeighbor)
@@ -1832,12 +1833,19 @@ object Ocr4Music {
               if (xNeighbor == 0) 0 else (xNeighbor / Math.abs(xNeighbor))
             val ySign =
               if (yNeighbor == 0) 0 else (yNeighbor / Math.abs(yNeighbor))
-            sumX += v * xSign
-            sumY += v * ySign
+            //val factor = Math.pow(0.99f,
+            //  xNeighbor * xNeighbor + yNeighbor * yNeighbor).floatValue
+            //val norm = Math.sqrt(
+            //yNeighbor * xNeighbor + yNeighbor * yNeighbor).floatValue
+            //if (norm > 0.0) {
+              sumX += v * xSign //* xNeighbor / norm //* factor
+              sumY += v * ySign //yNeighbor / norm //* factor
+              denom += 1 //factor
+            //}
           }
         }
-        var meanX = sumX / (range * 2) / (range * 2 + 1)
-        var meanY = sumY / (range * 2) / (range * 2 + 1)
+        var meanX = sumX / denom
+        var meanY = sumY / denom
 
         val norm = Math.sqrt(meanX * meanX + meanY * meanY)
         output(x, y) =
@@ -1890,14 +1898,23 @@ object Ocr4Music {
   }
 
   def trebleHough(justNotes:GrayImage, staffSeparation:Int, caseName:String) {
-    val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
+    val (templateW, templateH) = (16, 28)
+    //val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
     val bigTemplate = ColorImage.readFromFile(new File(
-      "templates/treble_clef.png")).toGrayImage.inverse
+      "templates/sharp.png")).toGrayImage.inverse
     val template = scaleTemplate(bigTemplate, templateW, templateH)
     val hough = new GrayImage(justNotes.w, justNotes.h)
     val input = justNotes.inverse
 
-    val bigTemplateRainbow = rainbow(bigTemplate, 13)
+    val margin = 0
+    val bigTemplateMargin = new GrayImage(bigTemplate.w + margin*2,
+      bigTemplate.h + margin*2)
+    (0 until bigTemplate.w).foreach { x =>
+      (0 until bigTemplate.h).foreach { y =>
+        bigTemplateMargin(x + margin, y + margin) = bigTemplate(x, y)
+      }
+    }
+    val bigTemplateRainbow = rainbow(bigTemplateMargin, 15)
     val templateRainbow =
       scaleTemplateColor(bigTemplateRainbow, templateW, templateH)
     templateRainbow.saveTo(new File(
@@ -1915,9 +1932,9 @@ object Ocr4Music {
               templateRainbow(templateX, templateY)
             val scored = (templateR > 0 && templateG > 0 &&
               inputR > 0 && inputG > 0 &&
-              Math.abs(templateR - inputR) < 2 &&
-              Math.abs(templateG - inputG) < 2)
-              //inputB > 40)
+              Math.abs(templateR - inputR) < 15 &&
+              Math.abs(templateG - inputG) < 15 &&
+              inputB > 0)
 
             val houghX = inputX - (templateX - template.w/2)
             val houghY = inputY - (templateY - template.h/2)
@@ -1945,6 +1962,49 @@ object Ocr4Music {
     println(("normalized max of hough", max / template.w / template.h))
 
     hough.saveTo(new File("demos/treble_hough.%s.png".format(caseName)))
+  }
+
+  def findSharps(justNotes:GrayImage, caseName:String) {
+    val demo = new GrayImage(170, 20)
+    val input = justNotes.inverse
+
+    (0 until demo.w).foreach { x =>
+      val v = ((x / 8) % 2) * 64
+      (0 until demo.h).foreach { y =>
+        demo(x, y) = v
+      }
+    }
+
+    def draw(x0:Int, x1:Int, y:Int) {
+      (x0 to x1).foreach { x =>
+        demo(x, 19 - input(x, y) * 19 / 255) = 255
+      }
+    }
+
+    draw(68, 81, 50)
+    draw(14, 26, 67)
+    draw(54, 66, 58)
+    draw(147, 161, 64)
+
+    val templateSharp = ColorImage.readFromFile(new File(
+      "templates/sharp.png")).toGrayImage.inverse
+    (97 to 110).foreach { demoX =>
+      val templateX = (demoX - 97) * 157 / 13 + 40
+
+      var sum = 0.0f
+      var denom = 0.0f
+      (templateX - 120 to templateX + 120).foreach { templateX2 =>
+        val factor = Math.pow(0.99f, Math.pow(templateX2 - templateX, 2)).floatValue
+        sum += templateSharp(templateX2, 292) * factor
+        denom += factor
+      }
+      val templateV = (sum / denom).intValue
+      //val templateV = templateSharp(templateX, 292)
+
+      demo(demoX, 19 - templateV / 20) = 192
+    }
+
+    demo.saveTo(new File("demos/find_sharps.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -1981,6 +2041,7 @@ object Ocr4Music {
       //matchTrebleTemplate(justNotes, metrics, caseName)
       //colorTrebleTemplate(justNotes, caseName)
       trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
+      //findSharps(justNotes, caseName)
 /*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
