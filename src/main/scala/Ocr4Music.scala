@@ -1425,14 +1425,15 @@ object Ocr4Music {
   def matchTrebleTemplate(justNotes:GrayImage, metrics:Metrics,
       caseName:String) {
     val template = ColorImage.readFromFile(new File(
-      "templates/treble_clef.png")).toGrayImage
+      //"templates/treble_clef.png")).toGrayImage
+      "templates/sharp.png")).toGrayImage
     val templateSum = sumTemplate(template.inverse)
 
-    val halfSize = shrinkHalfSize(justNotes.inverse)
+    //val halfSize = shrinkHalfSize(justNotes.inverse)
     //halfSize.saveTo(new File("demos/half_size.png"))
-    val quarterSize = shrinkHalfSize(halfSize)
+    //val quarterSize = shrinkHalfSize(halfSize)
     //quarterSize.saveTo(new File("demos/quarter_size.png"))
-    val eighthSize = shrinkHalfSize(quarterSize)
+    //val eighthSize = shrinkHalfSize(quarterSize)
     //eighthSize.saveTo(new File("demos/eighth_size.png"))
 
     case class TM ( // TemplateMatch
@@ -1530,13 +1531,14 @@ object Ocr4Music {
               (templateV - r, 0, 0)
             else
               (0, 0, r - templateV)
-          output(bestX0 + x - y/5, bestY0 + y) = diff //(templateV, templateV, templateV)//g, b)
+          output(bestX0 + x - y/5, bestY0 + y) = (templateV, g, b)
         }
       }
     }
     //filteredEighthTms.foreach { match_ =>
 //    currentSize.saveTo(new File("demos/treble.%s.png".format(caseName)))
 
+/*
     val minHeight = (metrics.cSpacing / 4 * 6).intValue
     val maxHeight = (metrics.cSpacing / 4 * 9).intValue
     println(("minHeight", minHeight, "maxHeight", maxHeight))
@@ -1563,6 +1565,7 @@ object Ocr4Music {
       drawMatch(demo, quarterMatch)
     }
     demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
+*/
 
 /*
     val quarterMatches = filteredEighthTms.map { eighthMatch =>
@@ -1641,39 +1644,38 @@ object Ocr4Music {
       }
     }*/
 
-/*
-    //val (x0, y0, x1, y1) = (20, 24, 50, 88)
     //val (x0, y0, x1, y1) = (20 / 2, 24 / 2, 50 / 2, 88 / 2)
     //val (x0, y0, x1, y1) = (20 / 4, 24 / 4, 50 / 4, 88 / 4)
-    val (x0, y0, x1, y1) = (20 / 8, 24 / 8, 50 / 8, 88 / 8)
-    //val demo = justNotes.toColorImage
+    //val (x0, y0, x1, y1) = (20 / 8, 24 / 8, 50 / 8, 88 / 8)
+    val (x0, y0, x1, y1) = (145, 46, 160, 81)
+    val demo = justNotes.inverse.toColorImage
     //val demo = shrinkHalfSize(justNotes).toColorImage
     //val demo = shrinkHalfSize(shrinkHalfSize(justNotes)).toColorImage
-    val demo =
-      shrinkHalfSize(shrinkHalfSize(shrinkHalfSize(justNotes))).toColorImage
+    //val demo =
+    //  shrinkHalfSize(shrinkHalfSize(shrinkHalfSize(justNotes))).toColorImage
 
     def applyTransform(t:Transform)(block:((Int,Int,Int) => Unit)) = {
       (y0 to y1).foreach { sourceY =>
         (x0 to x1).foreach { sourceX =>
           val Transform(targetW, targetH, targetMidX, targetMidY,
-               blurTenths_, brightenTenths_) = t
-          val blurTenths = 0
-          val brightenTenths = 10
+               blurTenths, brightenTenths_) = t
+          //val blurTenths = 5
+          val brightenTenths = 20
 
           val targetX0 = targetMidX - targetW / 2
           val targetY0 = targetMidY - targetH / 2
           val templateX0 =
-            Math.round((sourceX - x0 - blurTenths/10.0) *
-            template.w / targetW - targetX0).intValue
+            Math.round((sourceX - targetX0 - blurTenths/10.0) *
+            template.w / targetW).intValue
           val templateX1 =
-            Math.round((sourceX - x0 + 1 + blurTenths/10.0) *
-            template.w / targetW - targetX0).intValue
+            Math.round((sourceX - targetX0 + 1 + blurTenths/10.0) *
+            template.w / targetW).intValue
           val templateY0 =
-            Math.round((sourceY - y0 - blurTenths/10.0) *
-            template.h / targetH - targetY0).intValue
+            Math.round((sourceY - targetY0 - blurTenths/10.0) *
+            template.h / targetH).intValue
           val templateY1 =
-            Math.round((sourceY - y0 + 1 + blurTenths/10.0) *
-            template.h / targetH - targetY0).intValue
+            Math.round((sourceY - targetY0 + 1 + blurTenths/10.0) *
+            template.h / targetH).intValue
           val templateX0New = (templateX0 max 0) min (template.w - 1)
           val templateX1New = (templateX1 max 0) min (template.w - 1)
           val templateY0New = (templateY0 max 0) min (template.h - 1)
@@ -1767,6 +1769,7 @@ object Ocr4Music {
 //(bestTransform,Transform(25,62,17,11,19,12))
 //(minDiff,52383)
 
+/*
     val t0 = Transform(x1 - x0, y1 - y0, (x0 + x1) / 2, (y0 + y1) / 2, 10, 10)
     val (bestTransform, minDiff, numIterations) =
         findBestTransformFor(t0, setters) { transform =>
@@ -1777,23 +1780,23 @@ object Ocr4Music {
       }
       diff
     }
-
 */
-/*
+
     var minDiff = 999999
     var bestTransform = Transform(0, 0, 0, 0, 0, 0)
     var numTests = 0
-    (25 to 25).foreach { targetW =>
-    (62 to 62).foreach { targetH =>
-    (10 to 20).foreach { targetX =>
-    (11 to 11).foreach { targetY =>
-    (19 to 19).foreach { blurTenths =>
-    (12 to 12).foreach { brightenTenths =>
+    (15 to 15).foreach { targetW =>
+    (25 to 30).foreach { targetH =>
+    (150 to 160).foreach { targetX =>
+    (60 to 70).foreach { targetY =>
+    (0 to 18).foreach { blurTenths =>
+    (14 to 14).foreach { brightenTenths =>
       var transform = Transform(
         targetW, targetH, targetX, targetY, blurTenths, brightenTenths)
       var diff = 0
       applyTransform(transform) { (sourceX, sourceY, templateV) =>
-        val (r, g, b) = demo(sourceX - x0 + (x1 - x0), sourceY - y0)
+        //val (r, g, b) = demo(sourceX - x0 + (x1 - x0), sourceY - y0)
+        val (r, g, b) = demo(sourceX, sourceY)
         diff += Math.abs(r - templateV)
       }
       numTests += 1
@@ -1802,21 +1805,38 @@ object Ocr4Music {
         bestTransform = transform
       }
     }}}}}}
-*/
-/*
 
     println(("bestTransform", bestTransform))
     println(("minDiff by pixel",
       minDiff / bestTransform.targetW / bestTransform.targetH))
-    println(("numIterations", numIterations))
+    //println(("numIterations", numIterations))
 
+    val scatterPlot = new GrayImage(512, 512)
+    (0 until 256).foreach { i =>
+      scatterPlot(i + 128, 128) = 63
+      scatterPlot(i + 128, 128 + 256) = 63
+      scatterPlot(128, i + 128) = 63
+      scatterPlot(128 + 256, i + 128) = 63
+    }
+
+    val random = new Random(0)
     applyTransform(bestTransform) { (sourceX, sourceY, templateV) =>
       val (r, g, b) = demo(sourceX, sourceY)
-      demo(sourceX, sourceY) = (templateV, 0, 0)
+      val sourceV = demo(sourceX, sourceY)._3
+
+      demo(sourceX, sourceY) = (templateV, 0, b)
+      /*if (b > templateV)
+        demo(sourceX, sourceY) = (0, 0, (b - templateV) * 2)
+      else
+        demo(sourceX, sourceY) = ((templateV - b) * 2, 0, 0)*/
+
+      val scatterX = templateV + random.nextInt(10) - 5 + 128
+      val scatterY = (255 - sourceV) + random.nextInt(10) - 5 + 128
+      scatterPlot(scatterX, scatterY) = 255
     }
 
     demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
-*/
+    scatterPlot.saveTo(new File("demos/scatter.%s.png".format(caseName)))
   }
 
   def rainbow(input:GrayImage, range:Int) = {
@@ -2039,10 +2059,11 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      //matchTrebleTemplate(justNotes, metrics, caseName)
+      matchTrebleTemplate(justNotes, metrics, caseName)
       //colorTrebleTemplate(justNotes, caseName)
-      trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
+      //trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
       //findSharps(justNotes, caseName)
+
 /*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
