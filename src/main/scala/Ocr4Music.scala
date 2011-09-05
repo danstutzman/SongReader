@@ -1424,10 +1424,10 @@ object Ocr4Music {
 
   def matchTrebleTemplate(justNotes:GrayImage, metrics:Metrics,
       caseName:String) {
-    val template = ColorImage.readFromFile(new File(
+    val bigTemplate = ColorImage.readFromFile(new File(
       //"templates/treble_clef.png")).toGrayImage
       "templates/sharp.png")).toGrayImage
-    val templateSum = sumTemplate(template.inverse)
+    val bigTemplateSum = sumTemplate(bigTemplate.inverse)
 
     //val halfSize = shrinkHalfSize(justNotes.inverse)
     //halfSize.saveTo(new File("demos/half_size.png"))
@@ -1449,15 +1449,15 @@ object Ocr4Music {
       val smallTemplate = new GrayImage(templateW, templateH)
       (0 until templateH).foreach { y =>
         (0 until templateW).foreach { x =>
-          val templateX0 = x * template.w / templateW - 1
-          val templateX1 = (x + 1) * template.w / templateW - 1
-          val templateY0 = y * template.h / templateH - 1
-          val templateY1 = (y + 1) * template.h / templateH - 1
+          val templateX0 = x * bigTemplate.w / templateW - 1
+          val templateX1 = (x + 1) * bigTemplate.w / templateW - 1
+          val templateY0 = y * bigTemplate.h / templateH - 1
+          val templateY1 = (y + 1) * bigTemplate.h / templateH - 1
           val templateV = (
-            templateSum(templateX1, templateY1) -
-            templateSum(templateX1, templateY0) -
-            templateSum(templateX0, templateY1) +
-            templateSum(templateX0, templateY0)) /
+            bigTemplateSum(templateX1, templateY1) -
+            bigTemplateSum(templateX1, templateY0) -
+            bigTemplateSum(templateX0, templateY1) +
+            bigTemplateSum(templateX0, templateY0)) /
             ((templateX1 - templateX0) * (templateY1 - templateY0))
           smallTemplate(x, y) = templateV
         }
@@ -1658,33 +1658,34 @@ object Ocr4Music {
       (y0 to y1).foreach { sourceY =>
         (x0 to x1).foreach { sourceX =>
           val Transform(targetW, targetH, targetMidX, targetMidY,
-               blurTenths, brightenTenths_) = t
+               blurTenthsX, brightenTenths_) = t
           //val blurTenths = 5
+          val blurTenthsY = 0
           val brightenTenths = 20
 
           val targetX0 = targetMidX - targetW / 2
           val targetY0 = targetMidY - targetH / 2
           val templateX0 =
-            Math.round((sourceX - targetX0 - blurTenths/10.0) *
-            template.w / targetW).intValue
+            Math.round((sourceX - targetX0 - blurTenthsX/10.0) *
+            bigTemplate.w / targetW).intValue
           val templateX1 =
-            Math.round((sourceX - targetX0 + 1 + blurTenths/10.0) *
-            template.w / targetW).intValue
+            Math.round((sourceX - targetX0 + 1 + blurTenthsX/10.0) *
+            bigTemplate.w / targetW).intValue
           val templateY0 =
-            Math.round((sourceY - targetY0 - blurTenths/10.0) *
-            template.h / targetH).intValue
+            Math.round((sourceY - targetY0 - blurTenthsY/10.0) *
+            bigTemplate.h / targetH).intValue
           val templateY1 =
-            Math.round((sourceY - targetY0 + 1 + blurTenths/10.0) *
-            template.h / targetH).intValue
-          val templateX0New = (templateX0 max 0) min (template.w - 1)
-          val templateX1New = (templateX1 max 0) min (template.w - 1)
-          val templateY0New = (templateY0 max 0) min (template.h - 1)
-          val templateY1New = (templateY1 max 0) min (template.h - 1)
+            Math.round((sourceY - targetY0 + 1 + blurTenthsY/10.0) *
+            bigTemplate.h / targetH).intValue
+          val templateX0New = (templateX0 max 0) min (bigTemplate.w - 1)
+          val templateX1New = (templateX1 max 0) min (bigTemplate.w - 1)
+          val templateY0New = (templateY0 max 0) min (bigTemplate.h - 1)
+          val templateY1New = (templateY1 max 0) min (bigTemplate.h - 1)
           val templateVSum =
-            templateSum(templateX1New, templateY1New) -
-            templateSum(templateX0New, templateY1New) -
-            templateSum(templateX1New, templateY0New) +
-            templateSum(templateX0New, templateY0New)
+            bigTemplateSum(templateX1New, templateY1New) -
+            bigTemplateSum(templateX0New, templateY1New) -
+            bigTemplateSum(templateX1New, templateY0New) +
+            bigTemplateSum(templateX0New, templateY0New)
           val denom = (templateX1 - templateX0) * (templateY1 - templateY0)
           val templateV = templateVSum / (denom max 1)
           val templateVNew =
@@ -1782,6 +1783,7 @@ object Ocr4Music {
     }
 */
 
+/*
     var minDiff = 999999
     var bestTransform = Transform(0, 0, 0, 0, 0, 0)
     var numTests = 0
@@ -1789,8 +1791,8 @@ object Ocr4Music {
     (25 to 30).foreach { targetH =>
     (150 to 160).foreach { targetX =>
     (60 to 70).foreach { targetY =>
-    (0 to 18).foreach { blurTenths =>
-    (14 to 14).foreach { brightenTenths =>
+    (18 to 30).foreach { blurTenths =>
+    (10 to 20).foreach { brightenTenths =>
       var transform = Transform(
         targetW, targetH, targetX, targetY, blurTenths, brightenTenths)
       var diff = 0
@@ -1818,17 +1820,15 @@ object Ocr4Music {
       scatterPlot(128, i + 128) = 63
       scatterPlot(128 + 256, i + 128) = 63
     }
+*/
 
+/*
     val random = new Random(0)
     applyTransform(bestTransform) { (sourceX, sourceY, templateV) =>
       val (r, g, b) = demo(sourceX, sourceY)
       val sourceV = demo(sourceX, sourceY)._3
 
       demo(sourceX, sourceY) = (templateV, 0, b)
-      /*if (b > templateV)
-        demo(sourceX, sourceY) = (0, 0, (b - templateV) * 2)
-      else
-        demo(sourceX, sourceY) = ((templateV - b) * 2, 0, 0)*/
 
       val scatterX = templateV + random.nextInt(10) - 5 + 128
       val scatterY = (255 - sourceV) + random.nextInt(10) - 5 + 128
@@ -1836,7 +1836,101 @@ object Ocr4Music {
     }
 
     demo.saveTo(new File("demos/treble.%s.png".format(caseName)))
-    scatterPlot.saveTo(new File("demos/scatter.%s.png".format(caseName)))
+    scatterPlot.saveTo(new File("demos/scatter.%s.png".format(caseName)))*/
+
+/*
+    val demo2 = new ColorImage(demo.w, demo.h)
+    val shift = 3
+    (0 until demo.w).foreach { x =>
+      (0 until demo.h).foreach { y =>
+        val r = if (demo(x, y)._1 < demo(x + 1, y)._1) 255 else 0
+        val b =
+          if (demo(x + shift, y)._1 > demo(x + shift + 1, y)._1) 255 else 0
+        val g = if (demo(x + 2, y)._1 == 255) 255 else 0
+        val combined =
+          if (r == 255 && b == 255) 255
+          //else if (r == 255 && g == 255) 255
+          //else if (b == 255 && g == 255) 255
+          else 0
+        demo2(x, y) = (combined, 0, demo(x, y)._1) //(r, g, b)
+      }
+    }
+
+    val demo3 = new ColorImage(demo.w, demo.h)
+    (0 until demo.w).foreach { x =>
+      (0 until demo.h).foreach { y =>
+        val r = if (demo2(x - 5, y)._1 == 255 && demo2(x, y)._1 == 255) 255 else 0
+        demo3(x, y) = (r, 0, demo(x, y)._1)
+      }
+    }
+    
+    demo3.saveTo(new File("demos/treble.%s.png".format(caseName)))
+*/
+
+    // HERE
+    val input = justNotes.inverse
+    val template = scaleTemplate(ColorImage.readFromFile(new File(
+      "templates/sharp.png")).toGrayImage, 15, 28).inverse
+    val hough = new GrayImage(input.w, input.h)
+    val hough2 = new GrayImage(input.w, input.h)
+    val hough3 = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { inputX =>
+      (0 until input.h).foreach { inputY =>
+        val inputHasLeftEdge =
+          input(inputX - 1, inputY) - input(inputX + 1, inputY) > 50
+        val inputHasRightEdge =
+          input(inputX - 1, inputY) - input(inputX + 1, inputY) < -50
+        val inputIsDark = (input(inputX, inputY) > 128)
+
+        (0 until template.w).foreach { templateX =>
+          (0 until template.h).foreach { templateY =>
+            val templateHasLeftEdge =
+              template(templateX - 1, templateY) -
+              template(templateX + 1, templateY) > 50
+            val templateHasRightEdge =
+              template(templateX - 1, templateY) -
+              template(templateX + 1, templateY) < -50
+            val templateIsDark = (template(templateX, templateY) == 255)
+            val houghX = inputX - (templateX - template.w/2)
+            val houghY = inputY - (templateY - template.h/2)
+
+            if (houghX >= 0 && houghX < hough.w &&
+                houghY >= 0 && houghY < hough.h) {
+              if (inputHasLeftEdge && templateHasLeftEdge)
+                hough(houghX, houghY) = hough(houghX, houghY) + 1
+              if (inputHasRightEdge && templateHasRightEdge)
+                hough2(houghX, houghY) = hough2(houghX, houghY) + 1
+              if (inputIsDark && templateIsDark)
+                hough3(houghX, houghY) = hough3(houghX, houghY) + 1
+            }
+          }
+        }
+      }
+    }
+
+    val demo2 = new ColorImage(input.w, input.h)
+    var maxR = 0
+    var maxG = 0
+    var maxB = 0
+    (0 until demo2.w).foreach { x =>
+      (0 until demo2.h).foreach { y =>
+        if (hough(x, y) > maxR)
+          maxR = hough(x, y)
+        if (hough2(x, y) > maxG)
+          maxG = hough2(x, y)
+        if (hough3(x, y) > maxB)
+          maxB = hough3(x, y)
+      }
+    }
+    (0 until demo2.w).foreach { x =>
+      (0 until demo2.h).foreach { y =>
+        val r = hough(x, y) * 255 / maxR
+        val g = hough2(x, y) * 255 / maxG
+        val b = hough3(x, y) * 255 / maxB
+        demo2(x, y) = (r, g, b)
+      }
+    }
+    demo2.saveTo(new File("demos/sharp_hough.%s.png".format(caseName)))
   }
 
   def rainbow(input:GrayImage, range:Int) = {
