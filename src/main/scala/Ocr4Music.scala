@@ -1475,7 +1475,7 @@ object Ocr4Music {
     val hough = new GrayImage(justNotes.w, justNotes.h)
     val input = justNotes.inverse
 
-    val margin = 0
+    val margin = 20
     val bigTemplateMargin = new GrayImage(bigTemplate.w + margin*2,
       bigTemplate.h + margin*2)
     (0 until bigTemplate.w).foreach { x =>
