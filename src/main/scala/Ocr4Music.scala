@@ -1410,47 +1410,11 @@ object Ocr4Music {
     val brightenTenths:Int
   ) {}
 
-  def shrinkHalfSize(input:GrayImage) = {
-    // add one before halving because we want to round up not down
-    // when you access a pixel that's out of bounds, it returns 0;
-    // otherwise this technique wouldn't work
-    val output = new GrayImage((input.w + 1) / 2, (input.h + 1) / 2)
-    (0 until output.h).foreach { y =>
-      (0 until output.w).foreach { x =>
-        val v = (input(x*2, y*2    ) + input(x*2 + 1, y*2) +
-                 input(x*2, y*2 + 1) + input(x*2 + 1, y*2 + 1)) / 4
-        output(x, y) = v
-      }
-    }
-    output
-  }
-
   def matchTrebleTemplate(justNotes:GrayImage, metrics:Metrics,
       caseName:String) {
     val bigTemplate = ColorImage.readFromFile(new File(
       //"templates/treble_clef.png")).toGrayImage
       "templates/sharp.png")).toGrayImage
-    val bigTemplateSum = sumTemplate(bigTemplate.inverse)
-
-    def shrinkTemplate(templateW:Int, templateH:Int) = {
-      val smallTemplate = new GrayImage(templateW, templateH)
-      (0 until templateH).foreach { y =>
-        (0 until templateW).foreach { x =>
-          val templateX0 = x * bigTemplate.w / templateW - 1
-          val templateX1 = (x + 1) * bigTemplate.w / templateW - 1
-          val templateY0 = y * bigTemplate.h / templateH - 1
-          val templateY1 = (y + 1) * bigTemplate.h / templateH - 1
-          val templateV = (
-            bigTemplateSum(templateX1, templateY1) -
-            bigTemplateSum(templateX1, templateY0) -
-            bigTemplateSum(templateX0, templateY1) +
-            bigTemplateSum(templateX0, templateY0)) /
-            ((templateX1 - templateX0) * (templateY1 - templateY0))
-          smallTemplate(x, y) = templateV
-        }
-      }
-      smallTemplate
-    }
 
     val input = justNotes.inverse
     val template = scaleTemplate(ColorImage.readFromFile(new File(
