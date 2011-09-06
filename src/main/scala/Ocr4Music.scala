@@ -1501,15 +1501,9 @@ object Ocr4Music {
               if (xNeighbor == 0) 0 else (xNeighbor / Math.abs(xNeighbor))
             val ySign =
               if (yNeighbor == 0) 0 else (yNeighbor / Math.abs(yNeighbor))
-            //val factor = Math.pow(0.99f,
-            //  xNeighbor * xNeighbor + yNeighbor * yNeighbor).floatValue
-            //val norm = Math.sqrt(
-            //yNeighbor * xNeighbor + yNeighbor * yNeighbor).floatValue
-            //if (norm > 0.0) {
-              sumX += v * xSign //* xNeighbor / norm //* factor
-              sumY += v * ySign //yNeighbor / norm //* factor
-              denom += 1 //factor
-            //}
+            sumX += v * xSign
+            sumY += v * ySign
+            denom += 1
           }
         }
         var meanX = sumX / denom
@@ -1517,39 +1511,6 @@ object Ocr4Music {
 
         val norm = Math.sqrt(meanX * meanX + meanY * meanY).intValue
         output(x, y) = (meanX + 100, meanY + 100, norm)
-        /*output(x, y) =
-          if (norm == 0)
-            (0, 0, 0)
-          else
-            ((meanX * 100 / norm).intValue + 100,
-             (meanY * 100 / norm).intValue + 100, norm.intValue)*/
-
-        /*var angle255 =
-          ((Math.atan2(meanY, meanX) + Math.PI) / Math.PI * 127).intValue
-        output(x, y) = (angle255, if (norm > 0.0) 255 else 0, 0)*/
-
-        /*if (meanX == 0 && meanY == 0) {
-          if (input(x, y) > 128)
-            output(x - x0, y - y0) = (255, 255, 255)
-          else
-            output(x - x0, y - y0) = (0, 0, 0)
-        }
-        else {
-          var angle255 =
-            ((Math.atan2(meanY, meanX) + Math.PI) / Math.PI * 127).intValue
-          //var r = 128 - Math.abs(angle255 - 128)
-          //var b = 255 - r
-          var (r, g, b) =
-            if (angle255 < 64)
-              (255, angle255 * 4, 0)
-            else if (angle255 < 128)
-              ((127 - angle255) * 4, 255, 0)
-            else if (angle255 < 192)
-              (0, (191 - angle255) * 4, (angle255 - 128) * 4)
-            else
-              ((angle255 - 192) * 4, 0, (255 - angle255) * 4)
-          output(x - x0, y - y0) = (r, g, b)
-        }*/
       }
     }
     output
