@@ -1401,89 +1401,90 @@ object Ocr4Music {
     demo.saveTo(new File("demos/bounds.%s.png".format(caseName)))
   }
 
-  case class Transform (
-    val targetW:Int,
-    val targetH:Int,
-    val targetMidX:Int,
-    val targetMidY:Int,
-    val blurTenths:Int,
-    val brightenTenths:Int
-  ) {}
+  def filterImage(input:GrayImage)(
+      filter:(GrayImage,Int,Int)=>Int) : GrayImage = {
+    val output = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        output(x, y) = filter(input, x, y)
+      }
+    }
+    output
+  }
 
-  def matchTrebleTemplate(justNotes:GrayImage, metrics:Metrics,
-      caseName:String) {
-    val bigTemplate = ColorImage.readFromFile(new File(
-      //"templates/treble_clef.png")).toGrayImage
-      "templates/sharp.png")).toGrayImage
+  def findLeftEdges(input:GrayImage) = {
+    filterImage(input) { (input, x, y) =>
+      if (input(x - 1, y) - input(x + 1, y) > 50) 255
+      else 0
+    }
+  }
 
-    val input = justNotes.inverse
-    val template = scaleTemplate(ColorImage.readFromFile(new File(
-      //"templates/sharp.png")).toGrayImage, 18, 35).inverse
-      //"templates/flat.png")).toGrayImage, 15, 32).inverse
-      "templates/natural.png")).toGrayImage, 15, 42).inverse
-    val hough = new GrayImage(input.w, input.h)
-    val hough2 = new GrayImage(input.w, input.h)
-    val hough3 = new GrayImage(input.w, input.h)
+  def findRightEdges(input:GrayImage) = {
+    filterImage(input) { (input, x, y) =>
+      if (input(x - 1, y) - input(x + 1, y) < -50) 255
+      else 0
+    }
+  }
+
+  def slideTemplate(input:GrayImage, template:GrayImage)(
+      scorer:(Int,Int)=>Boolean) = {
+    val output = new GrayImage(input.w, input.h)
     (0 until input.w).foreach { inputX =>
       (0 until input.h).foreach { inputY =>
-        val inputHasLeftEdge =
-          input(inputX - 1, inputY) - input(inputX + 1, inputY) > 50
-        val inputHasRightEdge =
-          input(inputX - 1, inputY) - input(inputX + 1, inputY) < -50
-        val inputIsDark = (input(inputX, inputY) > 128)
-
+        val inputV = input(inputX, inputY)
         (0 until template.w).foreach { templateX =>
           (0 until template.h).foreach { templateY =>
-            val templateHasLeftEdge =
-              template(templateX - 1, templateY) -
-              template(templateX + 1, templateY) > 50
-            val templateHasRightEdge =
-              template(templateX - 1, templateY) -
-              template(templateX + 1, templateY) < -50
-            val templateIsDark = (template(templateX, templateY) == 255)
-            val houghX = inputX - (templateX - template.w/2)
-            val houghY = inputY - (templateY - template.h/2)
-
-            if (houghX >= 0 && houghX < hough.w &&
-                houghY >= 0 && houghY < hough.h) {
-              if (inputHasLeftEdge && templateHasLeftEdge)
-                hough(houghX, houghY) = hough(houghX, houghY) + 1
-              if (inputHasRightEdge && templateHasRightEdge)
-                //hough2(houghX, houghY) = hough2(houghX, houghY) + 1
-                hough(houghX, houghY) = hough(houghX, houghY) + 1
-              if (inputIsDark && templateIsDark)
-                hough3(houghX, houghY) = hough3(houghX, houghY) + 1
+            val templateV = template(templateX, templateY)
+            val predictedCenterX = inputX - (templateX - template.w/2)
+            val predictedCenterY = inputY - (templateY - template.h/2)
+            if (predictedCenterX >= 0 && predictedCenterX < output.w &&
+                predictedCenterY >= 0 && predictedCenterY < output.h &&
+                scorer(inputV, templateV)) {
+              output(predictedCenterX, predictedCenterY) =
+                output(predictedCenterX, predictedCenterY) + 1
             }
           }
         }
       }
     }
+    output
+  }
 
-    val demo2 = new ColorImage(input.w, input.h)
-    var maxR = 1 // avoid divide by zero
-    var maxG = 1
-    var maxB = 1
-    (0 until demo2.w).foreach { x =>
-      (0 until demo2.h).foreach { y =>
-        if (hough(x, y) > maxR)
-          maxR = hough(x, y)
-        if (hough2(x, y) > maxG)
-          maxG = hough2(x, y)
-        if (hough3(x, y) > maxB)
-          maxB = hough3(x, y)
-      }
+  def matchTrebleTemplate(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+      caseName:String) {
+    val input = justNotes.inverse
+
+    val inputLeftEdges = findLeftEdges(input)
+    val templateLeftEdges = findLeftEdges(rightSizeTemplate)
+    val leftEdgeMatch = slideTemplate(inputLeftEdges, templateLeftEdges) {
+      (inputV, templateV) => inputV == 255 && templateV == 255
     }
-    (0 until demo2.w).foreach { x =>
-      (0 until demo2.h).foreach { y =>
-        val r = hough(x, y) * 255 / maxR
-        val g = hough2(x, y) * 255 / maxG
-        val b = hough3(x, y) * 255 / maxB
-        val rb = r * b / 255
-        demo2(x, y) = (rb, 0, input(x, y))
-      }
+
+    val inputRightEdges = findRightEdges(input)
+    val templateRightEdges = findRightEdges(rightSizeTemplate)
+    val rightEdgeMatch = slideTemplate(inputRightEdges, templateRightEdges) {
+      (inputV, templateV) => inputV == 255 && templateV == 255
     }
-    demo2.saveTo(new File("demos/sharp_hough.%s.png".format(caseName)))
-    template.saveTo(new File("demos/little_template.png"))
+
+    val combinedEdgeMatch = 
+        GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
+      leftEdgeMatch(x, y) + rightEdgeMatch(x, y)
+    }
+    val combinedEdgeMatch255 = combinedEdgeMatch.scaleValueToMax255
+
+    val isDarkMatch = slideTemplate(input, rightSizeTemplate) {
+      (inputV, templateV) => inputV > 128 && templateV == 255
+    }
+    val isDarkMatch255 = isDarkMatch.scaleValueToMax255
+
+    val demo = ColorImage.giveRGBPerPixel(input.w, input.h) { (x, y) =>
+      val r = combinedEdgeMatch255(x, y)
+      val g = 0
+      val b = isDarkMatch255(x, y)
+      val rb = r * b / 255
+      (rb, 0, input(x, y))
+    }
+    demo.saveTo(new File("demos/sharp_hough.%s.png".format(caseName)))
   }
 
   def rainbow(input:GrayImage, range:Int) = {
@@ -1706,7 +1707,11 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      matchTrebleTemplate(justNotes, metrics, caseName)
+      val accidentalTemplate = scaleTemplate(ColorImage.readFromFile(new File(
+        //"templates/sharp.png")).toGrayImage, 18, 35).inverse
+        //"templates/flat.png")).toGrayImage, 15, 32).inverse
+        "templates/natural.png")).toGrayImage, 15, 42).inverse
+      matchTrebleTemplate(justNotes, accidentalTemplate, caseName)
       //colorTrebleTemplate(justNotes, caseName)
       //trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
       //findSharps(justNotes, caseName)

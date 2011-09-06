@@ -54,4 +54,15 @@ object ColorImage {
     val colorImage = new ColorImage(w, h, data)
     colorImage
   }
+  def giveRGBPerPixel(w:Int, h:Int)(block:(Int,Int)=>(Int,Int,Int)) = {
+    val newData = new Array[(Int,Int,Int)](w * h)
+    var i = 0
+    for (y <- 0 until h) {
+      for (x <- 0 until w) {
+        newData(i) = block(x, y)
+        i += 1
+      }
+    }
+    new ColorImage(w, h, newData)
+  }
 }
