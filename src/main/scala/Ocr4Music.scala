@@ -1456,29 +1456,21 @@ object Ocr4Music {
         var meanX = sumX / denom
         var meanY = sumY / denom
 
-        val norm = Math.sqrt(meanX * meanX + meanY * meanY).intValue
-        output(x, y) = (meanX + 100, meanY + 100, norm)
+        val norm = Math.sqrt(meanX * meanX + meanY * meanY)
+        if (norm > 0.0f)
+          output(x, y) = ((meanX * 100 / norm).intValue + 100,
+                          (meanY * 100 / norm).intValue + 100, norm.intValue)
+        else
+          output(x, y) = (0, 0, 0)
       }
     }
     output
   }
 
-  def colorTrebleTemplate(justNotes:GrayImage, caseName:String) {
-    val input = ColorImage.readFromFile(
-      new File("templates/treble_clef.png")).toGrayImage.inverse
-    val range = 13
-    val (x0, y0, x1, y1) =
-      (0 - range, 0 - range, input.w + range, input.h + range)
-
-    val demo = new ColorImage(x1 - x0 + 1, y1 - y0 + 1)
-    demo.saveTo(new File("demos/color_treble.%s.png".format(caseName)))
-  }
-
   def trebleHough(justNotes:GrayImage, staffSeparation:Int, caseName:String) {
-    val (templateW, templateH) = (16, 28)
-    //val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
+    val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
     val bigTemplate = ColorImage.readFromFile(new File(
-      "templates/sharp.png")).toGrayImage.inverse
+      "templates/treble_clef.png")).toGrayImage.inverse
     val template = scaleTemplate(bigTemplate, templateW, templateH)
     val hough = new GrayImage(justNotes.w, justNotes.h)
     val input = justNotes.inverse
@@ -1509,9 +1501,8 @@ object Ocr4Music {
               templateRainbow(templateX, templateY)
             val scored = (templateR > 0 && templateG > 0 &&
               inputR > 0 && inputG > 0 &&
-              Math.abs(templateR - inputR) < 15 &&
-              Math.abs(templateG - inputG) < 15 &&
-              inputB > 0)
+              Math.abs(templateR - inputR) < 2 &&
+              Math.abs(templateG - inputG) < 2)
 
             val houghX = inputX - (templateX - template.w/2)
             val houghY = inputY - (templateY - template.h/2)
@@ -1525,20 +1516,8 @@ object Ocr4Music {
       }
     }
 
-
-    // Scale down the hough image so it's between 0-255
-    val max = hough.data.max 
-    if (max > 0) {
-      (0 until hough.w).foreach { x =>
-        (0 until hough.h).foreach { y =>
-          hough(x, y) = hough(x, y) * 255 / max
-        }
-      }
-    }
-    println(("max of hough", max))
-    println(("normalized max of hough", max / template.w / template.h))
-
-    hough.saveTo(new File("demos/treble_hough.%s.png".format(caseName)))
+    val hough255 = hough.scaleValueToMax255
+    hough255.saveTo(new File("demos/treble_hough.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -1577,8 +1556,8 @@ object Ocr4Music {
         //"templates/flat.png")).toGrayImage, 15, 32).inverse
         "templates/natural.png")).toGrayImage, 15, 42).inverse
       matchTrebleTemplate(justNotes, accidentalTemplate, caseName)
-      //colorTrebleTemplate(justNotes, caseName)
-      //trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
+      trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
+      //findSharps(justNotes, caseName)
 
 /*
       val segments = scanSegments(justNotes)
