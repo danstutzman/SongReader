@@ -1397,8 +1397,8 @@ object Ocr4Music {
     output
   }
 
-  def matchTrebleTemplate(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) {
+  def findAccidental(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+      augmentedCaseName:String) {
     val input = justNotes.inverse
 
     val inputLeftEdges = findLeftEdges(input)
@@ -1424,14 +1424,15 @@ object Ocr4Music {
     }
     val isDarkMatch255 = isDarkMatch.scaleValueToMax255
 
-    val demo = ColorImage.giveRGBPerPixel(input.w, input.h) { (x, y) =>
+    val demo = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
       val r = combinedEdgeMatch255(x, y)
       val g = 0
       val b = isDarkMatch255(x, y)
       val rb = r * b / 255
-      (rb, 0, input(x, y))
+      rb
     }
-    demo.saveTo(new File("demos/sharp_hough.%s.png".format(caseName)))
+    demo.saveTo(new File(
+      "demos/find_accidental.%s.png".format(augmentedCaseName)))
   }
 
   def makeGradientImages(input:GrayImage, range:Int) : List[GrayImage] = {
@@ -1473,7 +1474,8 @@ object Ocr4Music {
     List(gradientX, gradientY, gradientNorm)
   }
 
-  def trebleHough(justNotes:GrayImage, staffSeparation:Int, caseName:String) {
+  def findTrebleClef(
+      justNotes:GrayImage, staffSeparation:Int, caseName:String) {
     val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
     val bigTemplate = ColorImage.readFromFile(new File(
       "templates/treble_clef.png")).toGrayImage.inverse
@@ -1542,13 +1544,14 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      val accidentalTemplate = scaleTemplate(ColorImage.readFromFile(new File(
-        //"templates/sharp.png")).toGrayImage, 18, 35).inverse
-        //"templates/flat.png")).toGrayImage, 15, 32).inverse
-        "templates/natural.png")).toGrayImage, 15, 42).inverse
-      matchTrebleTemplate(justNotes, accidentalTemplate, caseName)
-      trebleHough(justNotes, metrics.cSpacing.intValue, caseName)
-      //findSharps(justNotes, caseName)
+      List(("sharp", 18, 35), ("flat", 15, 32), ("natural", 15, 42)).foreach {
+        triple => val (accidentalName, templateW, templateH) = triple
+        val file = new File("templates/%s.png".format(accidentalName))
+        val fullSize = ColorImage.readFromFile(file).toGrayImage.inverse
+        val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
+        findAccidental(justNotes, smallTemplate, accidentalName + "." +caseName)
+      }
+      findTrebleClef(justNotes, metrics.cSpacing.intValue, caseName)
 
 /*
       val segments = scanSegments(justNotes)
