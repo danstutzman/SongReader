@@ -1475,15 +1475,7 @@ object Ocr4Music {
     val hough = new GrayImage(justNotes.w, justNotes.h)
     val input = justNotes.inverse
 
-    val margin = 20
-    val bigTemplateMargin = new GrayImage(bigTemplate.w + margin*2,
-      bigTemplate.h + margin*2)
-    (0 until bigTemplate.w).foreach { x =>
-      (0 until bigTemplate.h).foreach { y =>
-        bigTemplateMargin(x + margin, y + margin) = bigTemplate(x, y)
-      }
-    }
-    val bigTemplateRainbow = rainbow(bigTemplateMargin, 15)
+    val bigTemplateRainbow = rainbow(bigTemplate.addMargin(20), 15)
     val templateRainbow =
       scaleTemplateColor(bigTemplateRainbow, templateW, templateH)
     templateRainbow.saveTo(new File(

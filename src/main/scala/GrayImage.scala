@@ -117,4 +117,13 @@ class GrayImage(val w:Int, val h:Int, val data:Array[Int]) {
       this(x, y) * 255 / maxV
     }
   }
+  def addMargin(margin:Int) = {
+    val output = new GrayImage(w + margin*2, h + margin*2)
+    (0 until w).foreach { x =>
+      (0 until h).foreach { y =>
+        output(x + margin, y + margin) = this(x, y)
+      }
+    }
+    output
+  }
 }
