@@ -1434,8 +1434,10 @@ object Ocr4Music {
     demo.saveTo(new File("demos/sharp_hough.%s.png".format(caseName)))
   }
 
-  def rainbow(input:GrayImage, range:Int) = {
-    val output = new ColorImage(input.w, input.h)
+  def makeGradientImages(input:GrayImage, range:Int) : List[GrayImage] = {
+    val gradientX     = new GrayImage(input.w, input.h)
+    val gradientY     = new GrayImage(input.w, input.h)
+    val gradientNorm  = new GrayImage(input.w, input.h)
     (0 until input.w).foreach { x =>
       (0 until input.h).foreach { y =>
         var sumX = 0
@@ -1457,14 +1459,18 @@ object Ocr4Music {
         var meanY = sumY / denom
 
         val norm = Math.sqrt(meanX * meanX + meanY * meanY)
-        if (norm > 0.0f)
-          output(x, y) = ((meanX * 100 / norm).intValue + 100,
-                          (meanY * 100 / norm).intValue + 100, norm.intValue)
-        else
-          output(x, y) = (0, 0, 0)
+        if (norm > 0.0f) {
+          gradientX(x, y) = (meanX * 100 / norm).intValue + 100
+          gradientY(x, y) = (meanY * 100 / norm).intValue + 100
+          gradientNorm(x, y) = norm.intValue
+        } else {
+          gradientX(x, y) = 0
+          gradientY(x, y) = 0
+          gradientNorm(x, y) = 0
+        }
       }
     }
-    output
+    List(gradientX, gradientY, gradientNorm)
   }
 
   def trebleHough(justNotes:GrayImage, staffSeparation:Int, caseName:String) {
@@ -1475,41 +1481,34 @@ object Ocr4Music {
     val hough = new GrayImage(justNotes.w, justNotes.h)
     val input = justNotes.inverse
 
-    val bigTemplateRainbow = rainbow(bigTemplate.addMargin(20), 15)
-    val templateRainbow =
-      scaleTemplateColor(bigTemplateRainbow, templateW, templateH)
-    templateRainbow.saveTo(new File(
-      "demos/template_rainbow.%s.png".format(caseName)))
-    val inputRainbow = rainbow(input, 3)
-    inputRainbow.saveTo(new File(
-      "demos/input_rainbow.%s.png".format(caseName)))
-
-    (0 until input.w).foreach { inputX =>
-      (0 until input.h).foreach { inputY =>
-        val (inputR, inputG, inputB) = inputRainbow(inputX, inputY)
-        (0 until template.w).foreach { templateX =>
-          (0 until template.h).foreach { templateY =>
-            val (templateR, templateG, templateB) =
-              templateRainbow(templateX, templateY)
-            val scored = (templateR > 0 && templateG > 0 &&
-              inputR > 0 && inputG > 0 &&
-              Math.abs(templateR - inputR) < 2 &&
-              Math.abs(templateG - inputG) < 2)
-
-            val houghX = inputX - (templateX - template.w/2)
-            val houghY = inputY - (templateY - template.h/2)
-            if (scored &&
-                houghX >= 0 && houghX < hough.w &&
-                houghY >= 0 && houghY < hough.h) {
-              hough(houghX, houghY) = hough(houghX, houghY) + 1
-            }
-          }
-        }
+    val List(templateGradientX, templateGradientY, _) =
+      makeGradientImages(bigTemplate.addMargin(20), 15).map { image =>
+        scaleTemplate(image, templateW, templateH)
       }
-    }
+    templateGradientX.saveTo(new File(
+      "demos/template_gradient_x.%s.png".format(caseName)))
+    templateGradientY.saveTo(new File(
+      "demos/template_gradient_y.%s.png".format(caseName)))
 
-    val hough255 = hough.scaleValueToMax255
-    hough255.saveTo(new File("demos/treble_hough.%s.png".format(caseName)))
+    val List(inputGradientX, inputGradientY, _) = makeGradientImages(input, 3)
+    inputGradientX.saveTo(new File(
+      "demos/input_gradient_x.%s.png".format(caseName)))
+    inputGradientY.saveTo(new File(
+      "demos/input_gradient_y.%s.png".format(caseName)))
+
+    val gradientXResults =
+      slideTemplate(inputGradientX, templateGradientX) { (inputV, templateV) =>
+        inputV > 0 && templateV > 0 && Math.abs(templateV - inputV) < 2
+      }
+    val gradientYResults =
+      slideTemplate(inputGradientY, templateGradientY) { (inputV, templateV) =>
+        inputV > 0 && templateV > 0 && Math.abs(templateV - inputV) < 2
+      }
+
+    val hough255X = gradientXResults.scaleValueToMax255
+    val hough255Y = gradientYResults.scaleValueToMax255
+    hough255X.saveTo(new File("demos/treble_match_x.%s.png".format(caseName)))
+    hough255Y.saveTo(new File("demos/treble_match_y.%s.png".format(caseName)))
   }
 
   def doTemplateMatching(caseNames:List[String]) {
