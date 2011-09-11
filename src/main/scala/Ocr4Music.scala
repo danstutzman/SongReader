@@ -1464,8 +1464,8 @@ object Ocr4Music {
           gradientY(x, y) = (meanY * 100 / norm).intValue + 100
           gradientNorm(x, y) = norm.intValue
         } else {
-          gradientX(x, y) = 0
-          gradientY(x, y) = 0
+          gradientX(x, y) = 127
+          gradientY(x, y) = 127
           gradientNorm(x, y) = 0
         }
       }
@@ -1498,11 +1498,11 @@ object Ocr4Music {
 
     val gradientXResults =
       slideTemplate(inputGradientX, templateGradientX) { (inputV, templateV) =>
-        inputV > 0 && templateV > 0 && Math.abs(templateV - inputV) < 2
+        inputV != 127 && templateV != 127 && Math.abs(templateV - inputV) < 2
       }
     val gradientYResults =
       slideTemplate(inputGradientY, templateGradientY) { (inputV, templateV) =>
-        inputV > 0 && templateV > 0 && Math.abs(templateV - inputV) < 2
+        inputV != 127 && templateV != 127 && Math.abs(templateV - inputV) < 2
       }
 
     val hough255X = gradientXResults.scaleValueToMax255
