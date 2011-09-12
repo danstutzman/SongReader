@@ -13,6 +13,7 @@ object Colors {
   val underflow = (0, 0, 255) // blue (too cold)
   val overflow = (255, 0, 0) // red (too hot)
   val ansiEscapeToHighlightProgramOutput = "\u001b" + "[1;37m" // bright white
+  val ansiEscapeNormal  = "\u001b" + "[0m"
 }
 
 case class Segment (
@@ -1775,6 +1776,8 @@ object Ocr4Music {
       doTemplateMatching(caseNames)
     } catch {
       case e: Exception => e.printStackTrace()
+    } finally {
+      println(Colors.ansiEscapeNormal)
     }
   }
 }
