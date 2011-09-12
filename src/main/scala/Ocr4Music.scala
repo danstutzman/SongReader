@@ -1397,6 +1397,69 @@ object Ocr4Music {
     output
   }
 
+  def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+      caseName:String) {
+    val input = justNotes.inverse
+    val isDarkMatch = slideTemplate(input, rightSizeTemplate) {
+      (inputV, templateV) => inputV > 128 && templateV == 255
+    }
+    val demo = isDarkMatch.scaleValueToMax255
+    demo.saveTo(new File(
+      "demos/find_black.%s.png".format(caseName)))
+  }
+
+  def findDiagonalLines(input:GrayImage, polarity:Boolean) = {
+    val output = new GrayImage(input.w, input.h)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val diff1 = (input(x, y) - input(x - 2, y - 2))
+        val diff2 = (input(x, y) - input(x + 2, y + 2))
+        val newV =
+          if (polarity && diff1 < 0 && diff2 < 0) -(diff1 + diff2) / 2
+          else if (!polarity && diff1 > 0 && diff2 > 0) (diff1 + diff2) / 2
+          else 0
+        output(x, y) = newV
+      }
+    }
+    output
+  }
+
+  def findWhiteHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+      caseName:String) {
+    val templateDipsT = findDiagonalLines(rightSizeTemplate, true)
+    val templateDipsF = findDiagonalLines(rightSizeTemplate, false)
+    templateDipsT.saveTo(new File(
+      "demos/find_white.tdt.%s.png".format(caseName)))
+    templateDipsF.saveTo(new File(
+      "demos/find_white.tdf.%s.png".format(caseName)))
+
+    val inputDipsT = findDiagonalLines(justNotes.inverse, true)
+    val inputDipsF = findDiagonalLines(justNotes.inverse, false)
+    inputDipsT.saveTo(new File("demos/find_white.idt.%s.png".format(caseName)))
+    inputDipsF.saveTo(new File("demos/find_white.idf.%s.png".format(caseName)))
+
+    val trueMatch = slideTemplate(inputDipsT, templateDipsT) {
+      (inputV, templateV) =>
+      inputV > 20 && templateV > 20
+    }
+    trueMatch.scaleValueToMax255.saveTo(new File(
+      "demos/find_white.t.%s.png".format(caseName)))
+
+    val falseMatch = slideTemplate(inputDipsF, templateDipsF) {
+      (inputV, templateV) =>
+      inputV > 20 && templateV > 20
+    }
+    falseMatch.scaleValueToMax255.saveTo(new File(
+      "demos/find_white.f.%s.png".format(caseName)))
+
+    val combinedMatch =
+      GrayImage.giveBrightnessPerPixel(justNotes.w, justNotes.h) { (x, y) =>
+        trueMatch(x, y) * falseMatch(x, y)
+      }
+    combinedMatch.scaleValueToMax255.saveTo(new File(
+      "demos/find_white.tf.%s.png".format(caseName)))
+  }
+
   def findAccidental(justNotes:GrayImage, rightSizeTemplate:GrayImage,
       augmentedCaseName:String) {
     val input = justNotes.inverse
@@ -1544,15 +1607,18 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      List(("sharp", 18, 35), ("flat", 15, 32), ("natural", 15, 42)).foreach {
+      /*List(("sharp", 18, 35), ("flat", 15, 32), ("natural", 15, 42)).foreach {
         triple => val (accidentalName, templateW, templateH) = triple
         val file = new File("templates/%s.png".format(accidentalName))
         val fullSize = ColorImage.readFromFile(file).toGrayImage.inverse
         val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
         findAccidental(justNotes, smallTemplate, accidentalName + "." +caseName)
       }
-      findTrebleClef(justNotes, metrics.cSpacing.intValue, caseName)
-
+      findTrebleClef(justNotes, metrics.cSpacing.intValue, caseName)*/
+      val blackHeadTemplate = scaleTemplate(ColorImage.readFromFile(new File("templates/black_head.png")).toGrayImage.inverse, 15, 8)
+      findBlackHeads(justNotes, blackHeadTemplate, caseName)
+      val whiteHeadTemplate = scaleTemplate(ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage.inverse, 11, 9)
+      findWhiteHeads(justNotes, whiteHeadTemplate, caseName)
 /*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
