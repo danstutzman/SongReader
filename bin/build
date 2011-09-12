@@ -1,0 +1,2 @@
+#!/bin/sh
+/Applications/scala-2.8.1/bin/fsc -deprecation -encoding utf-8 -dependencyfile build/scala_dependencies -d build/classes -make:transitivenocp -classpath build/classes src/main/scala/*.scala

@@ -1,2 +1,2 @@
-#!/bin/bash
-ANT_OPTS=-Xmx1024M ant -Dcase_name=3a run
+#!/bin/sh
+java -Xmx1024M -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar Ocr4Music 3a
