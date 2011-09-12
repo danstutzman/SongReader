@@ -3,3 +3,4 @@ project/boot/
 project/target/
 .DS_Store
 demos/*
+build/*
