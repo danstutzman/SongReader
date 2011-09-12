@@ -1,10 +1,9 @@
+import com.twitter.json.Json
 import java.awt.Graphics2D
 import java.awt.image.BufferedImage
 import java.io.File
 import java.lang.Math
 import javax.imageio.ImageIO
-import edu.emory.mathcs.jtransforms.fft.FloatFFT_1D
-import com.twitter.json.Json
 import scala.io.Source
 import scala.util.Random
 import scala.util.Sorting
