@@ -35,7 +35,6 @@ case class LabeledPoint (
 ) {}
 
 case class Annotation (
-  val caseName:String,
   val points:List[LabeledPoint],
   val notes:List[List[Int]]
 ) {}
@@ -457,12 +456,9 @@ object Ocr4Music {
     noteGroups.reverse
   }
 
-  def loadAnnotationJson(caseName:String) : Annotation = {
-    val filename = "input/%s.json".format(caseName)
-    val annotationsString:String =
-      scala.io.Source.fromFile(filename).mkString
+  def loadAnnotationJson(annotationString : String) : Annotation = {
     val annotationJson:Map[String,Any] = 
-      Json.parse(annotationsString).asInstanceOf[Map[String,Any]]
+      Json.parse(annotationString).asInstanceOf[Map[String,Any]]
     val points =
       annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
         pointJson => LabeledPoint(
@@ -472,8 +468,7 @@ object Ocr4Music {
         )
       }
     val annotatedNotes = annotationJson("notes").asInstanceOf[List[List[Int]]]
-
-    Annotation(caseName, points, annotatedNotes)
+    Annotation(points, annotatedNotes)
   }
 
   // Levenshtein minimum-edit-distance to determine best alignment
@@ -1768,11 +1763,96 @@ object Ocr4Music {
     caseNames.reverse
   }
 
+  def printToFile(f: java.io.File)(op: java.io.PrintWriter => Unit) {
+    val p = new java.io.PrintWriter(f)
+    try { op(p) } finally { p.close() }
+  }
+
+  def readFile(f: java.io.File) = {
+    val source = scala.io.Source.fromFile(f)
+    val contents = source.mkString
+    source.close()
+    contents
+  }
+
+  def generateMetrics(input:GrayImage, annotation:Annotation, caseName:String)={
+    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
+      separateNotes(input, caseName)
+    val metrics = estimateMetrics(partiallyErased, caseName)
+    //val yCorrection = determineYCorrection(
+    //  partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+    //val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
+    //  metrics, yCorrection, caseName)
+    metrics
+  }
+
+  def metricsToJson(metrics:Metrics) = {
+    val asMap = Map(
+      "w" -> metrics.w,
+      "h" -> metrics.h,
+      "a" -> metrics.a,
+      "b" -> metrics.b,
+      "c" -> metrics.c,
+      "cSpacing" -> metrics.cSpacing,
+      "bSpacing" -> metrics.bSpacing
+    )
+    Json.build(asMap).toString()
+  }
+
+  def jsonToMetrics(inString:String) = {
+    val json:Map[String,scala.math.BigDecimal] = 
+      Json.parse(inString).asInstanceOf[Map[String,scala.math.BigDecimal]]
+    Metrics(
+      json("w").toFloat,
+      json("h").toFloat,
+      json("a").toFloat,
+      json("b").toFloat,
+      json("c").toFloat,
+      json("cSpacing").toFloat,
+      json("bSpacing").toFloat
+    )
+  }
+
+  def readOrGenerate[T](file:File, toJson:(T=>String), fromJson:(String=>T))(
+      generator:()=>T) = {
+    if (!file.exists()) {
+      printf("Generating %s...\n", file.getName())
+      val output = generator()
+      printToFile(file) { writer =>
+        writer.write(toJson(output))
+      }
+    }
+    fromJson(readFile(file))
+  }
+
+  def processCase(caseName:String) {
+    val imagePath = new File("input/%s.jpeg".format(caseName))
+    val image = ColorImage.readFromFile(imagePath).toGrayImage
+    val annotationPath = "input/%s.json".format(caseName)
+    val annotationString = scala.io.Source.fromFile(annotationPath).mkString
+    val annotation = loadAnnotationJson(annotationString)
+
+    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
+      separateNotes(image, caseName)
+
+    val metricsPath = new File("output/metrics/%s.json".format(caseName))
+    val metrics = readOrGenerate(metricsPath, metricsToJson, jsonToMetrics) {
+      () => estimateMetrics(partiallyErased, caseName)
+    }
+
+    val yCorrection = determineYCorrection(
+      partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+    val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
+      metrics, yCorrection, caseName)
+  }
+
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
       val caseNames = expandCaseNames(args)
-      doTemplateMatching(caseNames)
+      caseNames.foreach { caseName =>
+        processCase(caseName)
+      }
     } catch {
       case e: Exception => e.printStackTrace()
     } finally {
