@@ -1,4 +1,7 @@
 #!/bin/sh
 cd `dirname $0`/..
 bin/build
-java -Xmx1024M -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar Ocr4Music "$@"
+if [ "$?" == "0" ]; then
+  echo Running...
+  java -Xmx1024M -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar Ocr4Music "$@"
+fi
