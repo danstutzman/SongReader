@@ -1449,7 +1449,7 @@ object Ocr4Music {
 
     val combinedMatch =
       GrayImage.giveBrightnessPerPixel(justNotes.w, justNotes.h) { (x, y) =>
-        trueMatch(x, y) * falseMatch(x, y)
+        trueMatch(x, y) * falseMatch(x, y) / 2 // divide by two for image
       }
     combinedMatch.scaleValueToMax255.saveTo(new File(
       "demos/find_white.tf.%s.png".format(caseName)))
@@ -1492,7 +1492,11 @@ object Ocr4Music {
     }
     demo.saveTo(new File(
       "demos/find_accidental.%s.png".format(augmentedCaseName)))
-    demo
+
+    val output = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
+      combinedEdgeMatch(x, y) * isDarkMatch(x, y)
+    }
+    output
   }
 
   def makeGradientImages(input:GrayImage, range:Int) : List[GrayImage] = {
@@ -1564,7 +1568,7 @@ object Ocr4Music {
     val hough255Y = gradientYResults.scaleValueToMax255
     hough255X.saveTo(new File("demos/treble_match_x.%s.png".format(caseName)))
     hough255Y.saveTo(new File("demos/treble_match_y.%s.png".format(caseName)))
-    hough255Y
+    gradientYResults
   }
 
   def doTemplateMatching(caseNames:List[String]) {
