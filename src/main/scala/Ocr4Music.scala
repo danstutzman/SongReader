@@ -1836,6 +1836,7 @@ object Ocr4Music {
     val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
 
+/*
     case class Template (
       val name:String,
       val widthInStaffLines:Double,
@@ -1862,6 +1863,164 @@ object Ocr4Music {
           justNotes, smallTemplate, template.name + "." + caseName)
       }
     }
+*/
+
+    //justNotes.saveTo(new File("demos/shrunken.%s.png".format(caseName)))
+    val templatePath = new File("templates/%s.png".format("black_head"))
+    val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
+    val (templateW, templateH) = (23, 13)
+    val smallTemplate =
+      scaleTemplate(fullSize.addMargin(40), templateW, templateH)
+    /*
+
+    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4, 50)
+    val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4, 50)
+    val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4, 50)
+    val bottomEdge = Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4, 50)
+    val blur = Array(1, 2, 1, 2, 4, 2, 1, 2, 1, 16, 250)
+    List(leftEdge, rightEdge, topEdge, bottomEdge, blur).foreach { edge =>
+      val templateEdge = edgeDetection(smallTemplate, edge)
+      //templateEdge.saveTo(new File(
+      //  "demos/smalltemplate.l.%s.png".format(caseName)))
+      val inputEdge = edgeDetection(justNotes.inverse, edge)
+      //inputEdge.saveTo(new File(
+      //  "demos/edgedetect.%s.png".format(caseName)))
+*/
+(16 to 64 by 4).foreach { threshold =>
+val allGuesses = new GrayImage(justNotes.w, justNotes.h)
+    val templateDistance = distance(smallTemplate)
+    templateDistance.scaleValueToMax255.saveTo(new File(
+      "demos/distance.t.%s.png".format(caseName)))
+    val inputDistance = distance(justNotes.inverse)
+    inputDistance.scaleValueToMax255.saveTo(new File(
+      "demos/distance.i.%s.png".format(caseName)))
+val templateEdge = templateDistance
+val inputEdge = inputDistance
+  
+      val guessFromEdge = new GrayImage(justNotes.w, justNotes.h)
+      (0 until justNotes.w).foreach { x =>
+        (0 until justNotes.h).foreach { y =>
+//          if (inputEdge(x, y) == 255) {
+            (0 until templateEdge.w).foreach { templateX =>
+              (0 until templateEdge.h).foreach { templateY =>
+//                if (templateEdge(templateX, templateY) == 255) {
+                if (inputEdge(x, y) > 0 &&
+                    templateEdge(templateX, templateY) > 0 &&
+                    inputEdge(x, y) -
+                      templateEdge(templateX, templateY) >= 0) {
+                  val newX = x - templateX + templateEdge.w/2
+                  val newY = y - templateY + templateEdge.h/2
+                  if (newX >= 0 && newX < guessFromEdge.w &&
+                      newY >= 0 && newY < guessFromEdge.h) {
+                    guessFromEdge(newX, newY) = guessFromEdge(newX, newY) + 1
+                  }
+                }
+              }
+//            }
+          }
+        }
+      }
+
+      val toAdd = 255 //if (edge == blur) 128 else 30
+      (0 until allGuesses.w).foreach { x =>
+        (0 until allGuesses.h).foreach { y =>
+          if (guessFromEdge(x, y) > threshold) {
+            allGuesses(x, y) = allGuesses(x, y) + toAdd
+          }
+        }
+      }
+//    }
+
+    val demo = new ColorImage(justNotes.w, justNotes.h)
+    (0 until demo.w).foreach { x =>
+      (0 until demo.h).foreach { y =>
+        val v = justNotes(x, y) / 2
+        val (r, g, b) = (v, v, v)
+        val rNew = (r + allGuesses(x, y)) min 255
+        //val rNew = if (allGuesses(x, y) > 245) 255 else r
+        demo(x, y) = (rNew, g, b)
+      }
+    }
+    demo.saveTo(new File(
+      "demos/guessfromedge.%s.%d.png".format(caseName, threshold)))
+}
+  }
+
+  def edgeDetection(input:GrayImage, matrix:Array[Int]) = {
+    val output = new GrayImage(input.w, input.h)
+    val denom = matrix(9)
+    val threshold = matrix(10)
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val sum =
+          (matrix(0) * input(x - 1, y - 1) +
+           matrix(1) * input(x + 0, y - 1) +
+           matrix(2) * input(x + 1, y - 1) +
+           matrix(3) * input(x - 1, y + 0) +
+           matrix(4) * input(x + 0, y + 0) +
+           matrix(5) * input(x + 1, y + 0) +
+           matrix(6) * input(x - 1, y + 1) +
+           matrix(7) * input(x + 0, y + 1) +
+           matrix(8) * input(x + 1, y + 1) +
+           0) / denom
+        output(x, y) = if (sum > threshold) 255 else 0
+      }
+    }
+    output
+  }
+
+  def distance(input:GrayImage) = {
+    // Distance from the top left
+    val fromTL = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        if (input(x, y) < 50)
+          fromTL(x, y) = 0
+        else {
+          var candidates:List[Int] = List(input.w max input.h) // infinity
+          if (y > 0 && x > 0)
+            candidates = fromTL(x - 1, y - 1) + 1 :: candidates
+          if (y > 0)
+            candidates = fromTL(x, y - 1) + 1 :: candidates
+          if (y > 0 && x < input.w - 1)
+            candidates = fromTL(x + 1, y - 1) + 1 :: candidates
+          if (x > 0)
+            candidates = fromTL(x - 1, y) + 1 :: candidates
+
+          fromTL(x, y) = candidates.min
+        }
+      }
+    }
+
+    // Distance from the bottom right
+    val fromBR = new GrayImage(input.w, input.h)
+    (input.h - 1 to 0 by -1).foreach { y =>
+      (input.w - 1 to 0 by -1).foreach { x =>
+        if (input(x, y) < 50)
+          fromBR(x, y) = 0
+        else {
+          var candidates:List[Int] = List(input.w max input.h) // infinity
+          if (y < input.h - 1 && x < input.w - 1)
+            candidates = fromBR(x + 1, y + 1) + 1 :: candidates
+          if (y < input.h - 1)
+            candidates = fromBR(x, y + 1) + 1 :: candidates
+          if (y < input.h - 1 && x > 0)
+            candidates = fromBR(x - 1, y + 1) + 1 :: candidates
+          if (x < input.w - 1)
+            candidates = fromBR(x + 1, y) + 1 :: candidates
+
+          fromBR(x, y) = candidates.min
+        }
+      }
+    }
+
+    val fromEither = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
+        fromEither(x, y) = fromTL(x, y) min fromBR(x, y)
+      }
+    }
+    fromEither
   }
 
   def main(args:Array[String]) {
