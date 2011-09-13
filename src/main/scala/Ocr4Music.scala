@@ -1393,7 +1393,7 @@ object Ocr4Music {
   }
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) {
+      caseName:String) = {
     val input = justNotes.inverse
     val isDarkMatch = slideTemplate(input, rightSizeTemplate) {
       (inputV, templateV) => inputV > 128 && templateV == 255
@@ -1401,6 +1401,7 @@ object Ocr4Music {
     val demo = isDarkMatch.scaleValueToMax255
     demo.saveTo(new File(
       "demos/find_black.%s.png".format(caseName)))
+    demo
   }
 
   def findDiagonalLines(input:GrayImage, polarity:Boolean) = {
@@ -1420,7 +1421,7 @@ object Ocr4Music {
   }
 
   def findWhiteHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) {
+      caseName:String) = {
     val templateDipsT = findDiagonalLines(rightSizeTemplate, true)
     val templateDipsF = findDiagonalLines(rightSizeTemplate, false)
     templateDipsT.saveTo(new File(
@@ -1453,10 +1454,11 @@ object Ocr4Music {
       }
     combinedMatch.scaleValueToMax255.saveTo(new File(
       "demos/find_white.tf.%s.png".format(caseName)))
+    combinedMatch
   }
 
   def findAccidental(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      augmentedCaseName:String) {
+      augmentedCaseName:String) = {
     val input = justNotes.inverse
 
     val inputLeftEdges = findLeftEdges(input)
@@ -1491,6 +1493,7 @@ object Ocr4Music {
     }
     demo.saveTo(new File(
       "demos/find_accidental.%s.png".format(augmentedCaseName)))
+    demo
   }
 
   def makeGradientImages(input:GrayImage, range:Int) : List[GrayImage] = {
@@ -1533,18 +1536,11 @@ object Ocr4Music {
   }
 
   def findTrebleClef(
-      justNotes:GrayImage, staffSeparation:Int, caseName:String) {
-    val (templateW, templateH) = (staffSeparation * 5, staffSeparation * 8)
-    val bigTemplate = ColorImage.readFromFile(new File(
-      "templates/treble_clef.png")).toGrayImage.inverse
-    val template = scaleTemplate(bigTemplate, templateW, templateH)
-    val hough = new GrayImage(justNotes.w, justNotes.h)
+      justNotes:GrayImage, template:GrayImage, caseName:String) = {
     val input = justNotes.inverse
 
     val List(templateGradientX, templateGradientY, _) =
-      makeGradientImages(bigTemplate.addMargin(20), 15).map { image =>
-        scaleTemplate(image, templateW, templateH)
-      }
+      makeGradientImages(template.addMargin(4), 3)
     templateGradientX.saveTo(new File(
       "demos/template_gradient_x.%s.png".format(caseName)))
     templateGradientY.saveTo(new File(
@@ -1569,6 +1565,7 @@ object Ocr4Music {
     val hough255Y = gradientYResults.scaleValueToMax255
     hough255X.saveTo(new File("demos/treble_match_x.%s.png".format(caseName)))
     hough255Y.saveTo(new File("demos/treble_match_y.%s.png".format(caseName)))
+    hough255Y
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -1602,18 +1599,6 @@ object Ocr4Music {
       val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
         metrics, yCorrection, caseName)
 
-      /*List(("sharp", 18, 35), ("flat", 15, 32), ("natural", 15, 42)).foreach {
-        triple => val (accidentalName, templateW, templateH) = triple
-        val file = new File("templates/%s.png".format(accidentalName))
-        val fullSize = ColorImage.readFromFile(file).toGrayImage.inverse
-        val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
-        findAccidental(justNotes, smallTemplate, accidentalName + "." +caseName)
-      }
-      findTrebleClef(justNotes, metrics.cSpacing.intValue, caseName)*/
-      val blackHeadTemplate = scaleTemplate(ColorImage.readFromFile(new File("templates/black_head.png")).toGrayImage.inverse, 15, 8)
-      findBlackHeads(justNotes, blackHeadTemplate, caseName)
-      val whiteHeadTemplate = scaleTemplate(ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage.inverse, 11, 9)
-      findWhiteHeads(justNotes, whiteHeadTemplate, caseName)
 /*
       val segments = scanSegments(justNotes)
       val segmentGroups = groupTouchingSegments(segments)
@@ -1775,18 +1760,7 @@ object Ocr4Music {
     contents
   }
 
-  def generateMetrics(input:GrayImage, annotation:Annotation, caseName:String)={
-    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
-      separateNotes(input, caseName)
-    val metrics = estimateMetrics(partiallyErased, caseName)
-    //val yCorrection = determineYCorrection(
-    //  partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-    //val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
-    //  metrics, yCorrection, caseName)
-    metrics
-  }
-
-  def metricsToJson(metrics:Metrics) = {
+  def saveMetrics(metrics:Metrics, file:File) {
     val asMap = Map(
       "w" -> metrics.w,
       "h" -> metrics.h,
@@ -1796,10 +1770,14 @@ object Ocr4Music {
       "cSpacing" -> metrics.cSpacing,
       "bSpacing" -> metrics.bSpacing
     )
-    Json.build(asMap).toString()
+    val out = Json.build(asMap).toString()
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
   }
 
-  def jsonToMetrics(inString:String) = {
+  def restoreMetrics(file:File) = {
+    val inString = readFile(file)
     val json:Map[String,scala.math.BigDecimal] = 
       Json.parse(inString).asInstanceOf[Map[String,scala.math.BigDecimal]]
     Metrics(
@@ -1813,16 +1791,22 @@ object Ocr4Music {
     )
   }
 
-  def readOrGenerate[T](file:File, toJson:(T=>String), fromJson:(String=>T))(
+  def saveGrayImage(image:GrayImage, file:File) {
+    image.saveTo(file)
+  }
+
+  def loadGrayImage(file:File) = {
+    ColorImage.readFromFile(file).toGrayImage.inverse
+  }
+
+  def readOrGenerate[T](file:File, save:((T,File)=>Unit), restore:(File=>T))(
       generator:()=>T) = {
     if (!file.exists()) {
-      printf("Generating %s...\n", file.getName())
+      printf("Generating %s...\n", file.getPath())
       val output = generator()
-      printToFile(file) { writer =>
-        writer.write(toJson(output))
-      }
+      save(output, file)
     }
-    fromJson(readFile(file))
+    restore(file)
   }
 
   def processCase(caseName:String) {
@@ -1836,7 +1820,7 @@ object Ocr4Music {
       separateNotes(image, caseName)
 
     val metricsPath = new File("output/metrics/%s.json".format(caseName))
-    val metrics = readOrGenerate(metricsPath, metricsToJson, jsonToMetrics) {
+    val metrics = readOrGenerate(metricsPath, saveMetrics, restoreMetrics) {
       () => estimateMetrics(partiallyErased, caseName)
     }
 
@@ -1844,6 +1828,32 @@ object Ocr4Music {
       partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
     val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
+
+    case class Template (
+      val name:String,
+      val w:Int,
+      val h:Int,
+      val finder:(GrayImage,GrayImage,String)=>GrayImage
+    ) {}
+    val (trebleW, trebleH) =
+      (metrics.cSpacing.intValue * 5, metrics.cSpacing.intValue * 8)
+    val templates =
+      Template("treble_clef", trebleW, trebleH, findTrebleClef) ::
+      Template("sharp",       18, 35, findAccidental) ::
+      Template("flat",        15, 32, findAccidental) ::
+      Template("natural",     15, 42, findAccidental) ::
+      Template("black_head",  15,  8, findBlackHeads) ::
+      Template("white_head",  11,  9, findWhiteHeads) :: Nil
+    templates.foreach { template =>
+      val path = new File("output/%ss/%s.png".format(template.name, caseName))
+      readOrGenerate(path, saveGrayImage, loadGrayImage) { () =>
+        val templatePath = new File("templates/%s.png".format(template.name))
+        val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
+        val smallTemplate = scaleTemplate(fullSize, template.w, template.h)
+        template.finder(
+          justNotes, smallTemplate, template.name + "." + caseName)
+      }
+    }
   }
 
   def main(args:Array[String]) {
