@@ -1494,7 +1494,7 @@ object Ocr4Music {
       "demos/find_accidental.%s.png".format(augmentedCaseName)))
 
     val output = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
-      combinedEdgeMatch(x, y) * isDarkMatch(x, y)
+      combinedEdgeMatch(x, y) + isDarkMatch(x, y) / 2
     }
     output
   }
@@ -1568,7 +1568,11 @@ object Ocr4Music {
     val hough255Y = gradientYResults.scaleValueToMax255
     hough255X.saveTo(new File("demos/treble_match_x.%s.png".format(caseName)))
     hough255Y.saveTo(new File("demos/treble_match_y.%s.png".format(caseName)))
-    gradientYResults
+
+    val output = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
+      gradientXResults(x, y) * gradientYResults(x, y) / 64
+    }
+    output
   }
 
   def doTemplateMatching(caseNames:List[String]) {
@@ -1834,25 +1838,26 @@ object Ocr4Music {
 
     case class Template (
       val name:String,
-      val w:Int,
-      val h:Int,
+      val widthInStaffLines:Double,
+      val heightInStaffLines:Double,
       val finder:(GrayImage,GrayImage,String)=>GrayImage
     ) {}
-    val (trebleW, trebleH) =
-      (metrics.cSpacing.intValue * 5, metrics.cSpacing.intValue * 8)
+    val c = metrics.cSpacing.intValue
     val templates =
-      Template("treble_clef", trebleW, trebleH, findTrebleClef) ::
-      Template("sharp",       18, 35, findAccidental) ::
-      Template("flat",        15, 32, findAccidental) ::
-      Template("natural",     15, 42, findAccidental) ::
-      Template("black_head",  15,  8, findBlackHeads) ::
-      Template("white_head",  11,  9, findWhiteHeads) :: Nil
+      Template("treble_clef",   5,    8, findTrebleClef) ::
+      Template("sharp",       1.3,  2.6, findAccidental) ::
+      Template("flat",        1.1, 2.35, findAccidental) ::
+      Template("natural",       1,    3, findAccidental) ::
+      Template("black_head",    2,    1, findBlackHeads) ::
+      Template("white_head",  1.5, 1.25, findWhiteHeads) :: Nil
     templates.foreach { template =>
       val path = new File("output/%ss/%s.png".format(template.name, caseName))
       readOrGenerate(path, saveGrayImage, loadGrayImage) { () =>
         val templatePath = new File("templates/%s.png".format(template.name))
         val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
-        val smallTemplate = scaleTemplate(fullSize, template.w, template.h)
+        val templateW = (template.widthInStaffLines * metrics.cSpacing).intValue
+        val templateH = (template.heightInStaffLines *metrics.cSpacing).intValue
+        val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
         template.finder(
           justNotes, smallTemplate, template.name + "." + caseName)
       }
