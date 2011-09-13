@@ -1,4 +1,5 @@
 import java.io.File
+import java.lang.Math
 
 object GrayImage {
   def giveBrightnessPerPixel(w:Int, h:Int)(block:(Int,Int)=>Int) = {

@@ -433,13 +433,10 @@ object Ocr4Music {
   }
 
   def groupTemplateMatches(matches:List[TemplateMatch]) = {
-    val matchesSorted = matches.sort { (match1, match2) =>
-      match1.x < match2.x
-    }
-
     var noteGroups:List[List[TemplateMatch]] = Nil
     var currentNoteGroup:List[TemplateMatch] = Nil
     var lastNoteX = -1
+    val matchesSorted = matches.sortBy { _.x }
     matchesSorted.foreach { _match =>
       if (Math.abs(_match.x - lastNoteX) >= 15 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
@@ -684,7 +681,7 @@ object Ocr4Music {
       }
       val median =
         if (values.length > 0)
-          values.sort { (v1, v2) => v1 < v2 }(values.length / 2)
+          values.sortWith(_<_)(values.length / 2)
         else
           0.0f
       smoothedYCorrection(outerX) = median
@@ -954,10 +951,10 @@ object Ocr4Music {
         case Nil =>
           groups = Set(point) :: groups
         case oneGroup :: Nil =>
-          groups = (oneGroup + point) :: (groups - oneGroup)
+          groups = (oneGroup + point) :: groups.filter { _ != oneGroup }
         case manyGroups =>
           val merged = manyGroups.reduceLeft { _ ++ _ } ++ Set(point)
-          groups = merged :: groups -- manyGroups
+          groups = merged :: groups.filter { !manyGroups.contains(_) }
       }
     }
     groups
@@ -968,11 +965,11 @@ object Ocr4Music {
     points match {
       case Nil => Set(Set[TemplateMatch]())
       case point :: otherPoints =>
-        val overlapping = otherPoints.filter { otherPoint =>
+        val (overlapping, notOverlapping) = otherPoints.partition { otherPoint=>
           overlapAmount(point, otherPoint) >= 0.3f
         }
         val ifPointKept = listNonOverlappingAlternatives(
-            otherPoints -- overlapping).map { set => set ++ Set(point) }
+            notOverlapping).map { set => set ++ Set(point) }
         if (overlapping.isEmpty)
           ifPointKept
         else
@@ -1262,7 +1259,9 @@ object Ocr4Music {
             activeGroups = newGroup :: activeGroups
             newGroup
           case matchedGroup :: otherGroups =>
-            activeGroups = activeGroups -- (matchedGroup :: otherGroups)
+            activeGroups = activeGroups.filter { group =>
+              group != matchedGroup && !otherGroups.contains(group)
+            }
             val mergedGroup =
                 otherGroups.foldLeft(matchedGroup) { (accum, toAdd) =>
               SegmentGroup(
