@@ -432,7 +432,7 @@ object Ocr4Music {
     var lastNoteX = -1
     val matchesSorted = matches.sortBy { _.x }
     matchesSorted.foreach { _match =>
-      if (Math.abs(_match.x - lastNoteX) >= 15 && currentNoteGroup.size > 0) {
+      if (Math.abs(_match.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
         currentNoteGroup = Nil
       }
