@@ -1565,169 +1565,6 @@ object Ocr4Music {
     output
   }
 
-  def doTemplateMatching(caseNames:List[String]) {
-    val templateSharp = 
-      ColorImage.readFromFile(new File("templates/sharp.png")).toGrayImage
-    val templateFlat =
-      ColorImage.readFromFile(new File("templates/flat.png")).toGrayImage
-    val templateNatural =
-      ColorImage.readFromFile(new File("templates/natural.png")).toGrayImage
-    val templateBlackHead =
-      ColorImage.readFromFile(new File("templates/black_head.png")).toGrayImage
-    val templateWhiteHead =
-      ColorImage.readFromFile(new File("templates/white_head.png")).toGrayImage
-    val templateTrebleClef =
-      ColorImage.readFromFile(new File("templates/treble_clef.png")).toGrayImage
-    val template44 =
-      ColorImage.readFromFile(new File("templates/44.png")).toGrayImage
-
-    var globalPerformance = Performance(List(), List(), List())
-    caseNames.foreach { caseName =>
-      val imageFilename = "input/%s.jpeg".format(caseName)
-      val input =
-        ColorImage.readFromFile(new File(imageFilename)).toGrayImage
-      val annotation = loadAnnotationJson(caseName)
-
-      val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
-        separateNotes(input, caseName)
-      val metrics = estimateMetrics(partiallyErased, caseName)
-      val yCorrection = determineYCorrection(
-        partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-      val justNotes = eraseStaffLines(input, augmentedBinaryNonStaff,
-        metrics, yCorrection, caseName)
-
-/*
-      val segments = scanSegments(justNotes)
-      val segmentGroups = groupTouchingSegments(segments)
-      demoSegmentGroups(segmentGroups, justNotes, caseName)
-      demoStaffLines(inputAdjusted, metrics, yCorrection, caseName)
-
-      var points:List[TemplateMatch] = Nil
-      List("L", "2", "#", "TC", "44").foreach { label =>
-      //List("#").foreach { label =>
-        println(label)
-        val templateSum = label match {
-          case "L" => sumTemplate(templateBlackHead)
-          case "2" => sumTemplate(templateWhiteHead)
-          case "#" => sumTemplate(templateSharp)
-          case "TC" => sumTemplate(templateTrebleClef)
-          case "44" => sumTemplate(template44)
-        }
-
-        (-8 to 8).foreach { staffY =>
-          (0 until augmentedBinaryNonStaff.w).foreach { x =>
-            val xCentered = x - (inputAdjusted.w / 2)
-            val a = metrics.a
-            val b = metrics.b + (staffY / 2.0f * metrics.bSpacing)
-            val c = metrics.c + (staffY / 2.0f * metrics.cSpacing)
-            val y = Math.round((a * xCentered * xCentered + b * xCentered + c) +
-              yCorrection(x) + (inputAdjusted.h / 2)).intValue
-
-            // remove the bands at the top and the bottom, which are probably
-            // artifacts from the vertical blurring
-            if (y > 4 && y < augmentedBinaryNonStaff.h - 5 &&
-                augmentedBinaryNonStaff(x, y) == 0) {
-              val isLedgerLine = Math.abs(staffY / 2) > 2
-              val yRange = if (isLedgerLine) (y - 1, y + 1) else (y, y)
-              val newPoint = findBestMatch(templateSum, inputAdjusted,
-                  (x, x), yRange, metrics, label, staffY)
-              points = newPoint :: points
-            }
-          }
-        }
-      }
-
-      val pointsFiltered = points.filter { point1 =>
-        var hasBetterNeighbor = false
-        points.foreach { point2 =>
-          if (Math.abs(point2.x - point1.x) <= 1 &&
-              Math.abs(point2.y - point1.y) <= 1 &&
-              point2.label == point1.label) {
-            val score1 = point1.blackMatch + point1.whiteMatch
-            val score2 = point2.blackMatch + point2.whiteMatch
-            if (score1 < score2)
-              hasBetterNeighbor = true
-            else if (score1 == score2 && point1.y < point2.y)
-              hasBetterNeighbor = true
-            else if (score1 == score2 &&
-                point1.y == point2.y && point1.x < point2.x)
-              hasBetterNeighbor = true
-          }
-        }
-
-        val strongEnough = point1.label match {
-          case "L" => point1.blackMatch > 98
-          case "2" => point1.blackMatch > 60 && point1.whiteMatch > 90
-          case "#" => point1.blackMatch > 50 && point1.whiteMatch > 100
-          case "TC" => point1.blackMatch > 40 && point1.whiteMatch > 130
-          case "44" => point1.blackMatch > 70 && point1.whiteMatch > 100
-        }
-
-        !hasBetterNeighbor && strongEnough
-      }
-
-      val overlappingPointGroups = groupOverlappingPoints(pointsFiltered)
-      demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
-      demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
-
-      val culledPointGroups = overlappingPointGroups.map { group =>
-        val alternatives = listNonOverlappingAlternatives(group.toList)
-        var bestAlternative = alternatives.toList(0)
-        var maxScore = 0
-        alternatives.foreach { group2 =>
-          var score = 0
-          group2.foreach { point =>
-            score += point.blackMatch * point.w * point.h
-          }
-
-          if (score > maxScore) {
-            maxScore = score
-            bestAlternative = group2
-          }
-        }
-        bestAlternative
-      }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
-
-      val groupedPoints = groupTemplateMatches(culledPointGroups)
-      val filteredNotes = groupedPoints
-
-      val demo = inputAdjusted.toColorImage
-      filteredNotes.foreach { noteGroup =>
-        noteGroup.foreach { point =>
-          val template = point.label match {
-            case "L" => templateBlackHead
-            case "2" => templateWhiteHead
-            case "#" => templateSharp
-            case "TC" => templateTrebleClef
-            case "44" => template44
-          }
-          drawTemplateMatch(point, demo, template)
-        }
-      }
-      demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
-
-      val realNotes = filteredNotes.map { _.filter { note =>
-        note.label == "L" || note.label == "2" } }
-      demoNotes(realNotes, inputAdjusted.toColorImage, caseName)
-      val performance = calcPerformance(realNotes, annotation.notes)
-      println("Case %2s: precision: %.3f, recall: %.3f".format(
-        annotation.caseName, performance.precision, performance.recall))
-      //printf("  correct: %s\n", performance.correctNotes)
-      if (performance.spuriousNotes.size > 0)
-        printf("  spurious: %s\n", performance.spuriousNotes)
-      if (performance.missingNotes.size > 0)
-        printf("  missing: %s\n", performance.missingNotes)
-
-      globalPerformance = Performance(
-        globalPerformance.correctNotes ++ performance.correctNotes,
-        globalPerformance.spuriousNotes ++ performance.spuriousNotes,
-        globalPerformance.missingNotes ++ performance.missingNotes)
-*/
-    }
-    println("Total:   precision: %.3f -- recall: %.3f".format(
-      globalPerformance.precision, globalPerformance.recall))
-  }
-
   def expandCaseNames(args:Array[String]) = {
     var caseNames:List[String] = Nil
     val filenames = new File("input").listFiles
@@ -1841,14 +1678,88 @@ object Ocr4Music {
     val output = new GrayImage(justNotes.w, justNotes.h)
     (0 until output.w).foreach { x =>
       (0 until output.h).foreach { y =>
-        output(x, y) = if (guess(x, y) >= 32) 255 else 0
+        output(x, y) = guess(x, y)
         //output(x, y) = if (guessFromEdge(x, y) > 0) 255 else 0
       }
     }
     output
   }
 
-  def processCase(caseName:String) {
+  def gleanPoints(detected:GrayImage, metrics:Metrics,
+      yCorrection:Array[Float], templateW:Int, templateH:Int) = {
+    //val simplified = image.copy
+    var points:List[TemplateMatch] = Nil
+    val threshold = 40 // particular to findBlackHeads2
+    (-8 to 8).foreach { staffY =>
+      var maxV = 0
+      var argmaxX = 0
+      var argmaxY = 0
+      var argmaxStaffY = 0
+      (0 until detected.w).foreach { x =>
+        val xCentered = x - (detected.w / 2)
+        val a = metrics.a
+        val staffY0 = staffY - 0.5f
+        val staffY1 = staffY + 0.5f
+        val b0 = metrics.b + (staffY0 / 2.0f * metrics.bSpacing)
+        val b1 = metrics.b + (staffY1 / 2.0f * metrics.bSpacing)
+        val c0 = metrics.c + (staffY0 / 2.0f * metrics.cSpacing)
+        val c1 = metrics.c + (staffY1 / 2.0f * metrics.cSpacing)
+        val y0 = Math.round((a * xCentered * xCentered + b0 * xCentered +
+          c0) + yCorrection(x) + (detected.h / 2)).intValue
+        val y1 = Math.round((a * xCentered * xCentered + b1 * xCentered +
+          c1) + yCorrection(x) + (detected.h / 2)).intValue
+
+        var hasPointAboveThreshold = false
+//          (y0 until y1).foreach { y =>
+val y = (y0 + y1) / 2
+          val v = detected(x, y)
+          if (v > threshold) {
+            hasPointAboveThreshold = true
+            if (v > maxV) {
+              maxV = v
+              argmaxX = x
+              //argmaxY = y
+              argmaxY = (y0 + y1) / 2
+              argmaxStaffY = staffY
+            }
+          }
+//          }
+        if (!hasPointAboveThreshold && maxV != 0) {
+          //simplified(argmaxX, argmaxY) = 255
+          points = TemplateMatch(argmaxX, argmaxY, templateW, templateH,
+            maxV, 0, 0, 0, 0, "black", argmaxStaffY) :: points
+          maxV = 0
+        }
+
+        //if (y0 >= 0 && y0 < simplified.h)
+        //  simplified(x, y0) = 0
+      }
+    }
+    points
+  }
+
+  def chooseBestOverlappingSets(
+      overlappingPointGroups:List[Set[TemplateMatch]]) = {
+    overlappingPointGroups.map { group =>
+      val alternatives = listNonOverlappingAlternatives(group.toList)
+      var bestAlternative = alternatives.toList(0)
+      var maxScore = 0
+      alternatives.foreach { group2 =>
+        var score = 0
+        group2.foreach { point =>
+          score += point.blackMatch * point.w * point.h
+        }
+
+        if (score > maxScore) {
+          maxScore = score
+          bestAlternative = group2
+        }
+      }
+      bestAlternative
+    }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
+  }
+
+  def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
     val annotationPath = "input/%s.json".format(caseName)
@@ -1876,25 +1787,58 @@ object Ocr4Music {
     ) {}
     val c = metrics.cSpacing.intValue
     val templates =
-      Template("treble_clef",   5,    8, findTrebleClef) ::
-      Template("sharp",       1.3,  2.6, findAccidental) ::
-      Template("flat",        1.1, 2.35, findAccidental) ::
-      Template("natural",       1,    3, findAccidental) ::
-      Template("black_head",    2,    1, findBlackHeads2) ::
-      Template("white_head",  1.5, 1.25, findWhiteHeads) :: Nil
+      //Template("treble_clef",   5,    8, findTrebleClef) ::
+      //Template("sharp",       1.3,  2.6, findAccidental) ::
+      //Template("flat",        1.1, 2.35, findAccidental) ::
+      //Template("natural",       1,    3, findAccidental) ::
+      Template("black_head",   2.75, 1.25, findBlackHeads2) ::
+      //Template("white_head",  1.5, 1.25, findWhiteHeads) ::
+      Nil
+    var casePerformance = Performance(List(), List(), List())
     templates.foreach { template =>
-      val path = new File("output/%ss/%s.png".format(template.name, caseName))
-      readOrGenerate(path, saveGrayImage, loadGrayImage) { () =>
-        val templatePath = new File("templates/%s.png".format(template.name))
-        val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
-        val templateW = (template.widthInStaffLines * metrics.cSpacing).intValue
-        val templateH = (template.heightInStaffLines *metrics.cSpacing).intValue
-        val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
-        template.finder(
-          justNotes, smallTemplate, template.name + "." + caseName)
-      }
-    }
+      val templatePath = new File("templates/%s.png".format(template.name))
+      val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
+      val templateW = (template.widthInStaffLines * metrics.cSpacing).intValue
+      val templateH = (template.heightInStaffLines *metrics.cSpacing).intValue
+      val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
+      val detected = template.finder(
+        justNotes, smallTemplate, template.name + "." + caseName)
+      val points = gleanPoints(
+        detected, metrics, yCorrection, templateW, templateH)
 
+      val overlappingPointGroups = groupOverlappingPoints(points)
+      demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
+      demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
+      val culledPointGroups = chooseBestOverlappingSets(overlappingPointGroups)
+
+      val groupedPoints = groupTemplateMatches(culledPointGroups)
+      val filteredNotes = groupedPoints
+
+      val demo = inputAdjusted.toColorImage
+      filteredNotes.foreach { noteGroup =>
+        noteGroup.foreach { point =>
+          drawTemplateMatch(point, demo, smallTemplate)
+        }
+      }
+      demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+
+      val realNotes = filteredNotes.map { _.filter { note =>
+        note.label == "black" } }
+      val performance = calcPerformance(realNotes, annotation.notes)
+      println("Case %2s: precision: %.3f, recall: %.3f".format(
+        caseName, performance.precision, performance.recall))
+      printf("  correct: %s\n", performance.correctNotes)
+      if (performance.spuriousNotes.size > 0)
+        printf("  spurious: %s\n", performance.spuriousNotes)
+      if (performance.missingNotes.size > 0)
+        printf("  missing: %s\n", performance.missingNotes)
+
+      casePerformance = Performance(
+        casePerformance.correctNotes ++ performance.correctNotes,
+        casePerformance.spuriousNotes ++ performance.spuriousNotes,
+        casePerformance.missingNotes ++ performance.missingNotes)
+    }
+    casePerformance
   }
 
   def edgeDetection(input:GrayImage, matrix:Array[Int]) = {
@@ -1977,10 +1921,19 @@ object Ocr4Music {
   def main(args:Array[String]) {
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
+
+      var globalPerformance = Performance(List(), List(), List())
       val caseNames = expandCaseNames(args)
       caseNames.foreach { caseName =>
-        processCase(caseName)
+        val performance = processCase(caseName)
+        globalPerformance = Performance(
+          globalPerformance.correctNotes ++ performance.correctNotes,
+          globalPerformance.spuriousNotes ++ performance.spuriousNotes,
+          globalPerformance.missingNotes ++ performance.missingNotes)
       }
+      println("Total:   precision: %.3f -- recall: %.3f".format(
+        globalPerformance.precision, globalPerformance.recall))
+
     } catch {
       case e: Exception => e.printStackTrace()
     } finally {
