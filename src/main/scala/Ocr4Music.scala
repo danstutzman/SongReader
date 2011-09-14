@@ -1267,18 +1267,6 @@ object Ocr4Music {
     output
   }
 
-  def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) = {
-    val input = justNotes.inverse
-    val isDarkMatch = slideTemplate(input, rightSizeTemplate) {
-      (inputV, templateV) => inputV > 128 && templateV == 255
-    }
-    val demo = isDarkMatch.scaleValueToMax255
-    demo.saveTo(new File(
-      "demos/find_black.%s.png".format(caseName)))
-    demo
-  }
-
   def findDiagonalLines(input:GrayImage, polarity:Boolean) = {
     val output = new GrayImage(input.w, input.h)
     (0 until input.w).foreach { x =>
@@ -1529,7 +1517,7 @@ object Ocr4Music {
     restore(file)
   }
 
-  def findBlackHeads2(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+  def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
       caseName:String) = {
     val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4, 50)
     val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4, 50)
@@ -1550,12 +1538,13 @@ object Ocr4Music {
       }
     }
 
-    val templateDistance = distance(rightSizeTemplate)
-    //templateDistance.scaleValueToMax255.saveTo(new File(
-    //  "demos/distance.t.%s.png".format(caseName)))
-    val inputDistance = distance(justNotes.inverse)
-    //inputDistance.scaleValueToMax255.saveTo(new File(
-    //  "demos/distance.i.%s.png".format(caseName)))
+val threshold = 128
+    val templateDistance = distance(rightSizeTemplate, threshold)
+    templateDistance.scaleValueToMax255.saveTo(new File(
+      "demos/distance.t.%s.png".format(caseName)))
+    val inputDistance = distance(justNotes.inverse, threshold)
+    inputDistance.scaleValueToMax255.saveTo(new File(
+      "demos/distance.i.%s.png".format(caseName)))
     val guess = slideTemplate(inputDistance, templateDistance) {
       (inputV, templateV) =>
         inputV > 0 && templateV > 0 && inputV - templateV >= 0
@@ -1572,10 +1561,10 @@ object Ocr4Music {
   }
 
   def gleanPoints(detected:GrayImage, metrics:Metrics,
-      yCorrection:Array[Float], templateW:Int, templateH:Int) = {
+      yCorrection:Array[Float], templateW:Int, templateH:Int,
+      threshold:Int) = {
     //val simplified = image.copy
     var points:List[TemplateMatch] = Nil
-    val threshold = 40 // particular to findBlackHeads2
     (-8 to 8).foreach { staffY =>
       var maxV = 0
       var argmaxX = 0
@@ -1702,7 +1691,7 @@ val y = (y0 + y1) / 2
       //Template("sharp",       1.3,  2.6, findAccidental) ::
       //Template("flat",        1.1, 2.35, findAccidental) ::
       //Template("natural",       1,    3, findAccidental) ::
-      Template("black_head",   2.75, 1.25, findBlackHeads2) ::
+      Template("black_head",   2.75, 1.25, findBlackHeads) ::
       //Template("white_head",  1.5, 1.25, findWhiteHeads) ::
       Nil
     var casePerformance = Performance(List(), List(), List())
@@ -1710,12 +1699,24 @@ val y = (y0 + y1) / 2
       val templatePath = new File("templates/%s.png".format(template.name))
       val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
       val templateW = (template.widthInStaffLines * metrics.cSpacing).intValue
-      val templateH = (template.heightInStaffLines *metrics.cSpacing).intValue
+      val templateH = (template.heightInStaffLines * metrics.cSpacing).intValue
       val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
       val detected = template.finder(
         justNotes, smallTemplate, template.name + "." + caseName)
+      detected.saveTo(new File("demos/detected.%s.%s.png".format(
+        template.name, caseName)))
+
+      val threshold = 80
+      val detectedThreshold =
+        ColorImage.giveRGBPerPixel(detected.w, detected.h) { (x, y) =>
+          val v = detected(x, y)
+          if (v < threshold) (v * 255 / threshold, 0, 0)
+          else (v, v, v)
+        }
+      detectedThreshold.saveTo(new File("demos/detected2.%s.%s.png".format(
+        template.name, caseName)))
       val points = gleanPoints(
-        detected, metrics, yCorrection, templateW, templateH)
+        detected, metrics, yCorrection, templateW, templateH, threshold)
 
       val overlappingPointGroups = groupOverlappingPoints(points)
       demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
@@ -1733,6 +1734,7 @@ val y = (y0 + y1) / 2
         }
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+      demoNotes(filteredNotes, image.toColorImage, caseName)
 
       //val realNotes = filteredNotes.map { _.filter { note =>
       //  note.label == "black" } }
@@ -1776,12 +1778,12 @@ val y = (y0 + y1) / 2
     output
   }
 
-  def distance(input:GrayImage) = {
+  def distance(input:GrayImage, threshold:Int) = {
     // Distance from the top left
     val fromTL = new GrayImage(input.w, input.h)
     (0 until input.h).foreach { y =>
       (0 until input.w).foreach { x =>
-        if (input(x, y) < 50)
+        if (input(x, y) < threshold)
           fromTL(x, y) = 0
         else {
           var candidates:List[Int] = List(input.w max input.h) // infinity
@@ -1803,7 +1805,7 @@ val y = (y0 + y1) / 2
     val fromBR = new GrayImage(input.w, input.h)
     (input.h - 1 to 0 by -1).foreach { y =>
       (input.w - 1 to 0 by -1).foreach { x =>
-        if (input(x, y) < 50)
+        if (input(x, y) < threshold)
           fromBR(x, y) = 0
         else {
           var candidates:List[Int] = List(input.w max input.h) // infinity
