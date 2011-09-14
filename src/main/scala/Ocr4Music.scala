@@ -1996,5 +1996,6 @@ object Ocr4Music {
     } finally {
       println(Colors.ansiEscapeNormal)
     }
+    System.exit(0)
   }
 }
