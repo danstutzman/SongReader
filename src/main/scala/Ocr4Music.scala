@@ -484,13 +484,13 @@ object Ocr4Music {
         var possibilities:List[Possibility] = Nil
         if (x > 0) {
           // If this noteGroup is totally spurious
-          val scoreIncrease = estimated.size
+          val scoreIncrease = estimated(x - 1).size
           val score = matrix(y)(x - 1) + scoreIncrease
           possibilities = Possibility((-1, 0), score) :: possibilities
         }
         if (y > 0) {
           // If this noteGroup is totally missing from prediction
-          val scoreIncrease = annotated.size
+          val scoreIncrease = annotated(y - 1).size
           val score = matrix(y - 1)(x) + scoreIncrease
           possibilities = Possibility((0, -1), score) :: possibilities
         }
