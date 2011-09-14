@@ -870,29 +870,19 @@ object Ocr4Music {
       slope, label, staffY)
   }
 
-  def drawTemplateMatch(_match:TemplateMatch, output:ColorImage,
-      template:GrayImage) {
-    val blackest = 50
-    val whitest = 100
+  def drawTemplateMatch(
+      _match:TemplateMatch, output:ColorImage, template:GrayImage) {
     val templateScaled = scaleTemplate(template, _match.w, _match.h)
     (0 until templateScaled.h).foreach { templateScaledY =>
       (0 until templateScaled.w).foreach { templateScaledX =>
         val yAdjustment = Math.round((templateScaledX - templateScaled.w / 2) *
           _match.slope).intValue
-        val inputV = output(
-          _match.x + templateScaledX - templateScaled.w / 2,
-          _match.y + yAdjustment +
-            templateScaledY - templateScaled.h / 2)._1
-        val v2 = (inputV - blackest) * 255 / (whitest - blackest)
-        val inputAdjustedV = (if (v2 < 0) 0 else if (v2 > 255) 255 else v2)
         val templateV = templateScaled(templateScaledX, templateScaledY)
-        val blackMatch = (255 - inputAdjustedV) * (255 - templateV)
-        val whiteMatch = inputAdjustedV * templateV
         val demoX = (_match.x + templateScaledX - templateScaled.w / 2)
         val demoY = (_match.y + yAdjustment +
           templateScaledY - templateScaled.h / 2)
         val (r, g, b) = output(demoX, demoY)
-        output(demoX, demoY) = (blackMatch / 255, 0, whiteMatch / 255)
+        output(demoX, demoY) = (templateV, g, b)
       }
     }
   }
