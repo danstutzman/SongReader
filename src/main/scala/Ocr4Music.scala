@@ -468,6 +468,9 @@ object Ocr4Music {
   // error instead of throwing off all the notes to the right.
   def calcPerformance(
       estimatedNotes:List[List[TemplateMatch]], annotated:List[List[Int]]) = {
+    //printf("init estimated: %s\n", estimatedNotes.map { _.map { _.staffY } })
+    //printf("init annotated: %s\n", annotated)
+
     val estimated = estimatedNotes.map { _.map { _.staffY } }
     var w = estimated.size
     var h = annotated.size
@@ -529,6 +532,13 @@ object Ocr4Music {
       }
     }
 
+    //matrix.foreach { row =>
+    //  row.foreach { v =>
+    //    printf("%3d", v)
+    //  }
+    //  printf("\n")
+    //}
+
     case class PairedNoteGroup (
       val staffX:Int,
       val estimatedNotes:List[TemplateMatch],
@@ -557,7 +567,12 @@ object Ocr4Music {
           y -= 1
       }
     }
-    pairedNoteGroups = pairedNoteGroups.reverse
+
+    //pairedNoteGroups.foreach { group =>
+    //  val PairedNoteGroup(_, estimated, annotated) = group
+    //  printf("estimated: %s\n", estimated.map { _.staffY })
+    //  printf("annotated: %s\n", annotated)
+    //}
 
     var correctNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
     var spuriousNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
