@@ -78,12 +78,6 @@ case class TemplateMatch (
   val y:Int,
   val w:Int,
   val h:Int,
-  val blackMatch:Int,
-  val whiteMatch:Int,
-  val blackMatchX:Int,
-  val blackMatchY:Int,
-  val slope:Float,
-  val label:String,
   val staffY:Int
 ) {}
 
@@ -750,137 +744,14 @@ object Ocr4Music {
     templateScaled
   }
 
-  def findBestMatch(templateSum:GrayImage, inputAdjusted:GrayImage,
-      minXmaxX:(Int,Int), minYmaxY:(Int,Int), 
-      metrics:Metrics, label:String, staffY:Int) = {
-    val (minX, maxX) = minXmaxX
-    val (minY, maxY) = minYmaxY
-
-    // Differentiate axx + bx + c to get 2ax + b as slope
-    val expectedX = (minX + maxX) / 2
-    val xCentered = expectedX - metrics.w / 2
-    val slope = (2.0f * metrics.a * xCentered) + metrics.b
-    val staffSeparation =
-      ((xCentered * metrics.bSpacing) + metrics.cSpacing).intValue
-
-    val (minW, maxW) = label match {
-      case "L" | "S" | "Sa" | "Sb" | "2" =>
-        (staffSeparation, staffSeparation * 3)
-      case "#" | "b" | "N" =>
-        (staffSeparation * 3/4, staffSeparation * 3/2)
-      case "TC" =>
-        (staffSeparation * 3, staffSeparation * 3)
-      case "44" =>
-        (staffSeparation, staffSeparation * 2)
-    }
-    val (minH, maxH) = label match {
-      case "L" | "S" | "Sa" | "Sb" | "2" =>
-        (staffSeparation, staffSeparation * 3/2)
-      case "#" =>
-        (staffSeparation * 5/2, staffSeparation * 7/2)
-      case "b" | "N" =>
-        (staffSeparation * 2, staffSeparation * 4)
-      case "TC" =>
-        (staffSeparation * 8, staffSeparation * 9)
-      case "44" =>
-        (staffSeparation * 4, staffSeparation * 5)
-    }
-
-    var bestTemplateW = 0
-    var bestTemplateH = 0
-    var bestInputCenterX = 0
-    var bestInputCenterY = 0
-    var bestBlackMatch = 0
-    var bestWhiteMatch = 0
-    var bestBlackMatchX = 0
-    var bestBlackMatchY = 0
-    var maxCombinedMatch = 0
-    ((minW max 1) to maxW).foreach { templateW =>
-    ((minH max 1) to maxH).foreach { templateH =>
-      (minY to maxY).foreach { inputCenterY =>
-        (minX to maxX).foreach { inputCenterX =>
-          var sumBlackMatch = 0
-          var sumWhiteMatch = 0
-          var sumBlackMatchX = 0
-          var sumBlackMatchY = 0
-          (0 until templateH).foreach { templateScaledY =>
-            (0 until templateW).foreach { templateScaledX =>
-              val yAdjustment = Math.round(
-                (templateScaledX - templateW / 2) * slope).intValue
-              val inputV = inputAdjusted(
-                inputCenterX + templateScaledX - templateW / 2,
-                inputCenterY + yAdjustment +
-                  templateScaledY - templateH / 2)
-
-              val templateFullX0 =
-                templateScaledX * templateSum.w / templateW - 1
-              val templateFullX1 =
-                ((templateScaledX + 1) * templateSum.w / templateW - 1) max
-                (templateFullX0 + 1)
-              val templateFullY0 =
-                templateScaledY * templateSum.h / templateH - 1
-              val templateFullY1 =
-                ((templateScaledY + 1) * templateSum.h / templateH - 1) max
-                (templateFullY0 + 1)
-              val templateVSum =
-                templateSum(templateFullX1, templateFullY1) -
-                templateSum(templateFullX0, templateFullY1) -
-                templateSum(templateFullX1, templateFullY0) +
-                templateSum(templateFullX0, templateFullY0)
-              val templateV = templateVSum /
-                (templateFullX1 - templateFullX0) /
-                (templateFullY1 - templateFullY0)
-
-              sumBlackMatch += (255 - inputV) * (255 - templateV)
-              sumWhiteMatch += inputV * templateV
-              sumBlackMatchX += (255 - inputV) * (255 - templateV) *
-                (templateScaledX - templateW / 2)
-              sumBlackMatchY += (255 - inputV) * (255 - templateV) *
-                (templateScaledY - templateH / 2)
-            }
-          }
-          val meanBlackMatch = sumBlackMatch /
-            (255 * templateW * templateH)
-          val meanWhiteMatch = sumWhiteMatch /
-            (255 * templateW * templateH)
-          val meanBlackMatchX = Math.abs(sumBlackMatchX /
-            (255 * templateW * templateH * templateW))
-          val meanBlackMatchY = Math.abs(sumBlackMatchY /
-            (255 * templateW * templateH * templateH))
-
-          val combinedMatch = meanBlackMatch + meanWhiteMatch
-          if (combinedMatch > maxCombinedMatch) {
-            maxCombinedMatch = combinedMatch
-            bestInputCenterX = inputCenterX
-            bestInputCenterY = inputCenterY
-            bestTemplateW = templateW
-            bestTemplateH = templateH
-            bestBlackMatch = meanBlackMatch
-            bestWhiteMatch = meanWhiteMatch
-            bestBlackMatchX = meanBlackMatchX
-            bestBlackMatchY = meanBlackMatchY
-          }
-        }
-      }
-    }
-    }
-    TemplateMatch(
-      bestInputCenterX, bestInputCenterY, bestTemplateW, bestTemplateH,
-      bestBlackMatch, bestWhiteMatch, bestBlackMatchX, bestBlackMatchY,
-      slope, label, staffY)
-  }
-
   def drawTemplateMatch(
       _match:TemplateMatch, output:ColorImage, template:GrayImage) {
     val templateScaled = scaleTemplate(template, _match.w, _match.h)
     (0 until templateScaled.h).foreach { templateScaledY =>
       (0 until templateScaled.w).foreach { templateScaledX =>
-        val yAdjustment = Math.round((templateScaledX - templateScaled.w / 2) *
-          _match.slope).intValue
         val templateV = templateScaled(templateScaledX, templateScaledY)
         val demoX = (_match.x + templateScaledX - templateScaled.w / 2)
-        val demoY = (_match.y + yAdjustment +
-          templateScaledY - templateScaled.h / 2)
+        val demoY = (_match.y + templateScaledY - templateScaled.h / 2)
         val (r, g, b) = output(demoX, demoY)
         output(demoX, demoY) = (templateV, g, b)
       }
@@ -1727,7 +1598,7 @@ val y = (y0 + y1) / 2
         if (!hasPointAboveThreshold && maxV != 0) {
           //simplified(argmaxX, argmaxY) = 255
           points = TemplateMatch(argmaxX, argmaxY, templateW, templateH,
-            maxV, 0, 0, 0, 0, "black", argmaxStaffY) :: points
+            argmaxStaffY) :: points
           maxV = 0
         }
 
@@ -1848,9 +1719,9 @@ val y = (y0 + y1) / 2
       }
       demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
 
-      val realNotes = filteredNotes.map { _.filter { note =>
-        note.label == "black" } }
-      val performance = calcPerformance(realNotes, annotation.notes)
+      //val realNotes = filteredNotes.map { _.filter { note =>
+      //  note.label == "black" } }
+      val performance = calcPerformance(filteredNotes, annotation.notes)
       println("Case %2s: precision: %.3f, recall: %.3f".format(
         caseName, performance.precision, performance.recall))
       printf("  correct: %s\n", performance.correctNotes)
