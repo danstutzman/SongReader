@@ -1739,21 +1739,46 @@ val y = (y0 + y1) / 2
   }
 
   def chooseBestOverlappingSets(
-      overlappingPointGroups:List[Set[TemplateMatch]]) = {
+      overlappingPointGroups:List[Set[TemplateMatch]],
+      template:GrayImage, justNotesInverse:GrayImage) = {
     overlappingPointGroups.map { group =>
       val alternatives = listNonOverlappingAlternatives(group.toList)
-      var bestAlternative = alternatives.toList(0)
-      var maxScore = 0
-      alternatives.foreach { group2 =>
-        var score = 0
-        group2.foreach { point =>
-          score += point.blackMatch * point.w * point.h
-        }
 
+      var x0 = alternatives.map { _.map { note => note.x - note.w/2 }.min }.min
+      var x1 = alternatives.map { _.map { note => note.x + note.w/2 }.max }.max
+      var y0 = alternatives.map { _.map { note => note.y - note.h/2 }.min }.min
+      var y1 = alternatives.map { _.map { note => note.y + note.h/2 }.max }.max
+
+      var bestAlternative = alternatives.toList(0)
+      var maxScore = -999999
+      var i = 0
+      alternatives.foreach { pointGroup =>
+        var proposal = new GrayImage(x1 - x0 + 1, y1 - y0 + 1)
+        pointGroup.foreach { point =>
+          (0 until template.h).foreach { templateY =>
+            (0 until template.w).foreach { templateX =>
+              val x = (point.x - point.w/2) + templateX - x0
+              val y = (point.y - point.h/2) + templateY - y0
+              proposal(x, y) = proposal(x, y) max template(templateX, templateY)
+            }
+          }
+        }
+        //proposal.saveTo(new File("demos/proposal-%d.png".format(i)))
+
+        var diff = 0
+        (0 until proposal.w).foreach { x =>
+          (0 until proposal.h).foreach { y =>
+            diff += Math.abs(proposal(x, y) - justNotesInverse(x + x0, y + y0))
+          }
+        }
+        val score = -diff
+        
         if (score > maxScore) {
           maxScore = score
-          bestAlternative = group2
+          bestAlternative = pointGroup
         }
+
+        i += 1
       }
       bestAlternative
     }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
@@ -1809,7 +1834,8 @@ val y = (y0 + y1) / 2
       val overlappingPointGroups = groupOverlappingPoints(points)
       demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
       demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
-      val culledPointGroups = chooseBestOverlappingSets(overlappingPointGroups)
+      val culledPointGroups = chooseBestOverlappingSets(
+        overlappingPointGroups, smallTemplate, justNotes.inverse)
 
       val groupedPoints = groupTemplateMatches(culledPointGroups)
       val filteredNotes = groupedPoints
