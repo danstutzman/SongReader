@@ -1669,6 +1669,54 @@ val y = (y0 + y1) / 2
     }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
   }
 
+  def excerptComparison(x:Int, y:Int,
+      justNotes:GrayImage, templates:Map[String,GrayImage], caseName:String) {
+    val margin = 8
+    val threshold = 128
+  
+    val inputExcerpt = distance(justNotes.inverse.crop
+      (x - margin, y - margin, margin * 2, margin * 2), threshold)
+  
+    val templateSmall = templates("black_head")
+    val templateWhitespace = new GrayImage(margin * 2, margin * 2)
+    (0 until templateSmall.h).foreach { y =>
+      (0 until templateSmall.w).foreach { x =>
+        templateWhitespace(
+          x - templateSmall.w/2 + margin - 1,
+          y - templateSmall.h/2 + margin) = templateSmall(x, y)
+      }
+    }
+    val templateExcerpt = distance(templateWhitespace, threshold)
+  
+    val inputExcerpt255 = inputExcerpt.scaleValueToMax255
+    val templateExcerpt255 = templateExcerpt.scaleValueToMax255
+    val demo = new ColorImage(margin * 2, margin * 8)
+    (0 until inputExcerpt.h).foreach { y =>
+      (0 until inputExcerpt.w).foreach { x =>
+        val v = inputExcerpt255(x, y)
+        demo(x, y) = (v, v, v)
+        demo(x, y + margin * 4) = (v, 0, 0)
+      }
+    }
+    (0 until templateExcerpt.h).foreach { y =>
+      (0 until templateExcerpt.w).foreach { x =>
+        val v = templateExcerpt255(x, y)
+        demo(x, y + margin * 2) = (v, v, v)
+  
+        val (r, _, _) = demo(x, y + margin*4)
+        demo(x, y + margin * 4) = (r, 0, v)
+  
+        val inputV = inputExcerpt(x, y)
+        val templateV = templateExcerpt(x, y)
+        val match_ = inputV > 0 && templateV > 0 &&
+          inputV - templateV >= -1 && inputV - templateV <= 0
+        demo(x, y + margin * 6) = (0, if (match_) 255 else 0, 0)
+      }
+    }
+    demo.saveTo(new File("demos/compare.black.%s.png".format(caseName)))
+  }
+  //excerptComparison(425,26) // on 3h
+  
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
