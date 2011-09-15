@@ -78,7 +78,8 @@ case class TemplateMatch (
   val y:Int,
   val w:Int,
   val h:Int,
-  val staffY:Int
+  val staffY:Int,
+  val templateName:String
 ) {}
 
 object Ocr4Music {
@@ -1562,7 +1563,7 @@ val threshold = 128
 
   def gleanPoints(detected:GrayImage, metrics:Metrics,
       yCorrection:Array[Float], templateW:Int, templateH:Int,
-      threshold:Int) = {
+      threshold:Int, templateName:String) = {
     //val simplified = image.copy
     var points:List[TemplateMatch] = Nil
     (-8 to 8).foreach { staffY =>
@@ -1602,7 +1603,7 @@ val y = (y0 + y1) / 2
         if (!hasPointAboveThreshold && maxV != 0) {
           //simplified(argmaxX, argmaxY) = 255
           points = TemplateMatch(argmaxX, argmaxY, templateW, templateH,
-            argmaxStaffY) :: points
+            argmaxStaffY, templateName) :: points
           maxV = 0
         }
 
@@ -1615,7 +1616,7 @@ val y = (y0 + y1) / 2
 
   def chooseBestOverlappingSets(
       overlappingPointGroups:List[Set[TemplateMatch]],
-      template:GrayImage, justNotesInverse:GrayImage) = {
+      templateNameToImage:Map[String,GrayImage], justNotesInverse:GrayImage) = {
     overlappingPointGroups.map { group =>
       val alternatives = listNonOverlappingAlternatives(group.toList)
 
@@ -1630,6 +1631,7 @@ val y = (y0 + y1) / 2
       alternatives.foreach { pointGroup =>
         var proposal = new GrayImage(x1 - x0 + 1, y1 - y0 + 1)
         pointGroup.foreach { point =>
+          val template = templateNameToImage(point.templateName)
           (0 until template.h).foreach { templateY =>
             (0 until template.w).foreach { templateX =>
               val x = (point.x - point.w/2) + templateX - x0
@@ -1683,76 +1685,83 @@ val y = (y0 + y1) / 2
       val name:String,
       val widthInStaffLines:Double,
       val heightInStaffLines:Double,
-      val finder:(GrayImage,GrayImage,String)=>GrayImage
+      val finder:(GrayImage,GrayImage,String)=>GrayImage,
+      val threshold:Double
     ) {}
     val c = metrics.cSpacing.intValue
     val templates =
-      //Template("treble_clef",   5,    8, findTrebleClef) ::
       Template("treble_clef",   3,    8, findTrebleClef, 0.1) ::
       //Template("sharp",       1.3,  2.6, findAccidental) ::
       //Template("flat",        1.1, 2.35, findAccidental) ::
       //Template("natural",       1,    3, findAccidental) ::
-      Template("black_head",   2.00, 1.25, findBlackHeads) ::
-      //Template("white_head",  1.5, 1.25, findWhiteHeads) ::
+      Template("black_head",   2.00, 1.25, findBlackHeads, 0.25) ::
+      Template("white_head",  1.5, 1.25, findWhiteHeads, 1.0) ::
       Nil
     var casePerformance = Performance(List(), List(), List())
+    var points:List[TemplateMatch] = Nil
+    var templateNameToImage = Map[String,GrayImage]()
     templates.foreach { template =>
+      printf(" Searching for %s...\n", template.name)
+
       val templatePath = new File("templates/%s.png".format(template.name))
       val fullSize = ColorImage.readFromFile(templatePath).toGrayImage.inverse
       val templateW = (template.widthInStaffLines * metrics.cSpacing).intValue
       val templateH = (template.heightInStaffLines * metrics.cSpacing).intValue
       val smallTemplate = scaleTemplate(fullSize, templateW, templateH)
+      templateNameToImage =
+        templateNameToImage.updated(template.name, smallTemplate)
       val detected = template.finder(
         justNotes, smallTemplate, template.name + "." + caseName)
       detected.saveTo(new File("demos/detected.%s.%s.png".format(
         template.name, caseName)))
 
-      val threshold = (0.25 * templateW * templateH).intValue
+      val thresholdInt = (template.threshold * templateW * templateH).intValue
       val detectedThreshold =
         ColorImage.giveRGBPerPixel(detected.w, detected.h) { (x, y) =>
           val v = detected(x, y)
-          if (v < threshold) (v * 255 / threshold, 0, 0)
+          if (v < thresholdInt) (v * 255 / thresholdInt, 0, 0)
           else (v, v, v)
         }
       detectedThreshold.saveTo(new File("demos/detected2.%s.%s.png".format(
         template.name, caseName)))
-      val points = gleanPoints(
-        detected, metrics, yCorrection, templateW, templateH, threshold)
-
-      val overlappingPointGroups = groupOverlappingPoints(points)
-      demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
-      demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
-      val culledPointGroups = chooseBestOverlappingSets(
-        overlappingPointGroups, smallTemplate, justNotes.inverse)
-
-      val groupedPoints = groupTemplateMatches(culledPointGroups)
-      val filteredNotes = groupedPoints
-
-      val demo = inputAdjusted.toColorImage
-      filteredNotes.foreach { noteGroup =>
-        noteGroup.foreach { point =>
-          drawTemplateMatch(point, demo, smallTemplate)
-        }
-      }
-      demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
-      demoNotes(filteredNotes, image.toColorImage, caseName)
-
-      //val realNotes = filteredNotes.map { _.filter { note =>
-      //  note.label == "black" } }
-      val performance = calcPerformance(filteredNotes, annotation.notes)
-      println("Case %2s: precision: %.3f, recall: %.3f".format(
-        caseName, performance.precision, performance.recall))
-      printf("  correct: %s\n", performance.correctNotes)
-      if (performance.spuriousNotes.size > 0)
-        printf("  spurious: %s\n", performance.spuriousNotes)
-      if (performance.missingNotes.size > 0)
-        printf("  missing: %s\n", performance.missingNotes)
-
-      casePerformance = Performance(
-        casePerformance.correctNotes ++ performance.correctNotes,
-        casePerformance.spuriousNotes ++ performance.spuriousNotes,
-        casePerformance.missingNotes ++ performance.missingNotes)
+      points = gleanPoints(detected, metrics, yCorrection, templateW,
+        templateH, thresholdInt, template.name) ++ points
     }
+
+    val overlappingPointGroups = groupOverlappingPoints(points)
+    demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
+    demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
+    val culledPointGroups = chooseBestOverlappingSets(
+      overlappingPointGroups, templateNameToImage, justNotes.inverse)
+
+    val groupedPoints = groupTemplateMatches(culledPointGroups)
+    val filteredNotes = groupedPoints
+
+    val demo = inputAdjusted.toColorImage
+    filteredNotes.foreach { noteGroup =>
+      noteGroup.foreach { point =>
+        val smallTemplate = templateNameToImage(point.templateName)
+        drawTemplateMatch(point, demo, smallTemplate)
+      }
+    }
+    demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+    demoNotes(filteredNotes, image.toColorImage, caseName)
+
+    val realNotes = filteredNotes.map { _.filter { note =>
+      note.templateName == "black_head" || note.templateName == "white_head" } }
+    val performance = calcPerformance(realNotes, annotation.notes)
+    println("Case %2s: precision: %.3f, recall: %.3f".format(
+      caseName, performance.precision, performance.recall))
+    printf("  correct: %s\n", performance.correctNotes)
+    if (performance.spuriousNotes.size > 0)
+      printf("  spurious: %s\n", performance.spuriousNotes)
+    if (performance.missingNotes.size > 0)
+      printf("  missing: %s\n", performance.missingNotes)
+
+    casePerformance = Performance(
+      casePerformance.correctNotes ++ performance.correctNotes,
+      casePerformance.spuriousNotes ++ performance.spuriousNotes,
+      casePerformance.missingNotes ++ performance.missingNotes)
     casePerformance
   }
 
