@@ -1528,18 +1528,21 @@ object Ocr4Music {
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
       caseName:String) = {
-    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4, 50)
-    val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4, 50)
-    val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4, 50)
-    val bottomEdge = Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4, 50)
-    val blur = Array(1, 2, 1, 2, 4, 2, 1, 2, 1, 16, 250)
+    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
+    val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
+    val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4)
+    val bottomEdge = Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4)
+    val blur = Array(1, 2, 1, 2, 4, 2, 1, 2, 1, 16)
     var guessFromEdge = new GrayImage(0, 0)
     //List(leftEdge, rightEdge, topEdge, bottomEdge, blur).foreach { edge =>
     List(leftEdge).foreach { edge =>
-      val templateEdge = edgeDetection(rightSizeTemplate, edge)
+      val threshold = 50 // should be 250 for blur?
+      val templateEdge =
+        edgeDetection(rightSizeTemplate, edge).binarize(threshold)
       //templateEdge.saveTo(new File(
       //  "demos/smalltemplate.l.%s.png".format(caseName)))
-      val inputEdge = edgeDetection(justNotes.inverse, edge)
+      val inputEdge =
+        edgeDetection(justNotes.inverse, edge).binarize(threshold)
       //inputEdge.saveTo(new File(
       //  "demos/edgedetect.%s.png".format(caseName)))
       guessFromEdge = slideTemplate(inputEdge, templateEdge) {
@@ -1820,7 +1823,6 @@ val y = (y0 + y1) / 2
   def edgeDetection(input:GrayImage, matrix:Array[Int]) = {
     val output = new GrayImage(input.w, input.h)
     val denom = matrix(9)
-    val threshold = matrix(10)
     (0 until input.w).foreach { x =>
       (0 until input.h).foreach { y =>
         val sum =
@@ -1834,7 +1836,7 @@ val y = (y0 + y1) / 2
            matrix(7) * input(x + 0, y + 1) +
            matrix(8) * input(x + 1, y + 1) +
            0) / denom
-        output(x, y) = if (sum > threshold) 255 else 0
+        output(x, y) = sum
       }
     }
     output
