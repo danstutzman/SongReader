@@ -903,7 +903,7 @@ object Ocr4Music {
     demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
   }
 
-  def verticalHough(input:GrayImage, caseName:String) {
+  def verticalHough(input:GrayImage, caseName:String) = {
     val hough = new GrayImage(input.w, 40)
     (0 until input.h).foreach { inputY =>
       (1 until input.w).foreach { inputX => // ignore first column
@@ -915,22 +915,11 @@ object Ocr4Music {
             hough(inputXIntercept, mCents + 20) =
               hough(inputXIntercept, mCents + 20) + 1
         }
-/*
-        val x0 = (inputX - inputY/10) max 0
-        val x1 = (inputX + inputY/10) max (input.w - 1)
-        (x0 to x1).foreach { inputXIntercept =>
-          val inverseSlope =
-            if (inputY > 0) -(inputXIntercept - inputX) / inputY.floatValue
-            else 0.0f
-          val houghX = (inverseSlope * 80).intValue + 40
-          if (v > 0 && houghX >= 0 && houghX < hough.w)
-            hough(houghX, inputXIntercept) = hough(houghX, inputXIntercept) + 1
-        }
-*/
       }
     }
     hough.scaleValueToMax255.saveTo(new File(
       "demos/vhough.%s.png".format(caseName)))
+    hough
   }
 
   def eraseStaffLines(input:GrayImage, whereNotesAre:GrayImage,
@@ -1756,8 +1745,109 @@ var casePerformance = Performance(List(), List(), List())
       }
     }
     inputEdges.binarize(128 + 10).saveTo(new File(
-      "demos/vlines.%s.png".format(caseName)))
-    val vhough = verticalHough(inputEdges.binarize(128 + 10), caseName)
+      "demos/vedges.%s.png".format(caseName)))
+    val vhough = verticalHough(inputEdges.binarize(128 + 10), caseName
+      ).scaleValueToMax255
+
+/*
+    var lastMaxV = 0
+    var lastArgmaxY = 0
+    var isExpectingAscent = false
+    var localMaxima:List[(Int,Int)] = Nil
+    val demo = vhough.toColorImage
+    (0 until vhough.w).foreach { x =>
+      var maxV = 0
+      var argmaxY = 0
+      (0 until vhough.h).foreach { y =>
+        val v = vhough(x, y)
+        if (v > maxV) {
+          maxV = v
+          argmaxY = y
+        }
+      }
+
+      if (isExpectingAscent) {
+        if (maxV < lastMaxV) {
+          localMaxima = (x - 1, lastArgmaxY) :: localMaxima
+          demo(x - 1, lastArgmaxY) = (255, 0, 0)
+          isExpectingAscent = false
+        }
+      }
+      else {
+        if (maxV > lastMaxV) {
+          isExpectingAscent = true
+        }
+      }
+
+      if (maxV >= lastMaxV * 6/5 && lastMaxV > 0)
+        demo(x, 0) = (0, 255, 0)
+
+      lastMaxV = maxV
+      lastArgmaxY = argmaxY
+    }
+    demo.saveTo(new File("demos/vhough.%s.png".format(caseName)))
+*/
+
+    var maxSum = 0
+    var argmaxYLeft = vhough.h / 2
+    var argmaxYRight = vhough.h / 2
+    (0 until vhough.h).foreach { yLeft =>
+      // assume that camera is in front of person
+      (yLeft until vhough.h).foreach { yRight =>
+        val values = new Array[Int](vhough.w)
+        (0 until vhough.w).foreach { x =>
+          val y = (x * (yRight - yLeft) / vhough.w) + yLeft
+          values(x) = vhough(x, y)
+        }
+
+        // erase all values next to a peak
+        (0 until vhough.w).foreach { x =>
+          val v = values(x)
+          val x0 = (x - 15) max 0
+          val x1 = (x + 15) min (vhough.w - 1)
+          (x0 to x1).foreach { xNeighbor =>
+            if (values(xNeighbor) > v) {
+              values(x) = 0
+            }
+          }
+        }
+
+        var sum = values.sum
+        if (sum > maxSum) {
+          maxSum = sum
+          argmaxYLeft = yLeft
+          argmaxYRight = yRight
+        }
+      }
+    }
+
+    var detectedLines:List[(Int,Int,Int)] = Nil
+    (0 until vhough.w).foreach { x =>
+      val y = (x * (argmaxYRight - argmaxYLeft) / vhough.w) + argmaxYLeft
+      if (vhough(x, y) > 0) {
+        detectedLines = (x, y, vhough(x, y)) :: detectedLines
+      }
+    }
+
+    val demo = vhough.toColorImage
+    (0 until vhough.w).foreach { x =>
+      val y = (x * (argmaxYRight - argmaxYLeft) / vhough.w) + argmaxYLeft
+      var (r, g, b) = demo(x, y)
+      demo(x, y) = (255, g, b)
+    }
+    demo.saveTo(new File("demos/vhough.%s.png".format(caseName)))
+
+    val demo2 = image.toColorImage
+    detectedLines.foreach { tuple =>
+      val (xIntercept, inverseSlopeTransformed, intensity) = tuple
+      val inverseSlope = (inverseSlopeTransformed - vhough.h/2) / 80.0f
+      (0 until demo2.h).foreach { y =>
+        val x = xIntercept + (y * inverseSlope).intValue
+        val (r, g, b) = demo2(x, y)
+        demo2(x, y) = ((r + intensity) min 255, g, b)
+      }
+    }
+    demo2.saveTo(new File("demos/vlines.%s.png".format(caseName)))
 
 /*
     val c = metrics.cSpacing.intValue
