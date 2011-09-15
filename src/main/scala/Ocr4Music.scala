@@ -1787,14 +1787,26 @@ val y = (y0 + y1) / 2
           fromTL(x, y) = 0
         else {
           var candidates:List[Int] = List(input.w max input.h) // infinity
+
           if (y > 0 && x > 0)
             candidates = fromTL(x - 1, y - 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (y > 0)
             candidates = fromTL(x, y - 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (y > 0 && x < input.w - 1)
             candidates = fromTL(x + 1, y - 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (x > 0)
             candidates = fromTL(x - 1, y) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
 
           fromTL(x, y) = candidates.min
         }
@@ -1809,14 +1821,26 @@ val y = (y0 + y1) / 2
           fromBR(x, y) = 0
         else {
           var candidates:List[Int] = List(input.w max input.h) // infinity
+
           if (y < input.h - 1 && x < input.w - 1)
             candidates = fromBR(x + 1, y + 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (y < input.h - 1)
             candidates = fromBR(x, y + 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (y < input.h - 1 && x > 0)
             candidates = fromBR(x - 1, y + 1) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
+
           if (x < input.w - 1)
             candidates = fromBR(x + 1, y) + 1 :: candidates
+          else
+            candidates = 1 :: candidates
 
           fromBR(x, y) = candidates.min
         }
