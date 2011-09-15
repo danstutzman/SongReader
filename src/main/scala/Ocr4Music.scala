@@ -1688,6 +1688,7 @@ val y = (y0 + y1) / 2
     val c = metrics.cSpacing.intValue
     val templates =
       //Template("treble_clef",   5,    8, findTrebleClef) ::
+      Template("treble_clef",   3,    8, findTrebleClef, 0.1) ::
       //Template("sharp",       1.3,  2.6, findAccidental) ::
       //Template("flat",        1.1, 2.35, findAccidental) ::
       //Template("natural",       1,    3, findAccidental) ::
