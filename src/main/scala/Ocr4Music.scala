@@ -903,43 +903,36 @@ object Ocr4Music {
     demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
   }
 
-/*
   def verticalHough(input:GrayImage, caseName:String) {
-    val white = new GrayImage(input.h, input.w)
-    (0 until input.h).foreach { y =>
-      (0 until input.w).foreach { x =>
-        val v = 255 - input(x, y)
-        val closeToDark = (-3 to 3).exists { yNeighbor =>
-          (-3 to 3).exists { xNeighbor =>
-            (255 - input(x + xNeighbor, y + yNeighbor)) > 200
-          }
-        }
-        white(y, x) = if (closeToDark) 0 else if (v < 100) 0 else (v - 100)
-      }
-    }
-    white.saveTo(new File("demos/vertical.%s.png".format(caseName)))
-    
-    val hough = new GrayImage(40, input.w)
-    (0 until white.h).foreach { y =>
-      (0 until white.w).foreach { x =>
-        val v = white(x, y)// - 150
+    val hough = new GrayImage(input.w, 40)
+    (0 until input.h).foreach { inputY =>
+      (1 until input.w).foreach { inputX => // ignore first column
+        val v = input(inputX, inputY) / 255
         (-20 until 20).foreach { mCents =>
-          val intercept = Math.round(y - (mCents / 30.0f * x)).intValue
-          if (intercept >= 0 && intercept < hough.h)
-            hough(mCents + 20, intercept) = hough(mCents + 20, intercept) + v
+          val inputXIntercept =
+            Math.round(inputX - (mCents / 80.0f * inputY)).intValue
+          if (inputXIntercept >= 0 && inputXIntercept < hough.w && v > 0)
+            hough(inputXIntercept, mCents + 20) =
+              hough(inputXIntercept, mCents + 20) + 1
         }
-      }
-    }
-
-    val max = hough.data.max
-    (0 until hough.h).foreach { y =>
-      (0 until hough.w).foreach { x =>
-        hough(x, y) = hough(x, y) * 255 / max
-      }
-    }
-    hough.saveTo(new File("demos/vhough.%s.png".format(caseName)))
-  }
+/*
+        val x0 = (inputX - inputY/10) max 0
+        val x1 = (inputX + inputY/10) max (input.w - 1)
+        (x0 to x1).foreach { inputXIntercept =>
+          val inverseSlope =
+            if (inputY > 0) -(inputXIntercept - inputX) / inputY.floatValue
+            else 0.0f
+          val houghX = (inverseSlope * 80).intValue + 40
+          if (v > 0 && houghX >= 0 && houghX < hough.w)
+            hough(houghX, inputXIntercept) = hough(houghX, inputXIntercept) + 1
+        }
 */
+      }
+    }
+    hough.scaleValueToMax255.saveTo(new File(
+      "demos/vhough.%s.png".format(caseName)))
+  }
+
   def eraseStaffLines(input:GrayImage, whereNotesAre:GrayImage,
       metrics:Metrics, yCorrection:Array[Float], caseName:String) = {
     val maxStaffSpacing =
@@ -1739,15 +1732,42 @@ val y = (y0 + y1) / 2
       partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
     val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
+var casePerformance = Performance(List(), List(), List())
 
+    //val inputEdges =
+    //  edgeDetection(justNotes, Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
+    //  ).binarize(50)
+    val inputEdges = new GrayImage(justNotes.w, justNotes.h)
+    val justNotesInverse = justNotes.inverse
+    (0 until inputEdges.h).foreach { y =>
+      (0 until inputEdges.w).foreach { x =>
+        val sum = (
+          justNotesInverse(x - 4, y) * -4 +
+          justNotesInverse(x - 3, y) * -2 +
+          justNotesInverse(x - 2, y) *  0 +
+          justNotesInverse(x - 1, y) *  1 +
+          justNotesInverse(x + 0, y) *  2 +
+          justNotesInverse(x + 1, y) *  1 +
+          justNotesInverse(x + 2, y) *  0 +
+          justNotesInverse(x + 3, y) * -2 +
+          justNotesInverse(x + 4, y) * -4 +
+          0) / 12
+        inputEdges(x, y) = sum + 128
+      }
+    }
+    inputEdges.binarize(128 + 10).saveTo(new File(
+      "demos/vlines.%s.png".format(caseName)))
+    val vhough = verticalHough(inputEdges.binarize(128 + 10), caseName)
+
+/*
     val c = metrics.cSpacing.intValue
     val templateSpecs =
-      TemplateSpec("treble_clef",   3,    8, findTrebleClef, 0.1) ::
+      //TemplateSpec("treble_clef",   3,    8, findTrebleClef, 0.1) ::
       //TemplateSpec("sharp",       1.3,  2.6, findAccidental) ::
       //TemplateSpec("flat",        1.1, 2.35, findAccidental) ::
       //TemplateSpec("natural",       1,    3, findAccidental) ::
       TemplateSpec("black_head",   2.00, 1.25, findBlackHeads, 0.25) ::
-      TemplateSpec("white_head",  1.5, 1.25, findWhiteHeads, 1.0) ::
+      //TemplateSpec("white_head",  1.5, 1.25, findWhiteHeads, 1.0) ::
       Nil
     var casePerformance = Performance(List(), List(), List())
     var points:List[TemplateMatch] = Nil
@@ -1817,6 +1837,7 @@ val y = (y0 + y1) / 2
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
+*/
     casePerformance
   }
 
