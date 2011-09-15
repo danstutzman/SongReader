@@ -1706,7 +1706,7 @@ val y = (y0 + y1) / 2
       detected.saveTo(new File("demos/detected.%s.%s.png".format(
         template.name, caseName)))
 
-      val threshold = 80
+      val threshold = (0.25 * templateW * templateH).intValue
       val detectedThreshold =
         ColorImage.giveRGBPerPixel(detected.w, detected.h) { (x, y) =>
           val v = detected(x, y)
