@@ -1691,7 +1691,7 @@ val y = (y0 + y1) / 2
       //Template("sharp",       1.3,  2.6, findAccidental) ::
       //Template("flat",        1.1, 2.35, findAccidental) ::
       //Template("natural",       1,    3, findAccidental) ::
-      Template("black_head",   2.75, 1.25, findBlackHeads) ::
+      Template("black_head",   2.00, 1.25, findBlackHeads) ::
       //Template("white_head",  1.5, 1.25, findWhiteHeads) ::
       Nil
     var casePerformance = Performance(List(), List(), List())
