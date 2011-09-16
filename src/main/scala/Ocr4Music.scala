@@ -1723,98 +1723,104 @@ val y = (y0 + y1) / 2
     output
   }
 
-  def findVerticalLineSegments(vEdges:GrayImage, vhough:GrayImage) = {
-    var lineSegments:List[(List[(Int,Int)],Int)] = Nil
-    var stillFindingGoodSegments = true
-    while (stillFindingGoodSegments) {
-      var newLineSegments:List[List[(Int,Int)]] = Nil
+  // Vertical lines (e.g. stems, measure lines, etc.) are often slightly
+  // diagonal.  Traditional y/x slope acts weird around vertical lines,
+  // so we're using x/y slope instead.
+  // This method reports 1) the slope of the stem lines at the far left
+  // of the page, as well as 2) the slope of the stem lines at the far
+  // right of the page.  It's assumed that the slope of any vertical lines
+  // between those points can be determined with linear interpolation.
+  // So you can consider these two values as a line on the Hough transform
+  // from (xIntercept=far left, slope=y1) to (xIntercept=far right, slope=y2).
+  // (A line on the Hough transform corresponds to a series of nearly parallel
+  // lines on the image).
+  def findVLineInverseSlopeRange(
+      vhough:GrayImage, threshold:Int, caseName:String) = {
 
-      // choose brightest point on Hough transform
-      var maxV = 0
-      var argmaxXIntercept = 0
-      var argmaxInverseSlope = 0
-      (0 until vhough.w).foreach { x =>
-        (0 until vhough.h).foreach { y =>
+    // Brute force linear regression: use a threshold on the Hough output
+    // to find just the bright spots.  Then try all possible lines
+    // with O(n^2) algorithm to keep the line with the brightest points on it.
+
+    // Special cases:
+    // 0) If no Hough bright spots pass the threshold, meaning that the Hough
+    // transform couldn't find any long enough lines, then return the default
+    // (reporting that lines are perfectly vertical).  Not too accurate,
+    // but it's better than erroneously reporting very diagonal lines.
+
+    // 1) If only one Hough bright spot passes the threshold, meaning that
+    // there was one long line found in the image, but no other lines reliable
+    // enough to determine how the perspective should vary the lines from the
+    // left to the right of the image, then report a horizontal line (on
+    // the Hough transform) through that bright spot (in other words, all 
+    // near-vertical lines are parallel to the long one).
+
+    var maxSum = 0
+    var argmaxYLeft = vhough.h / 2 // default
+    var argmaxYRight = vhough.h / 2 // default
+    (0 until vhough.h).foreach { yLeft =>
+      // Constrain yRight >= yLeft, because we assume that the stem lines
+      // on the right side of the page are more counter-clockwise bent
+      // than stem lines on the left side of the page.  Like this:  ///|||\\\
+      // That should be the case if the camera is above and behind the paper.
+      // Taking pictures from below or in front of the paper tricky to do
+      // because of gravity and shadows, respectively.  If you could,
+      // then stems lines would bend like this:  \\\|||/// and yRight should
+      // be allowed to be < yLeft.
+      (yLeft until vhough.h).foreach { yRight =>
+        var sum = 0
+        (0 until vhough.w).foreach { x =>
+          val y = yLeft + (yRight - yLeft) * x / vhough.w
           val v = vhough(x, y)
-          if (v > maxV) {
-            maxV = v
-            argmaxXIntercept = x
-            argmaxInverseSlope = y
-          }
+          if (v > threshold)
+            sum += (v - threshold)
+          // the reason to subtract before adding to sum is that otherwise
+          // the argmax line prefers to go through the Hough line where it's
+          // thickest (the most points), not just where it's brightest
         }
-      }
-  
-      // go down the line and measure starts and stops
-      var inLineSegment = false
-      var beginY = 0
-      var lineSegment:List[(Int,Int)] = Nil
-      // use "to" instead of "until" so we go past the bottom of the image,
-      // to make sure that segments touching the bottom of the image are closed
-      (0 to vEdges.h).foreach { y =>
-        val x = argmaxXIntercept +
-          Math.round((argmaxInverseSlope - 20) * y / 80.0f).intValue
-        val v = vEdges(x, y)
-        val isOn = v > 0
-        if (inLineSegment) {
-          if (!isOn) {
-            inLineSegment = false
-          }
-        } else {
-          if (isOn) {
-            beginY = y
-            inLineSegment = true
-          }
+    
+        // Use >= instead of > so that if many lines have the same sum,
+        // we'll pick the latest one, which happens to be the most horizontal,
+        // since both yLeft and yRight will be maximized to pass through
+        // whatever the bright point is.
+        // The sum > 0 check is so the default doesn't get overridden
+        if (sum > 0 && sum >= maxSum) {
+          maxSum = sum
+          argmaxYLeft = yLeft
+          argmaxYRight = yRight
         }
-
-        if (inLineSegment) {
-          lineSegment = (x, y) :: lineSegment
-        }
-        else {
-          newLineSegments = lineSegment :: newLineSegments
-          lineSegment = Nil
-        }
-  
-        val x0 = (x - 5) max 0
-        val x1 = (x + 5) min (vEdges.w - 1)
-        (x0 to x1).foreach { xNeighbor =>
-          val v = vEdges(xNeighbor, y) / 255
-          (-20 until 20).foreach { mCents =>
-            val inputXIntercept =
-              Math.round(xNeighbor - (mCents / 80.0f * y)).intValue
-            if (inputXIntercept >= 0 && inputXIntercept < vhough.w && v > 0)
-              vhough(inputXIntercept, mCents + 20) =
-                vhough(inputXIntercept, mCents + 20) - 1
-          }
-        }
-      }
-
-      stillFindingGoodSegments = false
-      newLineSegments.foreach { segment =>
-        if (segment.size > 5) {
-          stillFindingGoodSegments = true
-          lineSegments = (segment, maxV) :: lineSegments
-        }
-      }
-
-      //vhough.scaleValueToMax255.saveTo(new File(
-      //  "demos/vhough%d.%s.png".format(i, caseName)))
-    }
-    lineSegments
-  }
-
-  def demoVerticalLineSegments(lineSegments:List[(List[(Int,Int)],Int)],
-      input:GrayImage, caseName:String) {
-    val demo = input.toColorImage
-    lineSegments.foreach { tuple =>
-      val (segment, maxV) = tuple
-      segment.foreach { point =>
-        val (x, y) = point
-        demo(x, y) = ((maxV * 10) min 255, 0, 0)
       }
     }
-    demo.saveTo(new File("demos/vlines.%s.png".format(caseName)))
+    
+    /*val demo = vhough.scaleValueToMax255.toColorImage
+    (0 until demo.w).foreach { x =>
+      val y = argmaxYLeft + (argmaxYRight - argmaxYLeft) * x / vhough.w
+      val (r, g, b) = demo(x, y)
+      demo(x, y) = (63 max r, g, b)
+    }
+    demo.saveTo(new File("demos/vhoughnew.%s.png".format(caseName)))
+    
+    var vlines:List[(Int,Int)] = Nil
+    (0 until demo.w).foreach { x =>
+      val y = argmaxYLeft + (argmaxYRight - argmaxYLeft) * x / vhough.w
+      if (vhough(x, y) > 2)
+        vlines = (x, y) :: vlines
+    }
+    
+    val demo2 = image.toColorImage
+    vlines.foreach { vline =>
+      val (xIntercept, inverseSlope40) = vline
+      (0 until demo2.h).foreach { y =>
+        val x =
+          xIntercept + Math.round((inverseSlope40 - 20) / 80.f * y).intValue
+        val (r, g, b) = demo2(x, y)
+        demo2(x, y) = ((r + 63) min 255, g, b)
+      }
+    }
+    demo2.saveTo(new File("demos/vlinesshown.%s.png".format(caseName)))*/
+
+    (argmaxYLeft, argmaxYRight)
   }
- 
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -1841,8 +1847,7 @@ var casePerformance = Performance(List(), List(), List())
     val vhough = verticalHough(vEdges, caseName)
     vhough.scaleValueToMax255.saveTo(new File(
       "demos/vhough.%s.png".format(caseName)))
-    val lineSegments = findVerticalLineSegments(vEdges, vhough)
-    demoVerticalLineSegments(lineSegments, image, caseName)
+    val (atLeft, atRight) = findVLineInverseSlopeRange(vhough, 15, caseName)
 
 /*
     val c = metrics.cSpacing.intValue
