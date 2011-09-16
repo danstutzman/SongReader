@@ -906,7 +906,7 @@ object Ocr4Music {
   def verticalHough(input:GrayImage, caseName:String) = {
     val hough = new GrayImage(input.w, 40)
     (0 until input.h).foreach { inputY =>
-      (1 until input.w).foreach { inputX => // ignore first column
+      (10 until input.w - 10).foreach { inputX => // avoid edges
         val v = input(inputX, inputY) / 255
         (-20 until 20).foreach { mCents =>
           val inputXIntercept =
