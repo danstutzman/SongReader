@@ -1701,104 +1701,29 @@ val y = (y0 + y1) / 2
     demo.saveTo(new File("demos/compare.black.%s.png".format(caseName)))
   }
   //excerptComparison(425,26) // on 3h
-  
-  def processCase(caseName:String) : Performance = {
-    val imagePath = new File("input/%s.jpeg".format(caseName))
-    val image = ColorImage.readFromFile(imagePath).toGrayImage
-    val annotationPath = "input/%s.json".format(caseName)
-    val annotationString = scala.io.Source.fromFile(annotationPath).mkString
-    val annotation = loadAnnotationJson(annotationString)
 
-    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
-      separateNotes(image, caseName)
-
-    val metricsPath = new File("output/metrics/%s.json".format(caseName))
-    val metrics = readOrGenerate(metricsPath, saveMetrics, restoreMetrics) {
-      () => estimateMetrics(partiallyErased, caseName)
-    }
-
-    val yCorrection = determineYCorrection(
-      partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-    val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
-      metrics, yCorrection, caseName)
-var casePerformance = Performance(List(), List(), List())
-
-    //val inputEdges =
-    //  edgeDetection(justNotes, Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
-    //  ).binarize(50)
-    val inputEdges = new GrayImage(justNotes.w, justNotes.h)
-    val justNotesInverse = justNotes.inverse
-    (0 until inputEdges.h).foreach { y =>
-      (0 until inputEdges.w).foreach { x =>
+  def findVerticalLines(input:GrayImage) = {
+    val output = new GrayImage(input.w, input.h)
+    (0 until input.h).foreach { y =>
+      (0 until input.w).foreach { x =>
         val sum = (
-          justNotesInverse(x - 4, y) * -4 +
-          justNotesInverse(x - 3, y) * -2 +
-          justNotesInverse(x - 2, y) *  0 +
-          justNotesInverse(x - 1, y) *  1 +
-          justNotesInverse(x + 0, y) *  2 +
-          justNotesInverse(x + 1, y) *  1 +
-          justNotesInverse(x + 2, y) *  0 +
-          justNotesInverse(x + 3, y) * -2 +
-          justNotesInverse(x + 4, y) * -4 +
+          input(x - 4, y) * -4 +
+          input(x - 3, y) * -2 +
+          input(x - 2, y) *  0 +
+          input(x - 1, y) *  1 +
+          input(x + 0, y) *  2 +
+          input(x + 1, y) *  1 +
+          input(x + 2, y) *  0 +
+          input(x + 3, y) * -2 +
+          input(x + 4, y) * -4 +
           0) / 12
-        inputEdges(x, y) = sum + 128
+        output(x, y) = sum
       }
     }
-    val vEdges = inputEdges.binarize(128 + 10)
-    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
-    val vhough = verticalHough(vEdges, caseName)
-    vhough.scaleValueToMax255.saveTo(new File(
-      "demos/vhough.%s.png".format(caseName)))
+    output
+  }
 
-/*
-    var lastMaxV = 0
-    var lastArgmaxY = 0
-    var isExpectingAscent = false
-    var localMaxima:List[(Int,Int)] = Nil
-    val demo = vhough.toColorImage
-    (0 until vhough.w).foreach { x =>
-      var maxV = 0
-      var argmaxY = 0
-      (0 until vhough.h).foreach { y =>
-        val v = vhough(x, y)
-        if (v > maxV) {
-          maxV = v
-          argmaxY = y
-        }
-      }
-
-      if (isExpectingAscent) {
-        if (maxV < lastMaxV) {
-          localMaxima = (x - 1, lastArgmaxY) :: localMaxima
-          demo(x - 1, lastArgmaxY) = (255, 0, 0)
-          isExpectingAscent = false
-        }
-      }
-      else {
-        if (maxV > lastMaxV) {
-          isExpectingAscent = true
-        }
-      }
-
-      if (maxV >= lastMaxV * 6/5 && lastMaxV > 0)
-        demo(x, 0) = (0, 255, 0)
-
-      lastMaxV = maxV
-      lastArgmaxY = argmaxY
-    }
-    demo.saveTo(new File("demos/vhough.%s.png".format(caseName)))
-*/
-
-/*
-    var detectedLines:List[(Int,Int,Int)] = Nil
-    (0 until vhough.w).foreach { x =>
-      val y = (x * (argmaxYRight - argmaxYLeft) / vhough.w) + argmaxYLeft
-      if (vhough(x, y) > 0) {
-        detectedLines = (x, y, vhough(x, y)) :: detectedLines
-      }
-    }
-*/
-
+  def findVerticalLineSegments(vEdges:GrayImage, vhough:GrayImage) = {
     var lineSegments:List[(List[(Int,Int)],Int)] = Nil
     var stillFindingGoodSegments = true
     while (stillFindingGoodSegments) {
@@ -1874,8 +1799,12 @@ var casePerformance = Performance(List(), List(), List())
       //vhough.scaleValueToMax255.saveTo(new File(
       //  "demos/vhough%d.%s.png".format(i, caseName)))
     }
+    lineSegments
+  }
 
-    val demo = image.toColorImage
+  def demoVerticalLineSegments(lineSegments:List[(List[(Int,Int)],Int)],
+      input:GrayImage, caseName:String) {
+    val demo = input.toColorImage
     lineSegments.foreach { tuple =>
       val (segment, maxV) = tuple
       segment.foreach { point =>
@@ -1884,20 +1813,36 @@ var casePerformance = Performance(List(), List(), List())
       }
     }
     demo.saveTo(new File("demos/vlines.%s.png".format(caseName)))
+  }
+ 
+  def processCase(caseName:String) : Performance = {
+    val imagePath = new File("input/%s.jpeg".format(caseName))
+    val image = ColorImage.readFromFile(imagePath).toGrayImage
+    val annotationPath = "input/%s.json".format(caseName)
+    val annotationString = scala.io.Source.fromFile(annotationPath).mkString
+    val annotation = loadAnnotationJson(annotationString)
 
-/*
-    val demo2 = image.toColorImage
-    detectedLines.foreach { tuple =>
-      val (xIntercept, inverseSlopeTransformed, intensity) = tuple
-      val inverseSlope = (inverseSlopeTransformed - vhough.h/2) / 80.0f
-      (0 until demo2.h).foreach { y =>
-        val x = xIntercept + (y * inverseSlope).intValue
-        val (r, g, b) = demo2(x, y)
-        demo2(x, y) = ((r + intensity) min 255, g, b)
-      }
+    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
+      separateNotes(image, caseName)
+
+    val metricsPath = new File("output/metrics/%s.json".format(caseName))
+    val metrics = readOrGenerate(metricsPath, saveMetrics, restoreMetrics) {
+      () => estimateMetrics(partiallyErased, caseName)
     }
-    demo2.saveTo(new File("demos/vlines.%s.png".format(caseName)))
-*/
+
+    val yCorrection = determineYCorrection(
+      partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+    val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
+      metrics, yCorrection, caseName)
+var casePerformance = Performance(List(), List(), List())
+
+    val vEdges = findVerticalLines(justNotes.inverse).binarize(10)
+    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
+    val vhough = verticalHough(vEdges, caseName)
+    vhough.scaleValueToMax255.saveTo(new File(
+      "demos/vhough.%s.png".format(caseName)))
+    val lineSegments = findVerticalLineSegments(vEdges, vhough)
+    demoVerticalLineSegments(lineSegments, image, caseName)
 
 /*
     val c = metrics.cSpacing.intValue
