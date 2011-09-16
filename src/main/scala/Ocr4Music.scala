@@ -1744,10 +1744,11 @@ var casePerformance = Performance(List(), List(), List())
         inputEdges(x, y) = sum + 128
       }
     }
-    inputEdges.binarize(128 + 10).saveTo(new File(
-      "demos/vedges.%s.png".format(caseName)))
-    val vhough = verticalHough(inputEdges.binarize(128 + 10), caseName
-      ).scaleValueToMax255
+    val vEdges = inputEdges.binarize(128 + 10)
+    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
+    val vhough = verticalHough(vEdges, caseName)
+    vhough.scaleValueToMax255.saveTo(new File(
+      "demos/vhough.%s.png".format(caseName)))
 
 /*
     var lastMaxV = 0
@@ -1788,39 +1789,7 @@ var casePerformance = Performance(List(), List(), List())
     demo.saveTo(new File("demos/vhough.%s.png".format(caseName)))
 */
 
-    var maxSum = 0
-    var argmaxYLeft = vhough.h / 2
-    var argmaxYRight = vhough.h / 2
-    (0 until vhough.h).foreach { yLeft =>
-      // assume that camera is in front of person
-      (yLeft until vhough.h).foreach { yRight =>
-        val values = new Array[Int](vhough.w)
-        (0 until vhough.w).foreach { x =>
-          val y = (x * (yRight - yLeft) / vhough.w) + yLeft
-          values(x) = vhough(x, y)
-        }
-
-        // erase all values next to a peak
-        (0 until vhough.w).foreach { x =>
-          val v = values(x)
-          val x0 = (x - 15) max 0
-          val x1 = (x + 15) min (vhough.w - 1)
-          (x0 to x1).foreach { xNeighbor =>
-            if (values(xNeighbor) > v) {
-              values(x) = 0
-            }
-          }
-        }
-
-        var sum = values.sum
-        if (sum > maxSum) {
-          maxSum = sum
-          argmaxYLeft = yLeft
-          argmaxYRight = yRight
-        }
-      }
-    }
-
+/*
     var detectedLines:List[(Int,Int,Int)] = Nil
     (0 until vhough.w).foreach { x =>
       val y = (x * (argmaxYRight - argmaxYLeft) / vhough.w) + argmaxYLeft
@@ -1828,15 +1797,95 @@ var casePerformance = Performance(List(), List(), List())
         detectedLines = (x, y, vhough(x, y)) :: detectedLines
       }
     }
+*/
 
-    val demo = vhough.toColorImage
-    (0 until vhough.w).foreach { x =>
-      val y = (x * (argmaxYRight - argmaxYLeft) / vhough.w) + argmaxYLeft
-      var (r, g, b) = demo(x, y)
-      demo(x, y) = (255, g, b)
+    var lineSegments:List[(List[(Int,Int)],Int)] = Nil
+    var stillFindingGoodSegments = true
+    while (stillFindingGoodSegments) {
+      var newLineSegments:List[List[(Int,Int)]] = Nil
+
+      // choose brightest point on Hough transform
+      var maxV = 0
+      var argmaxXIntercept = 0
+      var argmaxInverseSlope = 0
+      (0 until vhough.w).foreach { x =>
+        (0 until vhough.h).foreach { y =>
+          val v = vhough(x, y)
+          if (v > maxV) {
+            maxV = v
+            argmaxXIntercept = x
+            argmaxInverseSlope = y
+          }
+        }
+      }
+  
+      // go down the line and measure starts and stops
+      var inLineSegment = false
+      var beginY = 0
+      var lineSegment:List[(Int,Int)] = Nil
+      // use "to" instead of "until" so we go past the bottom of the image,
+      // to make sure that segments touching the bottom of the image are closed
+      (0 to vEdges.h).foreach { y =>
+        val x = argmaxXIntercept +
+          Math.round((argmaxInverseSlope - 20) * y / 80.0f).intValue
+        val v = vEdges(x, y)
+        val isOn = v > 0
+        if (inLineSegment) {
+          if (!isOn) {
+            inLineSegment = false
+          }
+        } else {
+          if (isOn) {
+            beginY = y
+            inLineSegment = true
+          }
+        }
+
+        if (inLineSegment) {
+          lineSegment = (x, y) :: lineSegment
+        }
+        else {
+          newLineSegments = lineSegment :: newLineSegments
+          lineSegment = Nil
+        }
+  
+        val x0 = (x - 5) max 0
+        val x1 = (x + 5) min (vEdges.w - 1)
+        (x0 to x1).foreach { xNeighbor =>
+          val v = vEdges(xNeighbor, y) / 255
+          (-20 until 20).foreach { mCents =>
+            val inputXIntercept =
+              Math.round(xNeighbor - (mCents / 80.0f * y)).intValue
+            if (inputXIntercept >= 0 && inputXIntercept < vhough.w && v > 0)
+              vhough(inputXIntercept, mCents + 20) =
+                vhough(inputXIntercept, mCents + 20) - 1
+          }
+        }
+      }
+
+      stillFindingGoodSegments = false
+      newLineSegments.foreach { segment =>
+        if (segment.size > 5) {
+          stillFindingGoodSegments = true
+          lineSegments = (segment, maxV) :: lineSegments
+        }
+      }
+
+      //vhough.scaleValueToMax255.saveTo(new File(
+      //  "demos/vhough%d.%s.png".format(i, caseName)))
     }
-    demo.saveTo(new File("demos/vhough.%s.png".format(caseName)))
 
+    val demo = image.toColorImage
+    lineSegments.foreach { tuple =>
+      val (segment, maxV) = tuple
+      segment.foreach { point =>
+        val (x, y) = point
+        demo(x, y) = ((maxV * 10) min 255, 0, 0)
+      }
+    }
+    demo.saveTo(new File("demos/vlines.%s.png".format(caseName)))
+
+/*
     val demo2 = image.toColorImage
     detectedLines.foreach { tuple =>
       val (xIntercept, inverseSlopeTransformed, intensity) = tuple
@@ -1848,6 +1897,7 @@ var casePerformance = Performance(List(), List(), List())
       }
     }
     demo2.saveTo(new File("demos/vlines.%s.png".format(caseName)))
+*/
 
 /*
     val c = metrics.cSpacing.intValue
