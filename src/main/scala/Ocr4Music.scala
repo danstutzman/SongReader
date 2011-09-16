@@ -1840,7 +1840,6 @@ val y = (y0 + y1) / 2
       partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
     val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
-var casePerformance = Performance(List(), List(), List())
 
     val vEdges = findVerticalLines(justNotes.inverse).binarize(10)
     vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
@@ -1849,7 +1848,6 @@ var casePerformance = Performance(List(), List(), List())
       "demos/vhough.%s.png".format(caseName)))
     val (atLeft, atRight) = findVLineInverseSlopeRange(vhough, 15, caseName)
 
-/*
     val c = metrics.cSpacing.intValue
     val templateSpecs =
       //TemplateSpec("treble_clef",   3,    8, findTrebleClef, 0.1) ::
@@ -1927,7 +1925,6 @@ var casePerformance = Performance(List(), List(), List())
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
-*/
     casePerformance
   }
 
