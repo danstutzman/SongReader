@@ -1082,7 +1082,7 @@ object Ocr4Music {
 
   def scanSegments(input:GrayImage) : List[Segment] = {
     var segments:List[Segment] = Nil
-    val background = 255
+    val background = 0
     (0 until input.h).foreach { y =>
       var previousPixel = background
       var startOfSegment = 0
@@ -1930,6 +1930,64 @@ val y = (y0 + y1) / 2
     demo2.saveTo(new File("demos/beamboxes.%s.png".format(caseName)))
   }
 
+  def minXOfShape(shape:List[Segment]) : Int = {
+    shape.foldLeft(999999) { _ min _.x0 }
+  }
+
+  def maxXOfShape(shape:List[Segment]) : Int = {
+    shape.foldLeft(-999999) { _ max _.x1 }
+  }
+
+  // two shapes are "x-overlapping" if there's no vertical line
+  // that separates them without intersecting either shape
+  def groupXOverlappingShapes(shapes:List[List[Segment]]) :
+      List[List[List[Segment]]] = {
+    shapes match {
+      case Nil => Nil
+      case _ =>
+        var minXOfAllShapes = shapes.foldLeft(999999) { _ min minXOfShape(_) }
+        var argminShape = shapes.find { minXOfShape(_) == minXOfAllShapes }.get
+        var foundSeparation = false
+        var separationX = maxXOfShape(argminShape)
+        while (!foundSeparation) {
+          var (nonOverlappingShapes, overlappingShapes) =
+            shapes.partition { minXOfShape(_) > separationX }
+          foundSeparation = true
+          overlappingShapes.foreach { overlappingShape =>
+            val newMaxX:Int = maxXOfShape(overlappingShape)
+            if (newMaxX > separationX) {
+              separationX = newMaxX
+              foundSeparation = false
+            }
+          }
+        }
+        var (nonOverlappingShapes, overlappingShapes) =
+          shapes.partition { minXOfShape(_) > separationX }
+        overlappingShapes :: groupXOverlappingShapes(nonOverlappingShapes)
+    }
+  }
+
+  def eraseBeams(input:GrayImage, beams:List[Beam], metrics:Metrics) = {
+    val output = input.copy
+    val multiplier = 2.0f // especially thick because of surrounding gray pixels
+    beams.foreach { beam =>
+      (beam.x0 to beam.x1).foreach { x =>
+        val xCentered = x - input.w/2
+        val staffSeparation = (metrics.bSpacing * xCentered) + metrics.cSpacing
+        val expectedBeamWidth =
+          Math.round(staffSeparation * multiplier).intValue - 2
+        val progress = (x - beam.x0) / (beam.x1 - beam.x0).floatValue
+        val yMid = (beam.y0 + (beam.y1 - beam.y0) * progress).intValue
+        val yTop = (yMid - expectedBeamWidth/2) max 0
+        val yBottom = (yMid + (expectedBeamWidth+1)/2) min (input.h - 1)
+        (yTop to yBottom).foreach { y =>
+          output(x, y) = 0
+        }
+      }
+    }
+    output
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -1960,6 +2018,15 @@ val y = (y0 + y1) / 2
     val thickLines = findThickHorizontalLines(justNotes, metrics, caseName)
     val beams = findBeams(thickLines, image, caseName)
     demoBeams(beams, image, caseName)
+
+    val justNotesNoBeams = eraseBeams(justNotes.inverse, beams, metrics)
+    val segments = scanSegments(justNotesNoBeams)
+    val shapes = groupTouchingSegments(segments)
+    val shapeGroups = groupXOverlappingShapes(shapes)
+    val mergedShapes = shapeGroups.map { shapes =>
+      shapes.foldLeft(List[Segment]()) { _ ++ _ }
+    }
+    demoSegmentGroups(mergedShapes, image, caseName)
 
     val c = metrics.cSpacing.intValue
     val templateSpecs =
