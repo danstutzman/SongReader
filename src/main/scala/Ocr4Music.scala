@@ -2021,25 +2021,7 @@ val y = (y0 + y1) / 2
     // now that you know where to expect lines, do a better job of finding them
     // ...
     demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
-
-
-    val justNotes2Blurred2 = edgeDetection(
-      justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(50)
-    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
-    val leftEdges = edgeDetection(justNotes2Blurred, leftEdge).binarize(50)
-    val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
-    val rightEdges = edgeDetection(justNotes2Blurred, rightEdge).binarize(50)
-    val demo2 = ColorImage.giveRGBPerPixel(image.w, image.h) { (x, y) =>
-      if (justNotes2Distance(x, y) >= 3)
-        (0, 0, 127)
-      else {
-        var r = 0 // justNotes2Blurred2(x, y) / 4
-        var g = leftEdges(x - 2, y) / 2
-        var b = rightEdges(x + 2, y)
-        (r, g, b)
-      }
-    }
-    demo2.saveTo(new File("demos/stems3.%s.png".format(caseName)))
+    justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(caseName)))
 
     val vEdges = findVerticalLines(justNotes2).binarize(10)
     vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
