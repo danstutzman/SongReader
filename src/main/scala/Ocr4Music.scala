@@ -910,25 +910,6 @@ object Ocr4Music {
     demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
   }
 
-  def verticalHough(input:GrayImage, caseName:String) = {
-    val hough = new GrayImage(input.w, 40)
-    (0 until input.h).foreach { inputY =>
-      (10 until input.w - 10).foreach { inputX => // avoid edges
-        val v = input(inputX, inputY) / 255
-        (-20 until 20).foreach { mCents =>
-          val inputXIntercept =
-            Math.round(inputX - (mCents / 80.0f * inputY)).intValue
-          if (inputXIntercept >= 0 && inputXIntercept < hough.w && v > 0)
-            hough(inputXIntercept, mCents + 20) =
-              hough(inputXIntercept, mCents + 20) + 1
-        }
-      }
-    }
-    hough.scaleValueToMax255.saveTo(new File(
-      "demos/vhough.%s.png".format(caseName)))
-    hough
-  }
-
   def eraseStaffLines(input:GrayImage, whereNotesAre:GrayImage,
       metrics:Metrics, yCorrection:Array[Float], caseName:String) = {
     val maxStaffSpacing =
@@ -1031,6 +1012,7 @@ object Ocr4Music {
     demo.saveTo(new File("demos/erase.%s.png".format(caseName)))
 
     val demo2 = new GrayImage(input.w, input.h)
+    val demo4 = new GrayImage(input.w, input.h)
     val dx = 2
     val dy = 3
     val threshold = 25 // unit-less value since the differences were normalized
@@ -1050,9 +1032,11 @@ object Ocr4Music {
           demo2(x, y) = 255 - demo(x, y)._3
         else
           demo2(x, y) = 255
+        demo4(x, y) = demo(x, y)._3
       }
     }
     demo2.saveTo(new File("demos/erase2.%s.png".format(caseName)))
+    demo4.saveTo(new File("demos/erase4.%s.png".format(caseName)))
 
     // Draw staff lines on image to see if they look right
     val demo3 = new GrayImage(input.w, input.h)
@@ -1077,7 +1061,7 @@ object Ocr4Music {
     }
     demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
 
-    demo2
+    (demo2, demo4)
   }
 
   def scanSegments(input:GrayImage) : List[Segment] = {
@@ -1742,7 +1726,7 @@ val y = (y0 + y1) / 2
   // (A line on the Hough transform corresponds to a series of nearly parallel
   // lines on the image).
   def findVLineInverseSlopeRange(
-      vhough:GrayImage, threshold:Int, caseName:String) = {
+      vhough:GrayImage, image:GrayImage, threshold:Int, caseName:String) = {
 
     // Brute force linear regression: use a threshold on the Hough output
     // to find just the bright spots.  Then try all possible lines
@@ -1807,7 +1791,7 @@ val y = (y0 + y1) / 2
     demo.saveTo(new File("demos/vhoughnew.%s.png".format(caseName)))
     
     var vlines:List[(Int,Int)] = Nil
-    (0 until demo.w).foreach { x =>
+    (0 until vhough.w).foreach { x =>
       val y = argmaxYLeft + (argmaxYRight - argmaxYLeft) * x / vhough.w
       if (vhough(x, y) > 2)
         vlines = (x, y) :: vlines
@@ -1988,6 +1972,131 @@ val y = (y0 + y1) / 2
     output
   }
 
+  def verticalHough(input:ColorImage, caseName:String) = {
+    val hough = new GrayImage(input.w, 40)
+    (0 until input.h).foreach { inputY =>
+      (10 until input.w - 10).foreach { inputX => // avoid edges
+        val v = input(inputX, inputY)
+        (-20 until 20).foreach { mCents =>
+          val inputXIntercept =
+            Math.round(inputX - (mCents / 80.0f * inputY)).intValue
+          if (inputXIntercept >= 0 && inputXIntercept < hough.w) {
+            if (v == (0, 0, 127)) // negative spot
+              hough(inputXIntercept, mCents + 20) =
+                hough(inputXIntercept, mCents + 20) - 3
+            else
+              hough(inputXIntercept, mCents + 20) =
+                hough(inputXIntercept, mCents + 20) + (v._1 / 63)
+          }
+        }
+      }
+    }
+    
+    (0 until hough.h).foreach { y =>
+      (0 until hough.w).foreach { x =>
+        hough(x, y) = (hough(x, y) - 40) max 0
+      }
+    }
+
+    hough.scaleValueToMax255.saveTo(new File(
+      "demos/vhough2.%s.png".format(caseName)))
+    hough
+  }
+
+  def doVLineDetection(justNotes2:GrayImage, image:GrayImage, caseName:String) {
+    val justNotes2Blurred = edgeDetection(
+      justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
+    val justNotes2Distance = distance(justNotes2, 200)
+    val demo = ColorImage.giveRGBPerPixel(image.w, image.h) { (x, y) =>
+      if (justNotes2Distance(x, y) >= 3)
+        (0, 0, 127)
+      else {
+        var v = justNotes2Blurred(x, y) / 4
+        (v, v, v)
+      }
+    }
+    val vhough = verticalHough(demo, caseName)
+    val (atLeft, atRight) =
+      findVLineInverseSlopeRange(vhough, image, 0, caseName)
+    // now that you know where to expect lines, do a better job of finding them
+    // ...
+    demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
+
+
+    val justNotes2Blurred2 = edgeDetection(
+      justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(50)
+    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
+    val leftEdges = edgeDetection(justNotes2Blurred, leftEdge).binarize(50)
+    val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
+    val rightEdges = edgeDetection(justNotes2Blurred, rightEdge).binarize(50)
+    val demo2 = ColorImage.giveRGBPerPixel(image.w, image.h) { (x, y) =>
+      if (justNotes2Distance(x, y) >= 3)
+        (0, 0, 127)
+      else {
+        var r = 0 // justNotes2Blurred2(x, y) / 4
+        var g = leftEdges(x - 2, y) / 2
+        var b = rightEdges(x + 2, y)
+        (r, g, b)
+      }
+    }
+    demo2.saveTo(new File("demos/stems3.%s.png".format(caseName)))
+
+    val vEdges = findVerticalLines(justNotes2).binarize(10)
+    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
+
+    val demo3 = image.toColorImage
+    val atLeftAdjusted = (atLeft - 20) / 80.f
+    val atRightAdjusted = (atRight - 20) / 80.f
+    (0 until image.w).foreach { xIntercept =>
+      val progress = xIntercept / image.w.floatValue
+      val inverseSlope =
+        atLeftAdjusted + (atRightAdjusted - atLeftAdjusted) * progress
+
+      var sum = 0
+      (0 until image.h).foreach { y =>
+        val x = xIntercept + (inverseSlope * y).intValue
+        val v = vEdges(x, y) / 255
+        sum += v
+      }
+
+      val valuesSum = new Array[Int](image.h) // like a summed-area table in 1D
+      var sum2 = 0
+      (0 until image.h).foreach { y =>
+        val x = xIntercept + (inverseSlope * y).intValue
+        val v = justNotes2Blurred(x, y) / 255
+        sum2 += v
+        valuesSum(y) = sum2
+      }
+
+      var maxScore = 0
+      var argmaxY0 = 0
+      var argmaxY1 = 0
+      (0 until (image.h - 1)).foreach { y0 =>
+        ((y0 + 10) until image.h).foreach { y1 =>
+          var sum = valuesSum(y1) - valuesSum(y0)
+          val fullness = sum / (y1 - y0).floatValue
+          val score = if (fullness > 0.99f && y1 - y0 >= 30) (y1 - y0) else 0
+          if (score > maxScore) {
+            maxScore = score
+            argmaxY0 = y0
+            argmaxY1 = y1
+          }
+        }
+      }
+
+      if (sum > 5) {
+        //(0 until image.h).foreach { y =>
+        (argmaxY0 until argmaxY1).foreach { y =>
+          val x = xIntercept + (inverseSlope * y).intValue
+          val (r, g, b) = demo3(x, y)
+          val rNew = (r + 50) min 255
+          demo3(x, y) = (rNew, g, b)
+        }
+      }
+    }
+    demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2005,15 +2114,9 @@ val y = (y0 + y1) / 2
 
     val yCorrection = determineYCorrection(
       partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-    val justNotes = eraseStaffLines(image, augmentedBinaryNonStaff,
+    val (justNotes, justNotes2) =
+      eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
-
-    val vEdges = findVerticalLines(justNotes.inverse).binarize(10)
-    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
-    val vhough = verticalHough(vEdges, caseName)
-    vhough.scaleValueToMax255.saveTo(new File(
-      "demos/vhough.%s.png".format(caseName)))
-    val (atLeft, atRight) = findVLineInverseSlopeRange(vhough, 15, caseName)
 
     val thickLines = findThickHorizontalLines(justNotes, metrics, caseName)
     val beams = findBeams(thickLines, image, caseName)
@@ -2027,6 +2130,8 @@ val y = (y0 + y1) / 2
       shapes.foldLeft(List[Segment]()) { _ ++ _ }
     }
     demoSegmentGroups(mergedShapes, image, caseName)
+
+    doVLineDetection(justNotes2, image, caseName)
 
     val c = metrics.cSpacing.intValue
     val templateSpecs =
