@@ -4,6 +4,7 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.lang.Math
 import javax.imageio.ImageIO
+import scala.collection.mutable.PriorityQueue
 import scala.io.Source
 import scala.util.Random
 import scala.util.Sorting
@@ -2003,7 +2004,8 @@ val y = (y0 + y1) / 2
     hough
   }
 
-  def doVLineDetection(justNotes2:GrayImage, image:GrayImage, caseName:String) {
+  def doVLineDetection(justNotes:GrayImage, justNotes2:GrayImage,
+      image:GrayImage, caseName:String) {
     val justNotes2Blurred = edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
     val justNotes2Distance = distance(justNotes2, 200)
@@ -2079,6 +2081,136 @@ val y = (y0 + y1) / 2
     demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
   }
 
+  trait Thing {
+    val width:Int
+  }
+  case class Note (val width:Int) extends Thing {
+    override def toString = {
+      "N%2d".format(width)
+    }
+  }
+  case class Space (val width:Int) extends Thing {
+    override def toString = {
+      "S%2d".format(width)
+    }
+  }
+  case class ThingList (val list:List[Thing], val prob:Float, val maxX:Int) {
+    override def toString = {
+      list.map { _.toString }.foldLeft(""){ _ + " " + _ }
+    }
+  }
+
+  def doWidthDetection(
+      image:GrayImage, justNotes2:GrayImage,
+      metrics:Metrics, caseName:String) {
+    // add 100 so there's extra space
+    val probOfSplitting = new Array[Int](justNotes2.w + 100)
+    (0 until justNotes2.w).foreach { x =>
+      var sum = 0
+      (0 until justNotes2.h).foreach { y =>
+        sum += justNotes2(x, y)
+      }
+      val mean = sum / justNotes2.h
+      probOfSplitting(x) = -mean
+    }
+
+    val probOfNote = new Array[Int](justNotes2.w + 100)
+    (0 until justNotes2.w).foreach { x =>
+      var maxV = 0
+      (0 until justNotes2.h).foreach { y =>
+        val v = justNotes2(x, y)
+        if (v > maxV) {
+          maxV = v
+        }
+      }
+      probOfNote(x) = -(255 - maxV)
+    }
+
+    var options:List[ThingList] = List(ThingList(List[Thing](), 0.0f, 0))
+    val beamWidth = -1000.0f
+    (0 until justNotes2.w).foreach { minRequiredMaxX =>
+      printf("%4d", minRequiredMaxX)
+
+      val (longEnoughOptions, tooShortOptions) = options.partition {
+        _.maxX >= minRequiredMaxX
+      }
+
+      var newOptions:List[ThingList] = Nil
+      tooShortOptions.foreach { option =>
+        def consider(newThing:Thing) {
+          var newProb = 0.0f
+          newThing match {
+            case Space(width) =>
+              (option.maxX + 1 until option.maxX + width).foreach { x =>
+                newProb += probOfSplitting(x)
+              }
+            case Note(width) =>
+              (option.maxX + 1 until option.maxX + width).foreach { x =>
+                newProb += probOfNote(x)
+              }
+          }
+
+          val newSumProb = option.prob + newProb
+          val newMaxX = option.maxX + newThing.width
+          val newOption =
+            ThingList(option.list ++ List(newThing), newSumProb, newMaxX)
+          newOptions = newOption :: newOptions
+        }
+
+        consider(Note(10))
+        consider(Note(12))
+        consider(Space(15))
+        consider(Space(20))
+        consider(Space(24))
+        consider(Space(26))
+        consider(Space(30))
+      }
+
+      if (tooShortOptions.size > 0) {
+        options = longEnoughOptions ++ newOptions
+        options = options.sortBy { -_.prob }
+        //val maxProb = options(0).prob
+        //options = options.filter { _.prob > maxProb + beamWidth }
+        options = options.take(100)
+      }
+    }
+
+    val demo = justNotes2.toColorImage
+    val bestOption = options(0)
+    var xSoFar = 0
+    bestOption.list.foreach { thing =>
+      // draw white stripe
+      (0 until demo.h).foreach { y =>
+        val (r, g, b) = demo(xSoFar, y)
+        val rNew = (r + 100) min 255
+        val gNew = (g + 100) min 255
+        val bNew = (b + 100) min 255
+        demo(xSoFar, y) = (rNew, gNew, bNew)
+      }
+
+      // highlight background
+      val (rAdjust, gAdjust) = thing match {
+        case Note(_) => (127, 0)
+        case Space(_) => (0, 92)
+      }
+      (xSoFar + 1 until (xSoFar + thing.width)).foreach { x =>
+        (0 until demo.h).foreach { y =>
+          val (r, g, b) = demo(x, y)
+          val rNew = r max rAdjust
+          val gNew = g max gAdjust
+          demo(x, y) = (rNew, gNew, b)
+        }
+      }
+  
+      xSoFar += thing.width
+    }
+    demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
+    
+    //options.foreach { option =>
+    //  printf("%30s, %f\n", option.toString, option.prob)
+    //}
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2104,7 +2236,8 @@ val y = (y0 + y1) / 2
     val beams = findBeams(thickLines, image, caseName)
     demoBeams(beams, image, caseName)
 
-    val justNotesNoBeams = eraseBeams(justNotes.inverse, beams, metrics)
+    val justNotesNoBeams = eraseBeams(justNotes2, beams, metrics)
+/*
     val segments = scanSegments(justNotesNoBeams)
     val shapes = groupTouchingSegments(segments)
     val shapeGroups = groupXOverlappingShapes(shapes)
@@ -2112,9 +2245,14 @@ val y = (y0 + y1) / 2
       shapes.foldLeft(List[Segment]()) { _ ++ _ }
     }
     demoSegmentGroups(mergedShapes, image, caseName)
+*/
 
-    doVLineDetection(justNotes2, image, caseName)
+    doVLineDetection(justNotes, justNotes2, image, caseName)
 
+    doWidthDetection(image, justNotesNoBeams, metrics, caseName)
+
+    var casePerformance = Performance(List(), List(), List())
+/*
     val c = metrics.cSpacing.intValue
     val templateSpecs =
       //TemplateSpec("treble_clef",   3,    8, findTrebleClef, 0.1) ::
@@ -2192,6 +2330,7 @@ val y = (y0 + y1) / 2
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
+*/
     casePerformance
   }
 
