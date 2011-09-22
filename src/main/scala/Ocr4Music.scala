@@ -2005,7 +2005,7 @@ val y = (y0 + y1) / 2
   }
 
   def doVLineDetection(justNotes:GrayImage, justNotes2:GrayImage,
-      image:GrayImage, caseName:String) {
+      image:GrayImage, caseName:String) = {
     val justNotes2Blurred = edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
     val justNotes2Distance = distance(justNotes2, 200)
@@ -2079,6 +2079,8 @@ val y = (y0 + y1) / 2
       }
     }
     demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
+
+    (atLeft, atRight)
   }
 
   trait Thing {
@@ -2102,34 +2104,39 @@ val y = (y0 + y1) / 2
 
   def doWidthDetection(
       image:GrayImage, justNotes2:GrayImage,
-      metrics:Metrics, caseName:String) {
-    // add 100 so there's extra space
-    val probOfSplitting = new Array[Int](justNotes2.w + 100)
-    (0 until justNotes2.w).foreach { x =>
-      var sum = 0
-      (0 until justNotes2.h).foreach { y =>
-        sum += justNotes2(x, y)
-      }
-      val mean = sum / justNotes2.h
-      probOfSplitting(x) = -mean
-    }
+      vLineSlopeRange:(Int,Int), caseName:String) {
+    val vLineSlopeAtLeft  = (vLineSlopeRange._1 - 20) / 80.f
+    val vLineSlopeAtRight = (vLineSlopeRange._2 - 20) / 80.f
+    val boost = 0
 
+    // add 100 so there's extra space
+    val probOfSpace = new Array[Int](justNotes2.w + 100)
     val probOfNote = new Array[Int](justNotes2.w + 100)
-    (0 until justNotes2.w).foreach { x =>
+    (0 until image.w).foreach { xIntercept =>
+      val progress = xIntercept / image.w.floatValue
+      val inverseSlope =
+        vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
+
       var maxV = 0
-      (0 until justNotes2.h).foreach { y =>
+      (0 until image.h).foreach { y =>
+        val x = xIntercept + Math.round(inverseSlope * y).intValue
         val v = justNotes2(x, y)
         if (v > maxV) {
           maxV = v
         }
       }
-      probOfNote(x) = -(255 - maxV)
+
+      val adjusted = maxV
+      //val adjusted = (if (maxV >= 128) (maxV - 128) * 2 else 0)
+
+      probOfSpace(xIntercept) = boost + -adjusted
+      probOfNote(xIntercept) = boost + -(255 - adjusted)
     }
 
     var options:List[ThingList] = List(ThingList(List[Thing](), 0.0f, 0))
     val beamWidth = -1000.0f
     (0 until justNotes2.w).foreach { minRequiredMaxX =>
-      printf("%4d", minRequiredMaxX)
+      //printf("%4d", minRequiredMaxX)
 
       val (longEnoughOptions, tooShortOptions) = options.partition {
         _.maxX >= minRequiredMaxX
@@ -2142,7 +2149,7 @@ val y = (y0 + y1) / 2
           newThing match {
             case Space(width) =>
               (option.maxX + 1 until option.maxX + width).foreach { x =>
-                newProb += probOfSplitting(x)
+                newProb += probOfSpace(x)
               }
             case Note(width) =>
               (option.maxX + 1 until option.maxX + width).foreach { x =>
@@ -2157,13 +2164,24 @@ val y = (y0 + y1) / 2
           newOptions = newOption :: newOptions
         }
 
-        consider(Note(10))
-        consider(Note(12))
-        consider(Space(15))
-        consider(Space(20))
-        consider(Space(24))
-        consider(Space(26))
-        consider(Space(30))
+        var canRepeatNote = true
+        var canRepeatSpace = true
+        if (option.list.size > 0) {
+          val lastThing = option.list(option.list.size - 1)
+          lastThing match {
+            case Space(_) => canRepeatSpace = false
+            case Note(_) => canRepeatNote = false
+          }
+        }
+
+        if (canRepeatSpace) {
+          (1 to 30 by 1).foreach { i => consider(Space(i)) }
+        }
+        consider(Space(60)) // for right margin
+        if (canRepeatNote) {
+          (10 to 20 by 1).foreach { i => consider(Note(i)) }
+          (21 to 33 by 2).foreach { i => consider(Note(i)) }
+        }
       }
 
       if (tooShortOptions.size > 0) {
@@ -2179,36 +2197,29 @@ val y = (y0 + y1) / 2
     val bestOption = options(0)
     var xSoFar = 0
     bestOption.list.foreach { thing =>
-      // draw white stripe
-      (0 until demo.h).foreach { y =>
-        val (r, g, b) = demo(xSoFar, y)
-        val rNew = (r + 100) min 255
-        val gNew = (g + 100) min 255
-        val bNew = (b + 100) min 255
-        demo(xSoFar, y) = (rNew, gNew, bNew)
-      }
-
       // highlight background
-      val (rAdjust, gAdjust) = thing match {
-        case Note(_) => (127, 0)
-        case Space(_) => (0, 92)
-      }
-      (xSoFar + 1 until (xSoFar + thing.width)).foreach { x =>
-        (0 until demo.h).foreach { y =>
+      (xSoFar until (xSoFar + thing.width)).foreach { xIntercept =>
+        val progress = xIntercept / image.w.floatValue
+        val inverseSlope =
+          vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
+
+        val (rAdjust, gAdjust) = thing match {
+          case Note(_) => (255 + probOfNote(xIntercept) - boost, 0)
+          case Space(_) => (0, 255 + probOfSpace(xIntercept) - boost)
+        }
+  
+        (0 until image.h).foreach { y =>
+          val x = xIntercept + Math.round(inverseSlope * y).intValue
           val (r, g, b) = demo(x, y)
           val rNew = r max rAdjust
           val gNew = g max gAdjust
           demo(x, y) = (rNew, gNew, b)
         }
       }
-  
+    
       xSoFar += thing.width
     }
     demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
-    
-    //options.foreach { option =>
-    //  printf("%30s, %f\n", option.toString, option.prob)
-    //}
   }
 
   def processCase(caseName:String) : Performance = {
@@ -2247,9 +2258,10 @@ val y = (y0 + y1) / 2
     demoSegmentGroups(mergedShapes, image, caseName)
 */
 
-    doVLineDetection(justNotes, justNotes2, image, caseName)
+    val (atLeft, atRight) =
+      doVLineDetection(justNotes, justNotes2, image, caseName)
 
-    doWidthDetection(image, justNotesNoBeams, metrics, caseName)
+    doWidthDetection(image, justNotesNoBeams, (atLeft, atRight), caseName)
 
     var casePerformance = Performance(List(), List(), List())
 /*
