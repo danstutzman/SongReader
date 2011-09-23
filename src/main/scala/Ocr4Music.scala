@@ -2083,16 +2083,19 @@ val y = (y0 + y1) / 2
     (atLeft, atRight)
   }
 
-  def doWidthDetection(
-      image:GrayImage, justNotes2:GrayImage,
+  // by "orthonormal" I mean that the vertical lines in the image are pointing
+  // straight up and down, and the horizontal staff lines are pointing
+  // straight left and right, instead of both being somewhat diagonal.
+  // It doesn't mean that the x and y vectors are unit length.
+  def orthonormalize(input:GrayImage,
       vLineSlopeRange:(Int,Int), metrics:Metrics, yCorrection:Array[Float],
       caseName:String) {
     val b0  = (vLineSlopeRange._1 - 20) / 80.f
     val b1 = (vLineSlopeRange._2 - 20) / 80.f
 
     def targetYFor(xUncentered:Int, yUncentered:Int) = {
-      val xCentered = xUncentered - image.w/2
-      val yCentered = yUncentered - image.h/2
+      val xCentered = xUncentered - input.w/2
+      val yCentered = yUncentered - input.h/2
 
       // TODO poorly chosen notation:
       //   b0 below means something different than b0 above
@@ -2106,14 +2109,14 @@ val y = (y0 + y1) / 2
         metrics.b * xCentered - metrics.c - yCorrection(xUncentered)) /
         (metrics.bSpacing * xCentered + metrics.cSpacing) * 2.0f
 
-      // We don't want to use staffY for the transformed image, because it
+      // We don't want to use staffY for the transformed input, because it
       // has too few pixels per staff line; instead we want staffY*c,
       // which has one target pixel per source pixel in the center, and
       // slightly more/less than that at the edges
-      Math.round(staffY/2.0f * metrics.cSpacing + image.h/2).intValue
+      Math.round(staffY/2.0f * metrics.cSpacing + input.h/2).intValue
     }
-    val minTargetY = (0 until image.w).map { targetYFor(_, 0) }.min
-    val maxTargetY = (0 until image.w).map { targetYFor(_, image.h - 1) }.max
+    val minTargetY = (0 until input.w).map { targetYFor(_, 0) }.min
+    val maxTargetY = (0 until input.w).map { targetYFor(_, input.h - 1) }.max
 
     def targetXFor(sourceX:Int, sourceY:Int) = {
       // Equation for x-skewing:
@@ -2124,25 +2127,25 @@ val y = (y0 + y1) / 2
       //   x0 * (1 + (b1-b0)*y/w) = x' - b0*y
       //   x0 = (x' - b0*y) / (1 + (b1-b0)*y/w)
       val targetX =
-        (sourceX - b0 * sourceY) / (1.0f + (b1-b0) * sourceY / image.w)
+        (sourceX - b0 * sourceY) / (1.0f + (b1-b0) * sourceY / input.w)
 
       // Although we don't model x-scaling or how it changes from left to
       // right, it should correlate with the y-scaling
-      val xCentered = sourceX - image.w/2
+      val xCentered = sourceX - input.w/2
       val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
       val proportion = staffSeparation / metrics.cSpacing
       Math.round(targetX / proportion).intValue
     }
     val minTargetX =
-      targetXFor(0, 0) min targetXFor(0, image.h - 1)
+      targetXFor(0, 0) min targetXFor(0, input.h - 1)
     val maxTargetX =
-      targetXFor(image.w - 1, 0) max targetXFor(image.w - 1, image.h - 1)
+      targetXFor(input.w - 1, 0) max targetXFor(input.w - 1, input.h - 1)
 
     val squaredUp = new GrayImage(maxTargetX - minTargetX + 1 + 1,
                                   maxTargetY - minTargetY + 1 + 1)
-    (0 until image.w).foreach { sourceX =>
-      (0 until image.h).foreach { sourceY =>
-        val v = justNotes2(sourceX, sourceY)
+    (0 until input.w).foreach { sourceX =>
+      (0 until input.h).foreach { sourceY =>
+        val v = input(sourceX, sourceY)
 
         val targetX = targetXFor(sourceX, sourceY) - minTargetX
         val targetY = targetYFor(sourceX, sourceY) - minTargetY
@@ -2154,6 +2157,8 @@ val y = (y0 + y1) / 2
       }
     }
     squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
+    squaredUp
+  }
     
 /*
     val maxVs = new Array[Int](image.w)
@@ -2214,7 +2219,6 @@ val y = (y0 + y1) / 2
     }
     demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
 */
-  }
 
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
@@ -2255,7 +2259,7 @@ val y = (y0 + y1) / 2
     val (atLeft, atRight) =
       doVLineDetection(justNotes, justNotes2, image, caseName)
 
-    doWidthDetection(image, justNotes2, (atLeft, atRight),
+    val orthonormal = orthonormalize(justNotes2, (atLeft, atRight),
       metrics, yCorrection, caseName)
 
     var casePerformance = Performance(List(), List(), List())
