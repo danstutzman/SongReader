@@ -2085,11 +2085,71 @@ val y = (y0 + y1) / 2
 
   def doWidthDetection(
       image:GrayImage, justNotes2:GrayImage,
-      vLineSlopeRange:(Int,Int), caseName:String) {
-    val vLineSlopeAtLeft  = (vLineSlopeRange._1 - 20) / 80.f
-    val vLineSlopeAtRight = (vLineSlopeRange._2 - 20) / 80.f
-    val boost = 0
+      vLineSlopeRange:(Int,Int), metrics:Metrics, yCorrection:Array[Float],
+      caseName:String) {
+    val b0  = (vLineSlopeRange._1 - 20) / 80.f
+    val b1 = (vLineSlopeRange._2 - 20) / 80.f
 
+    def targetYFor(xUncentered:Int, yUncentered:Int) = {
+      val xCentered = xUncentered - image.w/2
+      val yCentered = yUncentered - image.h/2
+
+      // TODO poorly chosen notation:
+      //   b0 below means something different than b0 above
+      // Equation for y-skewing: (y stands for staffY)
+      //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
+      // Solve for y (staffY):
+      //   y' - a0*x*x - b0*x - c0 - correct(x) = b*y/2*x + c*y/2
+      //   y = (y' - a0*x*x - b0*x - c0 - correct(x)) / (b*x + c) * 2
+      val staffY = (yCentered -
+        metrics.a * xCentered * xCentered -
+        metrics.b * xCentered - metrics.c - yCorrection(xUncentered)) /
+        (metrics.bSpacing * xCentered + metrics.cSpacing) * 2.0f
+
+      // We don't want to use staffY for the transformed image, because it
+      // has too few pixels per staff line; instead we want staffY*c,
+      // which has one target pixel per source pixel in the center, and
+      // slightly more/less than that at the edges
+      Math.round(staffY/2.0f * metrics.cSpacing + image.h/2).intValue
+    }
+    val minTargetY = (0 until image.w).map { targetYFor(_, 0) }.min
+    val maxTargetY = (0 until image.w).map { targetYFor(_, image.h - 1) }.max
+
+    def targetXFor(sourceX:Int, sourceY:Int) = {
+      // Equation for x-skewing:
+      //   x' = x0 + (b0 + (x0/w)*(b1-b0)) * y
+      // Solve for x0 given x':
+      //   x' = x0 + b0*y + x0*(b1-b0)*y/w
+      //   x' - b0*y = x0 + x0*(b1-b0)*y/w
+      //   x0 * (1 + (b1-b0)*y/w) = x' - b0*y
+      //   x0 = (x' - b0*y) / (1 + (b1-b0)*y/w)
+      Math.round(
+        (sourceX - b0 * sourceY) / (1.0f + (b1-b0) * sourceY / image.w)
+      ).intValue
+    }
+    val minTargetX =
+      targetXFor(0, 0) min targetXFor(0, image.h - 1)
+    val maxTargetX =
+      targetXFor(image.w - 1, 0) max targetXFor(image.w - 1, image.h - 1)
+
+    val squaredUp = new GrayImage(maxTargetX - minTargetX + 1 + 1,
+                                  maxTargetY - minTargetY + 1 + 1)
+    (0 until image.w).foreach { sourceX =>
+      (0 until image.h).foreach { sourceY =>
+        val v = justNotes2(sourceX, sourceY)
+
+        val targetX = targetXFor(sourceX, sourceY) - minTargetX
+        val targetY = targetYFor(sourceX, sourceY) - minTargetY
+
+        squaredUp(targetX,     targetY)     = v
+        squaredUp(targetX + 1, targetY)     = v
+        squaredUp(targetX,     targetY + 1) = v
+        squaredUp(targetX + 1, targetY + 1) = v
+      }
+    }
+    squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
+    
+/*
     val maxVs = new Array[Int](image.w)
     (0 until image.w).foreach { xIntercept =>
       val progress = xIntercept / image.w.floatValue
@@ -2147,6 +2207,7 @@ val y = (y0 + y1) / 2
       }
     }
     demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
+*/
   }
 
   def processCase(caseName:String) : Performance = {
@@ -2188,7 +2249,8 @@ val y = (y0 + y1) / 2
     val (atLeft, atRight) =
       doVLineDetection(justNotes, justNotes2, image, caseName)
 
-    doWidthDetection(image, justNotesNoBeams, (atLeft, atRight), caseName)
+    doWidthDetection(image, justNotes2, (atLeft, atRight),
+      metrics, yCorrection, caseName)
 
     var casePerformance = Performance(List(), List(), List())
 /*
