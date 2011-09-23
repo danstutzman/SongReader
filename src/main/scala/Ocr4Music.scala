@@ -2123,9 +2123,15 @@ val y = (y0 + y1) / 2
       //   x' - b0*y = x0 + x0*(b1-b0)*y/w
       //   x0 * (1 + (b1-b0)*y/w) = x' - b0*y
       //   x0 = (x' - b0*y) / (1 + (b1-b0)*y/w)
-      Math.round(
+      val targetX =
         (sourceX - b0 * sourceY) / (1.0f + (b1-b0) * sourceY / image.w)
-      ).intValue
+
+      // Although we don't model x-scaling or how it changes from left to
+      // right, it should correlate with the y-scaling
+      val xCentered = sourceX - image.w/2
+      val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
+      val proportion = staffSeparation / metrics.cSpacing
+      Math.round(targetX / proportion).intValue
     }
     val minTargetX =
       targetXFor(0, 0) min targetXFor(0, image.h - 1)
