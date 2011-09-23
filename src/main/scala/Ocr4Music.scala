@@ -2083,25 +2083,6 @@ val y = (y0 + y1) / 2
     (atLeft, atRight)
   }
 
-  trait Thing {
-    val width:Int
-  }
-  case class Note (val width:Int) extends Thing {
-    override def toString = {
-      "N%2d".format(width)
-    }
-  }
-  case class Space (val width:Int) extends Thing {
-    override def toString = {
-      "S%2d".format(width)
-    }
-  }
-  case class ThingList (val list:List[Thing], val prob:Float, val maxX:Int) {
-    override def toString = {
-      list.map { _.toString }.foldLeft(""){ _ + " " + _ }
-    }
-  }
-
   def doWidthDetection(
       image:GrayImage, justNotes2:GrayImage,
       vLineSlopeRange:(Int,Int), caseName:String) {
@@ -2109,9 +2090,7 @@ val y = (y0 + y1) / 2
     val vLineSlopeAtRight = (vLineSlopeRange._2 - 20) / 80.f
     val boost = 0
 
-    // add 100 so there's extra space
-    val probOfSpace = new Array[Int](justNotes2.w + 100)
-    val probOfNote = new Array[Int](justNotes2.w + 100)
+    val maxVs = new Array[Int](image.w)
     (0 until image.w).foreach { xIntercept =>
       val progress = xIntercept / image.w.floatValue
       val inverseSlope =
@@ -2125,99 +2104,47 @@ val y = (y0 + y1) / 2
           maxV = v
         }
       }
-
-      val adjusted = maxV
-      //val adjusted = (if (maxV >= 128) (maxV - 128) * 2 else 0)
-
-      probOfSpace(xIntercept) = boost + -adjusted
-      probOfNote(xIntercept) = boost + -(255 - adjusted)
+      maxVs(xIntercept) = maxV
     }
 
-    var options:List[ThingList] = List(ThingList(List[Thing](), 0.0f, 0))
-    val beamWidth = -1000.0f
-    (0 until justNotes2.w).foreach { minRequiredMaxX =>
-      //printf("%4d", minRequiredMaxX)
+    val color = new Array[(Int,Int,Int)](image.w)
+    (0 until image.w).foreach { x =>
+      color(x) = (0, 0, 0)
+    }
 
-      val (longEnoughOptions, tooShortOptions) = options.partition {
-        _.maxX >= minRequiredMaxX
-      }
-
-      var newOptions:List[ThingList] = Nil
-      tooShortOptions.foreach { option =>
-        def consider(newThing:Thing) {
-          var newProb = 0.0f
-          newThing match {
-            case Space(width) =>
-              (option.maxX + 1 until option.maxX + width).foreach { x =>
-                newProb += probOfSpace(x)
-              }
-            case Note(width) =>
-              (option.maxX + 1 until option.maxX + width).foreach { x =>
-                newProb += probOfNote(x)
-              }
-          }
-
-          val newSumProb = option.prob + newProb
-          val newMaxX = option.maxX + newThing.width
-          val newOption =
-            ThingList(option.list ++ List(newThing), newSumProb, newMaxX)
-          newOptions = newOption :: newOptions
-        }
-
-        var canRepeatNote = true
-        var canRepeatSpace = true
-        if (option.list.size > 0) {
-          val lastThing = option.list(option.list.size - 1)
-          lastThing match {
-            case Space(_) => canRepeatSpace = false
-            case Note(_) => canRepeatNote = false
-          }
-        }
-
-        if (canRepeatSpace) {
-          (1 to 30 by 1).foreach { i => consider(Space(i)) }
-        }
-        consider(Space(60)) // for right margin
-        if (canRepeatNote) {
-          (10 to 20 by 1).foreach { i => consider(Note(i)) }
-          (21 to 33 by 2).foreach { i => consider(Note(i)) }
-        }
-      }
-
-      if (tooShortOptions.size > 0) {
-        options = longEnoughOptions ++ newOptions
-        options = options.sortBy { -_.prob }
-        //val maxProb = options(0).prob
-        //options = options.filter { _.prob > maxProb + beamWidth }
-        options = options.take(100)
-      }
+    var isDescending = false
+    (0 until image.w).foreach { x =>
+      if (maxVs(x) >= 200)
+        isDescending = true
+      if (maxVs(x) < 128)
+        isDescending = false
+      if (isDescending)
+        color(x) = (128, 0, 0)
+    }
+    (image.w - 1 to 0 by -1).foreach { x =>
+      if (maxVs(x) >= 200)
+        isDescending = true
+      if (maxVs(x) < 128)
+        isDescending = false
+      if (isDescending)
+        color(x) = (128, 0, 0)
     }
 
     val demo = justNotes2.toColorImage
-    val bestOption = options(0)
-    var xSoFar = 0
-    bestOption.list.foreach { thing =>
-      // highlight background
-      (xSoFar until (xSoFar + thing.width)).foreach { xIntercept =>
-        val progress = xIntercept / image.w.floatValue
-        val inverseSlope =
-          vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
+    (0 until image.w).foreach { xIntercept =>
+      val progress = xIntercept / image.w.floatValue
+      val inverseSlope =
+        vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
 
-        val (rAdjust, gAdjust) = thing match {
-          case Note(_) => (255 + probOfNote(xIntercept) - boost, 0)
-          case Space(_) => (0, 255 + probOfSpace(xIntercept) - boost)
-        }
-  
-        (0 until image.h).foreach { y =>
-          val x = xIntercept + Math.round(inverseSlope * y).intValue
-          val (r, g, b) = demo(x, y)
-          val rNew = r max rAdjust
-          val gNew = g max gAdjust
-          demo(x, y) = (rNew, gNew, b)
-        }
+      val (rAdjust, gAdjust, bAdjust) = color(xIntercept)
+      (0 until image.h).foreach { y =>
+        val x = xIntercept + Math.round(inverseSlope * y).intValue
+        val (r, g, b) = demo(x, y)
+        val rNew = r max rAdjust
+        val gNew = g max gAdjust
+        val bNew = b max bAdjust
+        demo(x, y) = (rNew, gNew, bNew)
       }
-    
-      xSoFar += thing.width
     }
     demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
   }
