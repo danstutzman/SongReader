@@ -98,6 +98,12 @@ case class TemplateSpec (
   val threshold:Double
 ) {}
 
+case class Orthonormal (
+  val image:GrayImage,
+  val yForStaffYOf6:Int,
+  val yForStaffYOfNeg6:Int
+) {}
+
 object Ocr4Music {
   def separateNotes(input:GrayImage, caseName:String) = {
     val ceilings = new Array[Int](input.w)
@@ -2089,7 +2095,7 @@ val y = (y0 + y1) / 2
   // It doesn't mean that the x and y vectors are unit length.
   def orthonormalize(input:GrayImage,
       vLineSlopeRange:(Int,Int), metrics:Metrics, yCorrection:Array[Float],
-      caseName:String) {
+      caseName:String) : Orthonormal = {
     val b0  = (vLineSlopeRange._1 - 20) / 80.f
     val b1 = (vLineSlopeRange._2 - 20) / 80.f
 
@@ -2157,49 +2163,188 @@ val y = (y0 + y1) / 2
       }
     }
     squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
-    squaredUp
-  }
-    
-/*
-    val maxVs = new Array[Int](image.w)
-    (0 until image.w).foreach { xIntercept =>
-      val progress = xIntercept / image.w.floatValue
-      val inverseSlope =
-        vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
 
+    // We want to find the y value that corresponds to staffY = 4 and -4.
+    // Start with: (y' means original image y, y means staffY)
+    //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
+    // For simplicity set xCentered to 0, so xUncentered = w/2.
+    //   y' = c0 + c*y
+    val sourceYForStaffYOf6 =
+      (metrics.c + metrics.cSpacing * 6.0f/2 + input.h/2).intValue
+    val sourceYForStaffYOfNeg6 =
+      (metrics.c + metrics.cSpacing * -6.0f/2 + input.h/2).intValue
+    val yForStaffYOf6 =
+      targetYFor(input.w/2, sourceYForStaffYOf6) - minTargetY
+    val yForStaffYOfNeg6 =
+      targetYFor(input.w/2, sourceYForStaffYOfNeg6) - minTargetY
+
+    Orthonormal(squaredUp, yForStaffYOf6, yForStaffYOfNeg6)
+  }
+
+  def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage) = {
+    val maxVs = new Array[Int](outer.maxX + 1)
+    (outer.minX to outer.maxX).foreach { x =>
       var maxV = 0
-      (0 until image.h).foreach { y =>
-        val x = xIntercept + Math.round(inverseSlope * y).intValue
-        val v = justNotes2(x, y)
+      (outer.minY to outer.maxY).foreach { y =>
+        val v = input(x, y)
         if (v > maxV) {
           maxV = v
         }
       }
-      maxVs(xIntercept) = maxV
+      maxVs(x) = maxV
     }
 
-    val color = new Array[(Int,Int,Int)](image.w)
-    (0 until image.w).foreach { x =>
-      color(x) = (0, 0, 0)
+    val isFull = new Array[Boolean](outer.maxX + 1)
+    (outer.minX to outer.maxX).foreach { x =>
+      isFull(x) = false
     }
 
+    val upperThreshold = 200
+    val lowerThreshold = 128
     var isDescending = false
-    (0 until image.w).foreach { x =>
-      if (maxVs(x) >= 200)
+    (outer.minX to outer.maxX).foreach { x =>
+      if (maxVs(x) >= upperThreshold)
         isDescending = true
-      if (maxVs(x) < 128)
+      if (maxVs(x) < lowerThreshold)
         isDescending = false
       if (isDescending)
-        color(x) = (128, 0, 0)
+        isFull(x) = true
     }
-    (image.w - 1 to 0 by -1).foreach { x =>
-      if (maxVs(x) >= 200)
+    (outer.maxX to outer.minX by -1).foreach { x =>
+      if (maxVs(x) >= upperThreshold)
         isDescending = true
-      if (maxVs(x) < 128)
+      if (maxVs(x) < lowerThreshold)
         isDescending = false
       if (isDescending)
-        color(x) = (128, 0, 0)
+        isFull(x) = true
     }
+
+    var boxes:List[BoundingBox] = Nil
+    var boxStartX = outer.minX
+    (outer.minX to outer.maxX + 1).foreach { x =>
+      val prevFull = (if (x > outer.minX) isFull(x - 1) else false)
+      val thisFull = (if (x < outer.maxX) isFull(x) else false)
+      if (!prevFull && thisFull)
+        boxStartX = x
+      else if (prevFull && !thisFull)
+        boxes = BoundingBox(boxStartX, x - 1, outer.minY, outer.maxY) :: boxes
+    }
+    boxes
+  }
+
+  def findEasyHorizontalCuts(outer:BoundingBox, input:GrayImage) = {
+    val maxVs = new Array[Int](outer.maxY + 1)
+    (outer.minY to outer.maxY).foreach { y =>
+      var maxV = 0
+      (outer.minX to outer.maxX).foreach { x =>
+        val v = input(x, y)
+        if (v > maxV) {
+          maxV = v
+        }
+      }
+      maxVs(y) = maxV
+    }
+
+    val isFull = new Array[Boolean](outer.maxY + 1)
+    (outer.minY to outer.maxY).foreach { y =>
+      isFull(y) = false
+    }
+
+    val upperThreshold = 128
+    val lowerThreshold = 32
+    var isDescending = false
+    (outer.minY to outer.maxY).foreach { y =>
+      if (maxVs(y) >= upperThreshold)
+        isDescending = true
+      if (maxVs(y) < lowerThreshold)
+        isDescending = false
+      if (isDescending)
+        isFull(y) = true
+    }
+    (outer.maxY to outer.minY by -1).foreach { y =>
+      if (maxVs(y) >= upperThreshold)
+        isDescending = true
+      if (maxVs(y) < lowerThreshold)
+        isDescending = false
+      if (isDescending)
+        isFull(y) = true
+    }
+
+    var boxes:List[BoundingBox] = Nil
+    var boxStartY = outer.minY
+    (outer.minY to outer.maxY + 1).foreach { y =>
+      val prevFull = (if (y > outer.minY) isFull(y - 1) else false)
+      val thisFull = (if (y < outer.maxY) isFull(y) else false)
+      if (!prevFull && thisFull)
+        boxStartY = y
+      else if (prevFull && !thisFull)
+        boxes = BoundingBox(outer.minX, outer.maxX, boxStartY, y - 1) :: boxes
+    }
+    boxes
+  }
+
+  def findHorizontalCuts(outer:BoundingBox, input:GrayImage) = {
+    val isFull = new Array[Boolean](outer.maxY + 1)
+    (outer.minY to outer.maxY).foreach { y =>
+      isFull(y) = false
+    }
+
+    (outer.minY to outer.maxY).foreach { y =>
+      val values = new Array[Int](outer.maxX + 1)
+      (outer.minX to outer.maxX).foreach { x =>
+        val v = input(x, y)
+        values(x) = v
+      }
+      Sorting.quickSort(values)
+      if (values(values.size - 1) >= 255)
+        isFull(y) = true
+    }
+
+    var boxes:List[BoundingBox] = Nil
+    var boxStartY = outer.minY
+    (outer.minY to outer.maxY + 1).foreach { y =>
+      val prevFull = (if (y > outer.minY) isFull(y - 1) else false)
+      val thisFull = (if (y < outer.maxY) isFull(y) else false)
+      if (!prevFull && thisFull)
+        boxStartY = y
+      else if (prevFull && !thisFull)
+        boxes = BoundingBox(outer.minX, outer.maxX, boxStartY, y - 1) :: boxes
+    }
+    boxes
+  }
+
+  def doWidthDetection(orthonormal:Orthonormal, caseName:String) {
+    val (minY, maxY) = findYBounds(orthonormal, caseName)
+    val input = orthonormal.image
+    val wholeImage = BoundingBox(0, input.w - 1, minY, maxY)
+
+    //val horizontalSlices = findHorizontalCuts(wholeImage, input)
+    val verticalSlices = findEasyVerticalCuts(wholeImage, input)
+    //val boxes = verticalSlices.map { findEasyHorizontalCuts(_, input)
+    //  }.reduceLeft { _ ++ _ }
+
+    val demo = input.toColorImage
+    val color = (255, 0, 0)
+    def draw(x:Int, y:Int) {
+      val (r, g, b) = demo(x, y)
+      val rNew = (r + color._1) min 255
+      val gNew = (g + color._2) min 255
+      val bNew = (b + color._3) min 255
+      demo(x, y) = (rNew, gNew, bNew)
+    }
+    verticalSlices.foreach { box =>
+      (box.minX to box.maxX).foreach { x =>
+        draw(x, box.minY)
+        draw(x, box.maxY)
+      }
+      (box.minY to box.maxY).foreach { y =>
+        draw(box.minX, y)
+        draw(box.maxX, y)
+      }
+    }
+    demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
+
+/*
 
     val demo = justNotes2.toColorImage
     (0 until image.w).foreach { xIntercept =>
@@ -2219,6 +2364,93 @@ val y = (y0 + y1) / 2
     }
     demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
 */
+  }
+
+  def findYBounds(orthonormal:Orthonormal, caseName:String) = {
+    val text = orthonormal.image.toColorImage
+    var cutoff = new Array[Int](orthonormal.image.w)
+    (0 until orthonormal.image.w).foreach { x =>
+      val v = orthonormal.image(x, orthonormal.yForStaffYOf6) max
+              orthonormal.image(x, orthonormal.yForStaffYOf6 - 1) max
+              orthonormal.image(x, orthonormal.yForStaffYOf6 + 1)
+      cutoff(x) = (v * 2) min 255
+    }
+
+    def updateCutoff(y:Int) {
+      (0 until orthonormal.image.w).foreach { x =>
+        val v = orthonormal.image(x, y)
+        //if (cutoff(x) > 16 && v < cutoff(x) + 128) {
+        //  if (v < cutoff(x))
+        //    cutoff(x) = cutoff(x)*3/4 + v*1/4
+        //}
+        if (v >= cutoff(x) + 64) {
+          //cutoff(x) = 0
+          //demo(x, y) = ((v * 2) min 255, 0, 0)
+          text(x, y) = (v - cutoff(x), 0, 0)
+        }
+        if (v < cutoff(x))
+          cutoff(x) = cutoff(x)*7/8 + v*1/8
+      }
+    }
+
+    (orthonormal.yForStaffYOf6 until orthonormal.image.h).foreach { y =>
+      updateCutoff(y)
+    }
+
+    (0 until orthonormal.image.w).foreach { x =>
+      val v = orthonormal.image(x, orthonormal.yForStaffYOfNeg6) max
+        orthonormal.image(x, orthonormal.yForStaffYOfNeg6 - 1) max
+        orthonormal.image(x, orthonormal.yForStaffYOfNeg6 + 1)
+      cutoff(x) = (v * 2) min 255
+    }
+    val ceiling = new GrayImage(orthonormal.image.w, orthonormal.image.h)
+    (orthonormal.yForStaffYOfNeg6 to 0 by -1).foreach { y =>
+      updateCutoff(y)
+    }
+
+    var y = 0
+    var consecutiveNonTextRows = 0
+    while (y < orthonormal.yForStaffYOfNeg6 && consecutiveNonTextRows < 5) {
+      var sumAllV = 0
+      var sumNonTextV = 0
+      (0 until text.w).foreach { x =>
+        val (allV, nonTextV, _) = text(x, y)
+        sumAllV += (allV - 64) max 0
+        sumNonTextV += (nonTextV - 64) max 0
+      }
+      if (sumNonTextV > 50 && sumNonTextV * 100 / sumAllV > 20)
+        consecutiveNonTextRows += 1
+      else
+        consecutiveNonTextRows = 0
+      y += 1
+    }
+    val minY = (y - consecutiveNonTextRows) max 0
+
+    y = text.h - 1
+    consecutiveNonTextRows = 0
+    while (y > orthonormal.yForStaffYOf6 && consecutiveNonTextRows < 5) {
+      var sumAllV = 0
+      var sumNonTextV = 0
+      (0 until text.w).foreach { x =>
+        val (allV, nonTextV, _) = text(x, y)
+        sumAllV += (allV - 64) max 0
+        sumNonTextV += (nonTextV - 64) max 0
+      }
+      if (sumNonTextV > 50 && sumNonTextV * 100 / sumAllV > 20)
+        consecutiveNonTextRows += 1
+      else
+        consecutiveNonTextRows = 0
+      y -= 1
+    }
+    val maxY = (y + consecutiveNonTextRows) min (text.h - 1)
+    
+    //(0 until text.w).foreach { x =>
+    //  text(x, minY) = (text(x, minY)._1, text(x, minY)._2, 255)
+    //  text(x, maxY) = (text(x, maxY)._1, text(x, maxY)._2, 255)
+    //}
+    //text.saveTo(new File("demos/staffy4.%s.png".format(caseName)))
+    (minY, maxY)
+  }
 
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
@@ -2259,8 +2491,9 @@ val y = (y0 + y1) / 2
     val (atLeft, atRight) =
       doVLineDetection(justNotes, justNotes2, image, caseName)
 
-    val orthonormal = orthonormalize(justNotes2, (atLeft, atRight),
+    val orthonormal = orthonormalize(justNotesNoBeams, (atLeft, atRight),
       metrics, yCorrection, caseName)
+    doWidthDetection(orthonormal, caseName)
 
     var casePerformance = Performance(List(), List(), List())
 /*
