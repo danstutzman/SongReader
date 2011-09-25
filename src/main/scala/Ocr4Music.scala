@@ -106,6 +106,12 @@ case class Orthonormal (
   val yForStaffYOfNeg8:Int
 ) {}
 
+case class VLine (
+  val xIntercept:Int,
+  val y0:Int,
+  val y1:Int
+) {}
+
 object Ocr4Music {
   def separateNotes(input:GrayImage, caseName:String) = {
     val ceilings = new Array[Int](input.w)
@@ -1734,7 +1740,7 @@ val y = (y0 + y1) / 2
   // from (xIntercept=far left, slope=y1) to (xIntercept=far right, slope=y2).
   // (A line on the Hough transform corresponds to a series of nearly parallel
   // lines on the image).
-  def findVLineInverseSlopeRange(
+  def findVLineInverseSlopeRangeGivenHough(
       vhough:GrayImage, image:GrayImage, threshold:Int, caseName:String) = {
 
     // Brute force linear regression: use a threshold on the Hough output
@@ -2012,11 +2018,11 @@ val y = (y0 + y1) / 2
     hough
   }
 
-  def doVLineDetection(justNotes:GrayImage, justNotes2:GrayImage,
-      image:GrayImage, caseName:String) = {
+  def findVLineInverseSlopeRange(
+      justNotes2:GrayImage, image:GrayImage, caseName:String) = {
+    val justNotes2Distance = distance(justNotes2, 200)
     val justNotes2Blurred = edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
-    val justNotes2Distance = distance(justNotes2, 200)
     val demo = ColorImage.giveRGBPerPixel(image.w, image.h) { (x, y) =>
       if (justNotes2Distance(x, y) >= 3)
         (0, 0, 127)
@@ -2027,22 +2033,29 @@ val y = (y0 + y1) / 2
     }
     val vhough = verticalHough(demo, caseName)
     val (atLeft, atRight) =
-      findVLineInverseSlopeRange(vhough, image, 0, caseName)
-    // now that you know where to expect lines, do a better job of finding them
-    // ...
+      findVLineInverseSlopeRangeGivenHough(vhough, image, 0, caseName)
     demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
     justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(caseName)))
 
+    ((atLeft - 20) / 80.0f, (atRight - 20) / 80.0f)
+  }
+
+  // now that you know where to expect lines, do a better job of finding them
+  def doVLineDetection(justNotes2:GrayImage, image:GrayImage,
+      inverseSlopeRange:(Float,Float), caseName:String) = {
     val vEdges = findVerticalLines(justNotes2).binarize(10)
     vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
 
+    val justNotes2Blurred = edgeDetection(
+      justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
+
+    var vlines:List[VLine] = Nil
     val demo3 = image.toColorImage
-    val atLeftAdjusted = (atLeft - 20) / 80.f
-    val atRightAdjusted = (atRight - 20) / 80.f
+    val (inverseSlopeAtLeft, inverseSlopeAtRight) = inverseSlopeRange
     (0 until image.w).foreach { xIntercept =>
       val progress = xIntercept / image.w.floatValue
-      val inverseSlope =
-        atLeftAdjusted + (atRightAdjusted - atLeftAdjusted) * progress
+      val inverseSlope = inverseSlopeAtLeft +
+        (inverseSlopeAtRight - inverseSlopeAtLeft) * progress
 
       var sum = 0
       (0 until image.h).foreach { y =>
@@ -2084,11 +2097,12 @@ val y = (y0 + y1) / 2
           val rNew = (r + 50) min 255
           demo3(x, y) = (rNew, g, b)
         }
+        vlines = VLine(xIntercept, argmaxY0, argmaxY1) :: vlines
       }
     }
     demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
 
-    (atLeft, atRight)
+    vlines
   }
 
   // by "orthonormal" I mean that the vertical lines in the image are pointing
@@ -2096,10 +2110,9 @@ val y = (y0 + y1) / 2
   // straight left and right, instead of both being somewhat diagonal.
   // It doesn't mean that the x and y vectors are unit length.
   def orthonormalize(input:GrayImage,
-      vLineSlopeRange:(Int,Int), metrics:Metrics, yCorrection:Array[Float],
+      vLineSlopeRange:(Float,Float), metrics:Metrics, yCorrection:Array[Float],
       caseName:String) : Orthonormal = {
-    val b0  = (vLineSlopeRange._1 - 20) / 80.f
-    val b1 = (vLineSlopeRange._2 - 20) / 80.f
+    val (b0, b1) = vLineSlopeRange
 
     def targetYFor(xUncentered:Int, yUncentered:Int) = {
       val xCentered = xUncentered - input.w/2
@@ -2493,10 +2506,12 @@ val y = (y0 + y1) / 2
     demoSegmentGroups(mergedShapes, image, caseName)
 */
 
-    val (atLeft, atRight) =
-      doVLineDetection(justNotes, justNotes2, image, caseName)
+    val inverseSlopeRange =
+      findVLineInverseSlopeRange(justNotes2, image, caseName)
+    val vlines =
+      doVLineDetection(justNotes2, image, inverseSlopeRange, caseName)
 
-    val orthonormal = orthonormalize(justNotesNoBeams, (atLeft, atRight),
+    val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
     doWidthDetection(orthonormal, caseName)
 
