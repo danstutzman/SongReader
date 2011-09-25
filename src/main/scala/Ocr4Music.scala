@@ -100,8 +100,10 @@ case class TemplateSpec (
 
 case class Orthonormal (
   val image:GrayImage,
+  val yForStaffYOf8:Int,
   val yForStaffYOf6:Int,
-  val yForStaffYOfNeg6:Int
+  val yForStaffYOfNeg6:Int,
+  val yForStaffYOfNeg8:Int
 ) {}
 
 object Ocr4Music {
@@ -2169,25 +2171,28 @@ val y = (y0 + y1) / 2
     //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
     // For simplicity set xCentered to 0, so xUncentered = w/2.
     //   y' = c0 + c*y
-    val sourceYForStaffYOf6 =
-      (metrics.c + metrics.cSpacing * 6.0f/2 + input.h/2).intValue
-    val sourceYForStaffYOfNeg6 =
-      (metrics.c + metrics.cSpacing * -6.0f/2 + input.h/2).intValue
-    val yForStaffYOf6 =
-      targetYFor(input.w/2, sourceYForStaffYOf6) - minTargetY
-    val yForStaffYOfNeg6 =
-      targetYFor(input.w/2, sourceYForStaffYOfNeg6) - minTargetY
+    def yForStaffY(staffY:Int) = {
+      val sourceY = Math.round(
+        metrics.c + metrics.cSpacing * staffY/2.0f + input.h/2).intValue
+      targetYFor(input.w/2, sourceY) - minTargetY
+    }
 
-    Orthonormal(squaredUp, yForStaffYOf6, yForStaffYOfNeg6)
+    Orthonormal(squaredUp, 
+      yForStaffY(8), yForStaffY(6), yForStaffY(-6), yForStaffY(-8))
   }
 
-  def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage) = {
+  def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
+      ledgerLines:Orthonormal) = {
     val maxVs = new Array[Int](outer.maxX + 1)
     (outer.minX to outer.maxX).foreach { x =>
       var maxV = 0
       (outer.minY to outer.maxY).foreach { y =>
         val v = input(x, y)
-        if (v > maxV) {
+        val onLedgerLine = Math.abs(y - ledgerLines.yForStaffYOf8) <= 2 ||
+                           Math.abs(y - ledgerLines.yForStaffYOf6) <= 2 ||
+                           Math.abs(y - ledgerLines.yForStaffYOfNeg6) <= 2 ||
+                           Math.abs(y - ledgerLines.yForStaffYOfNeg8) <= 2
+        if (v > maxV && !onLedgerLine) {
           maxV = v
         }
       }
@@ -2319,8 +2324,8 @@ val y = (y0 + y1) / 2
     val wholeImage = BoundingBox(0, input.w - 1, minY, maxY)
 
     //val horizontalSlices = findHorizontalCuts(wholeImage, input)
-    val verticalSlices = findEasyVerticalCuts(wholeImage, input)
-    //val boxes = verticalSlices.map { findEasyHorizontalCuts(_, input)
+    val verticalSlices = findEasyVerticalCuts(wholeImage, input, orthonormal)
+    //val boxes = verticalSlices.map { cutThroughLedgerLines(_, input)
     //  }.reduceLeft { _ ++ _ }
 
     val demo = input.toColorImage
