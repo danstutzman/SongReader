@@ -103,7 +103,8 @@ case class Orthonormal (
   val yForStaffYOf8:Int,
   val yForStaffYOf6:Int,
   val yForStaffYOfNeg6:Int,
-  val yForStaffYOfNeg8:Int
+  val yForStaffYOfNeg8:Int,
+  val xForXIntercept:Array[Int]
 ) {}
 
 case class VLine (
@@ -2190,8 +2191,13 @@ val y = (y0 + y1) / 2
       targetYFor(input.w/2, sourceY) - minTargetY
     }
 
+    val xForXIntercept = (0 until input.w).map {
+      targetXFor(_, 0) - minTargetX
+    }.toArray
+
     Orthonormal(squaredUp, 
-      yForStaffY(8), yForStaffY(6), yForStaffY(-6), yForStaffY(-8))
+      yForStaffY(8), yForStaffY(6), yForStaffY(-6), yForStaffY(-8),
+      xForXIntercept)
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
@@ -2331,15 +2337,64 @@ val y = (y0 + y1) / 2
     boxes
   }
 
-  def doWidthDetection(orthonormal:Orthonormal, caseName:String) {
+  def cutOnVLines(
+      boxes:List[BoundingBox], vlineXs:List[Int]) : List[BoundingBox] = {
+    vlineXs match {
+      case Nil =>
+        boxes
+      case x :: otherVLineXs =>
+        val newBoxes = boxes.map { box =>
+          if (x > box.minX && x < box.maxX) {
+            List(BoundingBox(box.minX, x, box.minY, box.maxY),
+                 BoundingBox(x, box.maxX, box.minY, box.maxY))
+          } else {
+            List(box)
+          }
+        }.foldLeft(List[BoundingBox]()) { _ ++ _ }
+        cutOnVLines(newBoxes, otherVLineXs)
+    }
+  }
+
+  def mergeAdjacent(points:List[Int]) = {
+    var newPoints:List[Int] = Nil
+    var inRun = false
+    var runStart = 0
+    var lastPoint = -999
+    points.sorted.foreach { x =>
+      if (inRun) {
+        if (x - lastPoint >= 0 && x - lastPoint <= 1) {
+          // do nothing
+        } else {
+          newPoints = (runStart + lastPoint) / 2 :: newPoints
+          inRun = false
+        }
+      } else {
+        if (x - lastPoint >= 0 && x - lastPoint <= 1) {
+          inRun = true
+          runStart = lastPoint
+        } else {
+          newPoints = x :: newPoints
+        }
+      }
+      lastPoint = x
+    }
+    if (inRun) {
+      newPoints = (runStart + lastPoint) / 2 :: newPoints
+    }
+    newPoints
+  }
+
+  def doWidthDetection(
+      orthonormal:Orthonormal, vlines:List[VLine], caseName:String) {
     val (minY, maxY) = findYBounds(orthonormal, caseName)
     val input = orthonormal.image
     val wholeImage = BoundingBox(0, input.w - 1, minY, maxY)
 
     //val horizontalSlices = findHorizontalCuts(wholeImage, input)
     val verticalSlices = findEasyVerticalCuts(wholeImage, input, orthonormal)
-    //val boxes = verticalSlices.map { cutThroughLedgerLines(_, input)
-    //  }.reduceLeft { _ ++ _ }
+    val vlineXs = vlines.map { vline =>
+      orthonormal.xForXIntercept(vline.xIntercept) }
+    //val boxes = cutOnVLines(verticalSlices, mergeAdjacent(vlineXs))
 
     val demo = input.toColorImage
     val color = (255, 0, 0)
@@ -2513,7 +2568,7 @@ val y = (y0 + y1) / 2
 
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
-    doWidthDetection(orthonormal, caseName)
+    doWidthDetection(orthonormal, vlines, caseName)
 
     var casePerformance = Performance(List(), List(), List())
 /*
