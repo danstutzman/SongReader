@@ -1,16 +1,58 @@
 import scala.collection.immutable.TreeMap
 
-trait Chance {}
+sealed abstract class Warning {}
 
-case class Context(
-  val hadClef:Boolean,
-  val had44TimeSig:Boolean,
-  val beatsSoFar:Float
-) {}
+case class IncompleteMeasure(
+  val context:Context,
+  val expectedNumBeats:Float,
+  val actualNumBeats:Float
+) extends Warning {}
+
+case class MultipleClefs (val context:Context) extends Warning {}
+
+case class Context (
+  val hadMeasure:Boolean, // referring to the vertical line before the clef
+  val position:Int,
+  val numBeatsPerMeasure:Float,
+//  val nextStartingSymbolExpected
+//  val hadClef:Boolean,
+//  val had44TimeSig:Boolean,
+  val numBeatsInMeasure:Float,
+  //val hadClosingLine:Boolean
+  val warnings:List[Warning]
+) {
+  def addClef = {
+    Context(hadMeasure, position + 1, numBeatsPerMeasure, numBeatsInMeasure,
+      warnings)
+  }
+  def addTimeSig(newNumBeatsPerMeasure:Float) = {
+    Context(hadMeasure, position + 1, newNumBeatsPerMeasure, numBeatsInMeasure,
+      warnings)
+  }
+  def addBeats(numNewBeats:Float) = {
+    val newWarnings = warnings
+    Context(hadMeasure, position + 1, numBeatsPerMeasure,
+      numBeatsInMeasure + numNewBeats, newWarnings)
+  }
+  def addMeasure = {
+    if (hadMeasure) {
+      val newWarnings =
+        if (numBeatsInMeasure < numBeatsPerMeasure)
+          IncompleteMeasure(this, numBeatsPerMeasure, numBeatsInMeasure) ::
+            warnings
+        else
+          warnings
+      Context(hadMeasure, position + 1, numBeatsPerMeasure, 0f, newWarnings)
+    } else {
+      Context(true, position + 1, numBeatsPerMeasure, 0f, warnings)
+    }
+  }
+}
 
 object Context {
-  val startingContext = Context(false, false, 0.0f)
+  val startingContext = Context(false, 0, 0f, 0f, List[Warning]())
 }
+
 
 object WidthSpeculator {
   val easyCaseNames = Set("3a")
@@ -28,11 +70,19 @@ object WidthSpeculator {
     caseNameToSymbols
   }
 
-  def breakDownChances(symbols:List[String], context:Context) : List[Chance] = {
+  def findWarnings(symbols:List[String], c:Context) : Context = {
     symbols match {
-      case Nil => Nil
+      case Nil => c
       case symbol :: otherSymbols =>
-        breakDownChances(otherSymbols, context)
+        val newContext = symbol match {
+          case "|"  => c.addMeasure
+          case "G"  => c.addClef
+          case "44" => c.addTimeSig(4.0f)
+          case "2|" => c.addBeats(2f)
+          case "4|" => c.addBeats(1f)
+          case "8|" => c.addBeats(0.5f)
+        }
+        findWarnings(otherSymbols, newContext)
     }
   }
 
@@ -41,7 +91,7 @@ object WidthSpeculator {
     easyCaseNames.foreach { caseName =>
       val symbols = caseNameToSymbols(caseName).toList
       println(symbols.toList)
-      println(breakDownChances(symbols.toList, Context.startingContext))
+      println(findWarnings(symbols.toList, Context.startingContext))
     }
     System.exit(0)
   }
