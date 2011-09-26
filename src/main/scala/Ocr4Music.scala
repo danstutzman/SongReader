@@ -2385,7 +2385,7 @@ val y = (y0 + y1) / 2
   }
 
   def doWidthDetection(
-      orthonormal:Orthonormal, vlines:List[VLine], caseName:String) {
+      orthonormal:Orthonormal, vlines:List[VLine], caseName:String) = {
     val (minY, maxY) = findYBounds(orthonormal, caseName)
     val input = orthonormal.image
     val wholeImage = BoundingBox(0, input.w - 1, minY, maxY)
@@ -2416,6 +2416,7 @@ val y = (y0 + y1) / 2
       }
     }
     demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
+    verticalSlices
 
 /*
 
@@ -2525,6 +2526,16 @@ val y = (y0 + y1) / 2
     (minY, maxY)
   }
 
+  def saveWidths(boxes:List[BoundingBox], file:File) = {
+    printToFile(file) { writer =>
+      writer.println("MinX,MaxX,MinY,MaxY")
+      boxes.foreach { box =>
+        writer.println("%s,%s,%s,%s".format(
+          box.minX, box.maxX, box.minY, box.maxY))
+      }
+    }
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2568,7 +2579,8 @@ val y = (y0 + y1) / 2
 
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
-    doWidthDetection(orthonormal, vlines, caseName)
+    val boxes = doWidthDetection(orthonormal, vlines, caseName)
+    saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
     var casePerformance = Performance(List(), List(), List())
 /*
