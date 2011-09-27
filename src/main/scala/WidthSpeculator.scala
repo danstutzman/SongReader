@@ -86,13 +86,42 @@ object WidthSpeculator {
     }
   }
 
+  def readWidthPairs() = {
+    val caseName = "3b"
+    val path = "output/widths/%s.txt".format(caseName)
+    val contents = scala.io.Source.fromFile(path).mkString
+    val allLines = contents.split("\n")
+    val (header, lines) = (allLines.head, allLines.tail)
+    var lastX = 0
+    lines.reverse.map { line =>
+      val values = line.split(",")
+      val Array(minX, maxX, minY, maxY) = values
+      val pairs = (minX.toInt - lastX, maxX.toInt - minX.toInt)
+      lastX = maxX.toInt
+      pairs
+    }
+  }
+
   def main(args:Array[String]) {
+    val widthPairs = readWidthPairs
+    val predictions = widthPairs.map { pair =>
+      val (margin, width) = pair
+      val prediction =
+        if (width >= 18) "F/G"
+        else if (width >= 4) "*"
+        else "|"
+      (prediction, width)
+    }
+    println(predictions.toList)
+
+/*
     val caseNameToSymbols = readAnnotations()
     easyCaseNames.foreach { caseName =>
       val symbols = caseNameToSymbols(caseName).toList
       println(symbols.toList)
       println(findWarnings(symbols.toList, Context.startingContext))
     }
+*/
     System.exit(0)
   }
 }
