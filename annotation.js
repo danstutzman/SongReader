@@ -9,6 +9,24 @@ $(document).ready(function() {
 
 function loadCase(caseName) {
   document.getElementById('photo').src = '/input/' + caseName + '.jpeg';
+
+  $.ajax({
+    type:'GET',
+    url:'/input/' + caseName + '.json',
+    dataType: 'text',
+    success: function(data) {
+      var pointsJSON = JSON.parse(data);
+      for (var j = 0; j < pointsJSON.length; j++) {
+        var point = pointsJSON[j];
+        createPoint(point.x, point.y, point.type, point.staffY);
+      }
+    },
+    error: function(jqXHR, textStatus, errorThrown) {
+      console.warn(jqXHR);
+      console.warn(textStatus);
+      console.warn(errorThrown);
+    }
+  });
 }
 
 var global = {
