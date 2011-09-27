@@ -76,7 +76,7 @@ function createPoint(x, y, pointType, staffY) {
 function handleClick(x, y) {
   if (global.newPointMode) {
     var pointType = $('input:radio[name=point_type]:checked').val();
-    var staffY = $('input:radio[name=staff_y]:checked').val();
+    var staffY = parseInt($('input:radio[name=staff_y]:checked').val());
     createPoint(x, y, pointType, staffY);
   }
 }
