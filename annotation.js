@@ -19,8 +19,6 @@ var global = {
 var TABLE_Y_TO_STAFF_Y = -8;
 
 function updateButtonGlows() {
-  document.getElementById('newBoxButton').style.border =
-    (global.newBoxMode) ? '3px #0f0 solid' : '';
   document.getElementById('newPointButton').style.border =
     (global.newPointMode) ? '3px #0f0 solid' : '';
 }
@@ -59,7 +57,7 @@ function createPoint(x, y, pointType) {
 
 function handleClick(x, y) {
   if (global.newPointMode) {
-    var pointType = document.getElementById('point_type').value;
+    var pointType = $('input:radio[name=point_type]:checked').val();
     createPoint(x, y, pointType);
   }
 }

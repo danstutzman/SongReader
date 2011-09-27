@@ -14,25 +14,41 @@
     </style>
   </head>
   <body>
+    <form id='the_form'>
     <div style='position:relative' id='surrounding_div'>
       <div style='float:right'>
-        <button id='newBoxButton' style='width:100px;height:50px'
-          onClick='return toggleNewBoxMode()'>New Box</button>
         <button id='newPointButton' style='width:100px;height:50px'
-          onClick='return toggleNewPointMode()'>New Point</button>
+          onClick='toggleNewPointMode();return false;'>New Point</button>
         <br/>
-        <select id='point_type'>
-          <option value='L'>Line note</option>
-          <option value='S'>Space note</option>
-          <option value='Sa'>Space note (above)</option>
-          <option value='Sb'>Space note (below)</option>
-          <option value='#'>Sharp</option>
-          <option value='N'>Natural</option>
-          <option value='b'>Flat</option>
-          <option value='\'>Flag</option>
-          <option value='2'>Half note</option>
-        </select>
         <br/>
+        <input type='radio' name='point_type' value='|'/> Measure line<br/>
+        <input type='radio' name='point_type' value='G'/> Treble clef<br/>
+        <input type='radio' name='point_type' value='44'/>
+          4/4 time signature<br/>
+        <input type='radio' name='point_type' value='4'/> Quarter note<br/>
+        <input type='radio' name='point_type' value='2'/> Half note<br/>
+        <input type='radio' name='point_type' value='1'/> Whole note<br/>
+        <input type='radio' name='point_type' value='#'/> Sharp<br/>
+        <input type='radio' name='point_type' value='N'/> Natural<br/>
+        <input type='radio' name='point_type' value='b'/> Flat<br/>
+        <br/>
+        <input type='radio' name='staff_y' value='-8'/> C/E - <br/>
+        <input type='radio' name='staff_y' value='-7'/> B/D<br/>
+        <input type='radio' name='staff_y' value='-6'/> A/C -<br/>
+        <input type='radio' name='staff_y' value='-5'/> G/B<br/>
+        <input type='radio' name='staff_y' value='-4'/> F/A =<br/>
+        <input type='radio' name='staff_y' value='-3'/> E/G<br/>
+        <input type='radio' name='staff_y' value='-2'/> D/F =<br/>
+        <input type='radio' name='staff_y' value='-1'/> C/E<br/>
+        <input type='radio' name='staff_y' value='0'/> B/D =<br/>
+        <input type='radio' name='staff_y' value='1'/> A/C<br/>
+        <input type='radio' name='staff_y' value='2'/> G/B =<br/>
+        <input type='radio' name='staff_y' value='3'/> F/A<br/>
+        <input type='radio' name='staff_y' value='4'/> E/G =<br/>
+        <input type='radio' name='staff_y' value='5'/> D/F<br/>
+        <input type='radio' name='staff_y' value='6'/> C/E -<br/>
+        <input type='radio' name='staff_y' value='7'/> B/D<br/>
+        <input type='radio' name='staff_y' value='8'/> A/C -<br/>
         <br/>
         JSON:
         <textarea id='box_json' cols='20' rows='10'></textarea>
@@ -48,11 +64,11 @@
         <button id='extendButton' onClick='return extendStaff()'>Extend</button>
       </div>
       <img id='photo' src='' onclick='void(0)'/>
-      <!--<div id='box1' style='border:1px black solid;position:absolute;left:50px;top:50px;width:100px;height:100px' onclick='void(0)'></div>-->
       <div id='corner' style='border-top:1px black solid;border-left:1px black solid;display:none;position:absolute;width:20px;height:20px'/>
     </div>
     <script>
       document.getElementById('photo').onmousedown = handleOnMouseDown;
     </script>
+    </form>
   </body>
 </html>
