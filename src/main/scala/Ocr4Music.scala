@@ -39,12 +39,12 @@ case class Beam (
 case class LabeledPoint (
   val label:String,
   val x:Int,
-  val y:Int
+  val y:Int,
+  val staffY:Int
 ) {}
 
 case class Annotation (
-  val points:List[LabeledPoint],
-  val notes:List[List[Int]]
+  val points:List[LabeledPoint]
 ) {}
 
 case class Performance (
@@ -102,7 +102,8 @@ case class Orthonormal (
   val image:GrayImage,
   val yForStaffY:Map[Int,Int],
   val xForXIntercept:Array[Int],
-  val cSpacing:Float // equal to Metrics.cSpacing (units haven't changed)
+  val cSpacing:Float, // equal to Metrics.cSpacing (units haven't changed)
+  val transformXY:(Int,Int)=>(Int,Int)
 ) {}
 
 case class VLine (
@@ -478,18 +479,16 @@ object Ocr4Music {
   }
 
   def loadAnnotationJson(annotationString : String) : Annotation = {
-    val annotationJson:Map[String,Any] = 
-      Json.parse(annotationString).asInstanceOf[Map[String,Any]]
-    val points =
-      annotationJson("points").asInstanceOf[List[Map[String,Any]]].map {
+    val annotationJson = Json.parse(annotationString)
+    val points = annotationJson.asInstanceOf[List[Map[String,Any]]].map {
         pointJson => LabeledPoint(
           pointJson("type").asInstanceOf[String],
           pointJson("x").asInstanceOf[Int],
-          pointJson("y").asInstanceOf[Int]
+          pointJson("y").asInstanceOf[Int],
+          pointJson("staffY").asInstanceOf[Int]
         )
       }
-    val annotatedNotes = annotationJson("notes").asInstanceOf[List[List[Int]]]
-    Annotation(points, annotatedNotes)
+    Annotation(points)
   }
 
   // Levenshtein minimum-edit-distance to determine best alignment
@@ -2242,8 +2241,12 @@ val y = (y0 + y1) / 2
     val yForStaffYMap = (-8 to 8).foldLeft(Map[Int,Int]()) { (map, staffY) =>
       map.updated(staffY, yForStaffY(staffY))
     }
+    val transformXY = { (x:Int, y:Int) =>
+      (targetXFor(x, y) - minTargetX, targetYFor(x, y) - minTargetY)
+    }
 
-    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept, metrics.cSpacing)
+    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept, metrics.cSpacing,
+      transformXY)
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
@@ -2610,6 +2613,30 @@ val y = (y0 + y1) / 2
     ()
   }
 
+  def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
+      transformXY:(Int,Int)=>(Int,Int)) = {
+    var boxToAnnotatedStaffYs = Map[BoundingBox,Set[Int]]()
+    var missedPoints = annotation.points
+    boxes.foreach { box =>
+      val points = annotation.points.filter { point =>
+        val (x, y) = transformXY(point.x, point.y)
+        val matches = x >= (box.minX - 5) && x <= (box.maxX + 5)
+        if (matches && !missedPoints.contains(point))
+          throw new RuntimeException(
+            "Too many bounding boxes for annotation %s".format(point))
+        matches
+      }
+      missedPoints = missedPoints.filter { !points.contains(_) }
+      val staffYs = points.map { _.staffY }.toSet
+      boxToAnnotatedStaffYs = boxToAnnotatedStaffYs.updated(box, staffYs)
+    }
+    if (missedPoints.size > 0) {
+      throw new RuntimeException(
+        "Couldn't find bounding box for annotations: %s".format(missedPoints))
+    }
+    boxToAnnotatedStaffYs
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2657,24 +2684,20 @@ val y = (y0 + y1) / 2
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
     var predicted:List[String] = Nil
+    val boxToAnnotatedStaffYs =
+      matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
     val demoGray = distance(orthonormal.image, 128).scaleValueToMax255
     val demo = ColorImage.giveRGBPerPixel(
         orthonormal.image.w, orthonormal.image.h) { (x, y) =>
       (demoGray(x, y), 0, 0)
     }
-    var annotationIndex = -1 // skip the 4/4 :-(
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
+      val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       val prediction =
         if (width >= 18)
           List[String]() // clef
         else if (width >= 5) {
-          val annotatedStaffYs =
-            if (annotationIndex >= 0 && annotationIndex < annotation.notes.size)
-              annotation.notes(annotationIndex).toSet
-            else
-              Set[Int]()
-          annotationIndex += 1
           findNotesInColumn(box, orthonormal, demo, annotatedStaffYs, caseName)
           List[String]()
         }
