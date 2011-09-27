@@ -20,6 +20,25 @@ class ColorImage(val w:Int, val h:Int, val data:Array[(Int,Int,Int)]) {
     val newData = data.map { rgb => (rgb._1 + rgb._2 + rgb._3) / 3 }
     new GrayImage(w, h, newData)
   }
+  def scaleValueToMax255 = {
+    // init with 1 not 0 to avoid divide by zero if all values are zero
+    var maxR = 1
+    var maxG = 1
+    var maxB = 1
+
+    (0 until h).foreach { y =>
+      (0 until w).foreach { x =>
+        val (r, g, b) = this(x, y)
+        if (r > maxR) maxR = r
+        if (g > maxG) maxG = g
+        if (b > maxB) maxB = b
+      }
+    }
+    ColorImage.giveRGBPerPixel(w, h) { (x, y) =>
+      val (r, g, b) = this(x, y)
+      (r * 255 / maxR, g * 255 / maxG, b * 255 / maxB)
+    }
+  }
   def saveTo(file:File) {
     def convertRGBTupleToARGBInt(rgb:(Int,Int,Int)) : Int = {
       val (r, g, b) = rgb

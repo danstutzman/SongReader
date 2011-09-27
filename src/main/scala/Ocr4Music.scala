@@ -101,7 +101,8 @@ case class TemplateSpec (
 case class Orthonormal (
   val image:GrayImage,
   val yForStaffY:Map[Int,Int],
-  val xForXIntercept:Array[Int]
+  val xForXIntercept:Array[Int],
+  val cSpacing:Float // equal to Metrics.cSpacing (units haven't changed)
 ) {}
 
 case class VLine (
@@ -1262,6 +1263,32 @@ object Ocr4Music {
     output
   }
 
+  def tryTemplateAt(input:GrayImage, template:GrayImage,
+      demo:ColorImage, drawOnDemo:Boolean,
+      centerX:Int, centerY:Int)(scorer:(Int,Int)=>Boolean) : Float = {
+    var score = 0
+    (0 until template.w).foreach { templateX =>
+      (0 until template.h).foreach { templateY =>
+        val inputX = centerX + templateX - template.w/2
+        val inputY = centerY + templateY - template.h/2
+        val inputV = input(inputX, inputY)
+        val templateV = template(templateX, templateY)
+        val scoreDelta = (if (scorer(inputV, templateV)) 1 else 0)
+        score += scoreDelta
+
+        if (drawOnDemo) {
+          val (r, _, _) = demo(inputX, inputY)
+          val b =
+            if (scoreDelta == 1) 255
+            else if (templateV > 0) 128
+            else 0
+          demo(inputX, inputY) = (r, 0, b)
+        }
+      }
+    }
+    score / (template.w * template.h).floatValue
+  }
+
   def findDiagonalLines(input:GrayImage, polarity:Boolean) = {
     val output = new GrayImage(input.w, input.h)
     (0 until input.w).foreach { x =>
@@ -1513,8 +1540,9 @@ object Ocr4Music {
   }
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) = {
-    val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
+      demo:ColorImage, annotatedStaffYs:Set[Int],
+      possiblePoints:List[(Int,Int,Int)], caseName:String) : List[Float] = {
+    /*val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
     val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
     val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4)
     val bottomEdge = Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4)
@@ -1534,28 +1562,48 @@ object Ocr4Music {
       guessFromEdge = slideTemplate(inputEdge, templateEdge) {
         (inputV, templateV) => inputV == 255 && templateV == 255
       }
-    }
+    }*/
 
-val threshold = 128
+    val threshold = 128
     val templateDistance = distance(rightSizeTemplate, threshold)
     templateDistance.scaleValueToMax255.saveTo(new File(
       "demos/distance.t.%s.png".format(caseName)))
-    val inputDistance = distance(justNotes.inverse, threshold)
+    val inputDistance = distance(justNotes, threshold)
     inputDistance.scaleValueToMax255.saveTo(new File(
       "demos/distance.i.%s.png".format(caseName)))
-    val guess = slideTemplate(inputDistance, templateDistance) {
-      (inputV, templateV) =>
-        inputV > 0 && templateV > 0 && inputV - templateV >= 0
-    }
 
-    val output = new GrayImage(justNotes.w, justNotes.h)
-    (0 until output.w).foreach { x =>
-      (0 until output.h).foreach { y =>
-        output(x, y) = guess(x, y)
-        //output(x, y) = if (guessFromEdge(x, y) > 0) 255 else 0
+    val scores = possiblePoints.map { possiblePoint =>
+      val (centerX, centerY, staffY) = possiblePoint
+      var maxScore = 0.0f
+      var argmaxCenterX = 0
+      var argmaxCenterY = 0
+      (-1 to 1).foreach { xAdjust =>
+        (-1 to 1).foreach { yAdjust =>
+          val score = tryTemplateAt(
+              inputDistance, templateDistance, demo, false,
+              centerX + xAdjust, centerY + yAdjust) { (inputV, templateV) =>
+            inputV > 0 && templateV > 0 && inputV - templateV >= 0
+          }
+          if (score > maxScore) {
+            maxScore = score
+            argmaxCenterX = centerX + xAdjust
+            argmaxCenterY = centerY + yAdjust
+          }
+        }
       }
+
+      // run it again to draw on the demo
+      if (annotatedStaffYs.contains(staffY)) {
+        tryTemplateAt(
+            inputDistance, templateDistance, demo, true,
+            argmaxCenterX, argmaxCenterY) { (inputV, templateV) =>
+          inputV > 0 && templateV > 0 && inputV - templateV >= 0
+        }
+      }
+
+      maxScore
     }
-    output
+    scores
   }
 
   def gleanPoints(detected:GrayImage, metrics:Metrics,
@@ -2195,7 +2243,7 @@ val y = (y0 + y1) / 2
       map.updated(staffY, yForStaffY(staffY))
     }
 
-    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept)
+    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept, metrics.cSpacing)
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
@@ -2536,8 +2584,30 @@ val y = (y0 + y1) / 2
     }
   }
 
-  def findNotesInColumn(box:BoundingBox) = {
-    List[String]()
+  def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
+      demo:ColorImage, annotatedStaffYs:Set[Int], caseName:String) = {
+    val templateName = "black_head"
+    val templatePath = new File("templates/%s.png".format(templateName))
+    val bigTemplate =
+      ColorImage.readFromFile(templatePath).toGrayImage.inverse
+    val templateW = 16
+    val heightInStaffLines = 1.0f
+    val templateH =
+      Math.round(heightInStaffLines * orthonormal.cSpacing).intValue
+    val template = scaleTemplate(bigTemplate, templateW, templateH)
+    val possibleStaffYs = (-8 to 8).toList
+    val midX = (box.minX + box.maxX) / 2
+    val possiblePoints = possibleStaffYs.map { staffY =>
+      (midX, orthonormal.yForStaffY(staffY), staffY)
+    }
+    val results = findBlackHeads(orthonormal.image, template,
+      demo, annotatedStaffYs, possiblePoints, caseName)
+    (0 until results.size).foreach { i =>
+      val (centerX, centerY, _) = possiblePoints(i)
+      val result = results(i)
+      demo(centerX, centerY) = ((result * 255).intValue, 0, 0)
+    }
+    ()
   }
 
   def processCase(caseName:String) : Performance = {
@@ -2587,18 +2657,32 @@ val y = (y0 + y1) / 2
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
     var predicted:List[String] = Nil
+    val demoGray = distance(orthonormal.image, 128).scaleValueToMax255
+    val demo = ColorImage.giveRGBPerPixel(
+        orthonormal.image.w, orthonormal.image.h) { (x, y) =>
+      (demoGray(x, y), 0, 0)
+    }
+    var annotationIndex = -1 // skip the 4/4 :-(
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
       val prediction =
         if (width >= 18)
           List[String]() // clef
-        else if (width >= 5)
-          findNotesInColumn(box)
+        else if (width >= 5) {
+          val annotatedStaffYs =
+            if (annotationIndex >= 0 && annotationIndex < annotation.notes.size)
+              annotation.notes(annotationIndex).toSet
+            else
+              Set[Int]()
+          annotationIndex += 1
+          findNotesInColumn(box, orthonormal, demo, annotatedStaffYs, caseName)
+          List[String]()
+        }
         else
           List[String]() // measure line
       predicted = predicted ++ prediction
     }
-    println(predicted)
+    demo.saveTo(new File("demos/find_notes.%s.png".format(caseName)))
 
     var casePerformance = Performance(List(), List(), List())
 /*
