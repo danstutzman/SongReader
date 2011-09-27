@@ -38,7 +38,7 @@ function updateBoxesJSON() {
   boxJSON.value = JSON.stringify(global.points);
 }
 
-function createPoint(x, y, pointType) {
+function createPoint(x, y, pointType, staffY) {
   var div = document.createElement('div');
   var surroundingDiv = document.getElementById('surrounding_div');
   div.setAttribute('class', 'point');
@@ -51,14 +51,15 @@ function createPoint(x, y, pointType) {
 
   surroundingDiv.appendChild(div);
 
-  global.points.push({type:pointType, x:x, y:y});
+  global.points.push({type:pointType, x:x, y:y, staffY:staffY});
   updateBoxesJSON();
 }
 
 function handleClick(x, y) {
   if (global.newPointMode) {
     var pointType = $('input:radio[name=point_type]:checked').val();
-    createPoint(x, y, pointType);
+    var staffY = $('input:radio[name=staff_y]:checked').val();
+    createPoint(x, y, pointType, staffY);
   }
 }
 
