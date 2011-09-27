@@ -100,10 +100,7 @@ case class TemplateSpec (
 
 case class Orthonormal (
   val image:GrayImage,
-  val yForStaffYOf8:Int,
-  val yForStaffYOf6:Int,
-  val yForStaffYOfNeg6:Int,
-  val yForStaffYOfNeg8:Int,
+  val yForStaffY:Map[Int,Int],
   val xForXIntercept:Array[Int]
 ) {}
 
@@ -2194,23 +2191,24 @@ val y = (y0 + y1) / 2
     val xForXIntercept = (0 until input.w).map {
       targetXFor(_, 0) - minTargetX
     }.toArray
+    val yForStaffYMap = (-8 to 8).foldLeft(Map[Int,Int]()) { (map, staffY) =>
+      map.updated(staffY, yForStaffY(staffY))
+    }
 
-    Orthonormal(squaredUp, 
-      yForStaffY(8), yForStaffY(6), yForStaffY(-6), yForStaffY(-8),
-      xForXIntercept)
+    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept)
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
       ledgerLines:Orthonormal) = {
     val maxVs = new Array[Int](outer.maxX + 1)
+    val ledgerLineYs:List[Int] = List(8, 6, -6, -8).map { staffY =>
+      ledgerLines.yForStaffY(staffY)
+    }
     (outer.minX to outer.maxX).foreach { x =>
       var maxV = 0
       (outer.minY to outer.maxY).foreach { y =>
         val v = input(x, y)
-        val onLedgerLine = Math.abs(y - ledgerLines.yForStaffYOf8) <= 2 ||
-                           Math.abs(y - ledgerLines.yForStaffYOf6) <= 2 ||
-                           Math.abs(y - ledgerLines.yForStaffYOfNeg6) <= 2 ||
-                           Math.abs(y - ledgerLines.yForStaffYOfNeg8) <= 2
+        val onLedgerLine = ledgerLineYs.exists { y2 => Math.abs(y - y2) <= 2 }
         if (v > maxV && !onLedgerLine) {
           maxV = v
         }
@@ -2443,10 +2441,11 @@ val y = (y0 + y1) / 2
   def findYBounds(orthonormal:Orthonormal, caseName:String) = {
     val text = orthonormal.image.toColorImage
     var cutoff = new Array[Int](orthonormal.image.w)
+    val staffY6 = orthonormal.yForStaffY(6)
     (0 until orthonormal.image.w).foreach { x =>
-      val v = orthonormal.image(x, orthonormal.yForStaffYOf6) max
-              orthonormal.image(x, orthonormal.yForStaffYOf6 - 1) max
-              orthonormal.image(x, orthonormal.yForStaffYOf6 + 1)
+      val v = orthonormal.image(x, staffY6) max
+              orthonormal.image(x, staffY6 - 1) max
+              orthonormal.image(x, staffY6 + 1)
       cutoff(x) = (v * 2) min 255
     }
 
@@ -2467,24 +2466,25 @@ val y = (y0 + y1) / 2
       }
     }
 
-    (orthonormal.yForStaffYOf6 until orthonormal.image.h).foreach { y =>
+    (staffY6 until orthonormal.image.h).foreach { y =>
       updateCutoff(y)
     }
 
+    val staffYNeg6 = orthonormal.yForStaffY(-6)
     (0 until orthonormal.image.w).foreach { x =>
-      val v = orthonormal.image(x, orthonormal.yForStaffYOfNeg6) max
-        orthonormal.image(x, orthonormal.yForStaffYOfNeg6 - 1) max
-        orthonormal.image(x, orthonormal.yForStaffYOfNeg6 + 1)
+      val v = orthonormal.image(x, staffYNeg6) max
+        orthonormal.image(x, staffYNeg6 - 1) max
+        orthonormal.image(x, staffYNeg6 + 1)
       cutoff(x) = (v * 2) min 255
     }
     val ceiling = new GrayImage(orthonormal.image.w, orthonormal.image.h)
-    (orthonormal.yForStaffYOfNeg6 to 0 by -1).foreach { y =>
+    (staffYNeg6 to 0 by -1).foreach { y =>
       updateCutoff(y)
     }
 
     var y = 0
     var consecutiveNonTextRows = 0
-    while (y < orthonormal.yForStaffYOfNeg6 && consecutiveNonTextRows < 5) {
+    while (y < staffYNeg6 && consecutiveNonTextRows < 5) {
       var sumAllV = 0
       var sumNonTextV = 0
       (0 until text.w).foreach { x =>
@@ -2502,7 +2502,7 @@ val y = (y0 + y1) / 2
 
     y = text.h - 1
     consecutiveNonTextRows = 0
-    while (y > orthonormal.yForStaffYOf6 && consecutiveNonTextRows < 5) {
+    while (y > staffY6 && consecutiveNonTextRows < 5) {
       var sumAllV = 0
       var sumNonTextV = 0
       (0 until text.w).foreach { x =>
