@@ -2536,6 +2536,10 @@ val y = (y0 + y1) / 2
     }
   }
 
+  def findNotesInColumn(box:BoundingBox) = {
+    List[String]()
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2581,6 +2585,20 @@ val y = (y0 + y1) / 2
       metrics, yCorrection, caseName)
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
+
+    var predicted:List[String] = Nil
+    boxes.sortBy { _.minX }.foreach { box =>
+      val width = box.maxX - box.minX + 1
+      val prediction =
+        if (width >= 18)
+          List[String]() // clef
+        else if (width >= 5)
+          findNotesInColumn(box)
+        else
+          List[String]() // measure line
+      predicted = predicted ++ prediction
+    }
+    println(predicted)
 
     var casePerformance = Performance(List(), List(), List())
 /*
