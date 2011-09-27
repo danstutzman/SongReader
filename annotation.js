@@ -1,4 +1,9 @@
 $(document).ready(function() {
+  var caseName = getUrlVars()['case_name'];
+  if (caseName === undefined)
+    alert("Please specify a case_name GET param");
+  document.getElementById('photo').src = '/input/' + caseName + '.jpeg';
+
   $.ajax({
     type:'GET',
     url:'/boxes3.json',
@@ -306,4 +311,17 @@ function extendStaff() {
     };
     tr.appendChild(td);
   }
+}
+
+// Read a page's GET URL variables and return them as an associative array.
+function getUrlVars() {
+  var vars = [], hash;
+  var hashes = window.location.href.slice(
+    window.location.href.indexOf('?') + 1).split('&');
+  for(var i = 0; i < hashes.length; i++) {
+    hash = hashes[i].split('=');
+    vars.push(hash[0]);
+    vars[hash[0]] = hash[1];
+  }
+  return vars;
 }
