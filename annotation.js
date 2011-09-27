@@ -295,11 +295,11 @@ function extendStaff() {
   for (var i = 0; i < trs.length; i++) {
     var tr = trs[i];
     var td = document.createElement('td');
-    var class;
-    if (i < 4) class = (i % 2 == 0) ? 'ledger' : 'space';
-    else if (i > 12) class = (i % 2 == 0) ? 'ledger' : 'space';
-    else class = (i % 2 == 0) ? 'line' : 'space';
-    td.setAttribute('class', class);
+    var class_;
+    if (i < 4) class_ = (i % 2 == 0) ? 'ledger' : 'space';
+    else if (i > 12) class_ = (i % 2 == 0) ? 'ledger' : 'space';
+    else class_ = (i % 2 == 0) ? 'line' : 'space';
+    td.setAttribute('class', class_);
     td.onclick = function() {
       setTDHasNote(this, !getTDHasNote(this));
       updateCurrentBoxJSONFromStaff();
