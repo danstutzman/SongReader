@@ -44,7 +44,8 @@ case class LabeledPoint (
 ) {}
 
 case class Annotation (
-  val points:List[LabeledPoint]
+  val points:List[LabeledPoint],
+  val notes:List[List[Int]]
 ) {}
 
 case class Performance (
@@ -488,7 +489,25 @@ object Ocr4Music {
           pointJson("staffY").asInstanceOf[Int]
         )
       }
-    Annotation(points)
+
+    var noteGroups:List[List[Int]] = Nil
+    var currentNoteGroup:List[Int] = Nil
+    var lastNoteX = -999
+    points.sortBy { _.x }.foreach { point =>
+      if (Math.abs(point.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
+        noteGroups = currentNoteGroup :: noteGroups
+        currentNoteGroup = Nil
+      }
+
+      currentNoteGroup = point.staffY :: currentNoteGroup
+
+      lastNoteX = point.x
+    }
+    if (currentNoteGroup.size > 0)
+      noteGroups = currentNoteGroup :: noteGroups
+    val notes = noteGroups.reverse
+
+    Annotation(points, notes)
   }
 
   // Levenshtein minimum-edit-distance to determine best alignment
@@ -1592,7 +1611,8 @@ object Ocr4Music {
       }
 
       // run it again to draw on the demo
-      if (annotatedStaffYs.contains(staffY)) {
+      //if (annotatedStaffYs.contains(staffY)) {
+      if (maxScore >= 0.2f) {
         tryTemplateAt(
             inputDistance, templateDistance, demo, true,
             argmaxCenterX, argmaxCenterY) { (inputV, templateV) =>
@@ -2598,19 +2618,22 @@ val y = (y0 + y1) / 2
     val templateH =
       Math.round(heightInStaffLines * orthonormal.cSpacing).intValue
     val template = scaleTemplate(bigTemplate, templateW, templateH)
-    val possibleStaffYs = (-8 to 8).toList
     val midX = (box.minX + box.maxX) / 2
+    val possibleStaffYs = (-8 to 8).toList
     val possiblePoints = possibleStaffYs.map { staffY =>
       (midX, orthonormal.yForStaffY(staffY), staffY)
     }
     val results = findBlackHeads(orthonormal.image, template,
       demo, annotatedStaffYs, possiblePoints, caseName)
+    var foundNotes:List[TemplateMatch] = Nil
     (0 until results.size).foreach { i =>
-      val (centerX, centerY, _) = possiblePoints(i)
+      val (centerX, centerY, staffY) = possiblePoints(i)
       val result = results(i)
-      demo(centerX, centerY) = ((result * 255).intValue, 0, 0)
+      if (result >= 0.2f)
+        foundNotes = TemplateMatch(centerX, centerY, templateW, templateH,
+          staffY, "black_head") :: foundNotes
     }
-    ()
+    foundNotes
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
@@ -2631,8 +2654,8 @@ val y = (y0 + y1) / 2
       boxToAnnotatedStaffYs = boxToAnnotatedStaffYs.updated(box, staffYs)
     }
     if (missedPoints.size > 0) {
-      throw new RuntimeException(
-        "Couldn't find bounding box for annotations: %s".format(missedPoints))
+      //throw new RuntimeException(
+      //  "Couldn't find bounding box for annotations: %s".format(missedPoints))
     }
     boxToAnnotatedStaffYs
   }
@@ -2683,7 +2706,7 @@ val y = (y0 + y1) / 2
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
-    var predicted:List[String] = Nil
+    var predictedNotes:List[List[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
     val demoGray = distance(orthonormal.image, 128).scaleValueToMax255
@@ -2696,16 +2719,16 @@ val y = (y0 + y1) / 2
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       val prediction =
         if (width >= 18)
-          List[String]() // clef
+          List[TemplateMatch]() // clef
         else if (width >= 5) {
           findNotesInColumn(box, orthonormal, demo, annotatedStaffYs, caseName)
-          List[String]()
         }
         else
-          List[String]() // measure line
-      predicted = predicted ++ prediction
+          List[TemplateMatch]() // measure line
+      predictedNotes ++= List[List[TemplateMatch]](prediction)
     }
     demo.saveTo(new File("demos/find_notes.%s.png".format(caseName)))
+    val filteredNotes = predictedNotes
 
     var casePerformance = Performance(List(), List(), List())
 /*
@@ -2769,6 +2792,7 @@ val y = (y0 + y1) / 2
       }
     }
     demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+*/
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
     val realNotes = filteredNotes.map { _.filter { note =>
@@ -2786,7 +2810,6 @@ val y = (y0 + y1) / 2
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
-*/
     casePerformance
   }
 
@@ -2897,6 +2920,7 @@ val y = (y0 + y1) / 2
       var globalPerformance = Performance(List(), List(), List())
       val caseNames = expandCaseNames(args)
       caseNames.foreach { caseName =>
+        println("Case %s:".format(caseName))
         val performance = processCase(caseName)
         globalPerformance = Performance(
           globalPerformance.correctNotes ++ performance.correctNotes,
