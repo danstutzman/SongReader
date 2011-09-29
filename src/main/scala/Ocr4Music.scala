@@ -2699,6 +2699,8 @@ val y = (y0 + y1) / 2
 
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
+    orthonormal.image.saveTo(new File(
+      "demos/orthonormal.%s.png".format(caseName)))
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
