@@ -2780,14 +2780,14 @@ val y = (y0 + y1) / 2
     val groupedPoints = groupTemplateMatches(culledPointGroups)
     val filteredNotes = groupedPoints
 
-    val demo = inputAdjusted.toColorImage
+*/
+    val demo = orthonormal.image.toColorImage
     filteredNotes.foreach { noteGroup =>
       noteGroup.foreach { point =>
         drawTemplateMatch(point, demo, templates(point.templateName))
       }
     }
     demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
-*/
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
     val realNotes = filteredNotes.map { _.filter { note =>
