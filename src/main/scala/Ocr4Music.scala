@@ -2607,6 +2607,15 @@ val y = (y0 + y1) / 2
     }
   }
 
+  def powerSet[T](elements:List[T]) : List[Set[T]] = {
+    elements match {
+      case Nil => List(Set[T]())
+      case first :: rest =>
+        val recursive = powerSet(rest)
+        recursive.map { _ + first } ++ recursive
+    }
+  }
+
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
       demo:ColorImage, annotatedStaffYs:Set[Int], caseName:String) = {
     val templateName = "black_head"
