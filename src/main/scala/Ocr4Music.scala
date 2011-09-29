@@ -498,16 +498,14 @@ object Ocr4Music {
     var noteGroups:List[Set[ExpectedNote]] = Nil
     var currentNoteGroup = Set[ExpectedNote]()
     var lastNoteX = -999
-    val realPoints = points.filter { point =>
-      Set("8", "4", "2", "1").contains(point.label)
-    }
-    realPoints.sortBy { _.x }.foreach { point =>
+    points.sortBy { _.x }.foreach { point =>
       if (Math.abs(point.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
         currentNoteGroup = Set[ExpectedNote]()
       }
 
       val templateName = point.label match {
+        case "G" => Some("treble_clef")
         case "8" => Some("black_head")
         case "4" => Some("black_head")
         case "2" => Some("white_head")
@@ -1306,7 +1304,7 @@ object Ocr4Music {
   }
 
   def tryTemplateAt(input:GrayImage, template:GrayImage,
-      centerX:Int, centerY:Int)(scorer:(Int,Int)=>Boolean) : Float = {
+      centerX:Int, centerY:Int)(scorer:(Int,Int)=>Boolean) : Int = {
     var score = 0
     (0 until template.w).foreach { templateX =>
       (0 until template.h).foreach { templateY =>
@@ -1318,7 +1316,7 @@ object Ocr4Music {
         score += scoreDelta
       }
     }
-    score / (template.w * template.h).floatValue
+    score
   }
 
   def findDiagonalLines(input:GrayImage, polarity:Boolean) = {
@@ -1353,7 +1351,7 @@ object Ocr4Music {
 
     val scores = possiblePoints.map { possiblePoint =>
       val (centerX, centerY, staffY) = possiblePoint
-      var maxScore = 0.0f
+      var maxScore = 0
       var argmaxCenterX = 0
       var argmaxCenterY = 0
       (-1 to 1).foreach { xAdjust =>
@@ -1462,9 +1460,8 @@ object Ocr4Music {
   }
 
   def findTrebleClef(
-      justNotes:GrayImage, template:GrayImage, caseName:String) = {
-    val input = justNotes.inverse
-
+      input:GrayImage, template:GrayImage, possiblePoints:List[(Int,Int,Int)],
+      caseName:String) = {
     val List(templateGradientX, templateGradientY, _) =
       makeGradientImages(template.addMargin(4), 3)
     templateGradientX.saveTo(new File(
@@ -1478,7 +1475,7 @@ object Ocr4Music {
     inputGradientY.saveTo(new File(
       "demos/input_gradient_y.%s.png".format(caseName)))
 
-    val gradientXResults =
+    /*val gradientXResults =
       slideTemplate(inputGradientX, templateGradientX) { (inputV, templateV) =>
         inputV != 127 && templateV != 127 && Math.abs(templateV - inputV) < 2
       }
@@ -1494,8 +1491,38 @@ object Ocr4Music {
 
     val output = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
       gradientXResults(x, y) * gradientYResults(x, y) / 64
+    }*/
+
+    val scores = possiblePoints.map { possiblePoint =>
+      val (centerX, centerY, staffY) = possiblePoint
+      var maxScore = 0
+      var argmaxCenterX = 0
+      var argmaxCenterY = 0
+      (-1 to 1).foreach { xAdjust =>
+        (-1 to 1).foreach { yAdjust =>
+          val xScore = tryTemplateAt(inputGradientX, templateGradientX,
+              centerX + xAdjust, centerY + yAdjust) {
+            (inputV, templateV) =>
+              inputV != 127 && templateV != 127 &&
+                Math.abs(templateV - inputV) < 2
+          }
+          val yScore = tryTemplateAt(inputGradientY, templateGradientY,
+              centerX + xAdjust, centerY + yAdjust) {
+            (inputV, templateV) =>
+              inputV != 127 && templateV != 127 &&
+                Math.abs(templateV - inputV) < 2
+          }
+          val score = xScore * yScore
+          if (score > maxScore) {
+            maxScore = score
+            argmaxCenterX = centerX + xAdjust
+            argmaxCenterY = centerY + yAdjust
+          }
+        }
+      }
+      maxScore
     }
-    output
+    scores
   }
 
   def expandCaseNames(args:Array[String]) = {
@@ -1577,7 +1604,7 @@ object Ocr4Music {
   }
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      possiblePoints:List[(Int,Int,Int)], caseName:String) : List[Float] = {
+      possiblePoints:List[(Int,Int,Int)], caseName:String) : List[Int] = {
     /*val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
     val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
     val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4)
@@ -1610,7 +1637,7 @@ object Ocr4Music {
 
     val scores = possiblePoints.map { possiblePoint =>
       val (centerX, centerY, staffY) = possiblePoint
-      var maxScore = 0.0f
+      var maxScore = 0
       var argmaxCenterX = 0
       var argmaxCenterY = 0
       (-1 to 1).foreach { xAdjust =>
@@ -2626,20 +2653,18 @@ val y = (y0 + y1) / 2
     }
   }
 
-  def prepareTemplate(templateName:String, templateW:Int, cSpacing:Float) :
+  def prepareTemplate(templateName:String, templateW:Int, templateH:Int) :
       GrayImage = {
     val templatePath = new File("templates/%s.png".format(templateName))
     val bigTemplate =
       ColorImage.readFromFile(templatePath).toGrayImage.inverse
-    val heightInStaffLines = 1.0f
-    val templateH = Math.round(heightInStaffLines * cSpacing).intValue
     val template = scaleTemplate(bigTemplate, templateW, templateH)
     template
   }
 
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
-      templates:Map[String,GrayImage], templateName:String, threshold:Float,
-      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Float],
+      templates:Map[String,GrayImage], templateName:String, threshold:Int,
+      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
       caseName:String) : List[TemplateMatch] = {
     val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
@@ -2658,6 +2683,39 @@ val y = (y0 + y1) / 2
           staffY, templateName) :: foundNotes
     }
     foundNotes
+  }
+
+  def findClefInColumn(box:BoundingBox, orthonormal:Orthonormal,
+      templates:Map[String,GrayImage], templateName:String, threshold:Int,
+      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
+      caseName:String) : Option[TemplateMatch] = {
+    val template = templates(templateName)
+    val midX = (box.minX + box.maxX) / 2
+    val gForTrebleClefStaffY = 2
+    val minY = box.minY + template.h/2
+    val maxY = box.maxY - template.h/2
+    val minX = box.minX + template.w/2 - 2
+    val maxX = box.maxX - template.w/2 + 2
+    var possiblePoints:List[(Int,Int,Int)] = Nil
+    (minY to maxY).toList.foreach { y =>
+      possiblePoints ++= (maxX to maxX).toList.map { x =>
+        (x, y, gForTrebleClefStaffY)
+      }
+    }
+    val results = finder(orthonormal.image, template, possiblePoints, caseName)
+    var maxResult = threshold 
+    var argmaxNote:Option[TemplateMatch] = None
+    (0 until results.size).foreach { i =>
+      val (centerX, centerY, staffY) = possiblePoints(i)
+      val result = results(i)
+      val note = TemplateMatch(centerX, centerY, template.w, template.h,
+          staffY, templateName)
+      if (result > maxResult) {
+        maxResult = result
+        argmaxNote = Some(note)
+      }
+    }
+    argmaxNote
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
@@ -2733,8 +2791,12 @@ val y = (y0 + y1) / 2
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
     val templates = Map(
-      "white_head" -> prepareTemplate("white_head", 10, orthonormal.cSpacing),
-      "black_head" -> prepareTemplate("black_head", 16, orthonormal.cSpacing))
+      "white_head" -> prepareTemplate("white_head", 10,
+        Math.round(orthonormal.cSpacing * 1.0f).intValue),
+      "black_head" -> prepareTemplate("black_head", 16,
+        Math.round(orthonormal.cSpacing * 1.0f).intValue),
+      "treble_clef" -> prepareTemplate("treble_clef", 20,
+        Math.round(orthonormal.cSpacing * 7.0f).intValue))
 
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
@@ -2743,14 +2805,16 @@ val y = (y0 + y1) / 2
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       val prediction =
-        if (width >= 18)
-          Set[TemplateMatch]() // clef
-        else if (width >= 5) {
+        if (width >= 18) {
+          val maybeClef = findClefInColumn(box, orthonormal, templates,
+            "treble_clef", 10000, findTrebleClef, caseName)
+          maybeClef.toSet
+        } else if (width >= 5) {
           val foundNotes =
             findNotesInColumn(box, orthonormal, templates,
-              "white_head", 0.02f, findWhiteHeads, caseName) ++
+              "white_head", 100, findWhiteHeads, caseName) ++
             findNotesInColumn(box, orthonormal, templates,
-              "black_head", 0.2f, findBlackHeads, caseName)
+              "black_head", 20, findBlackHeads, caseName)
           if (foundNotes.size > 0)
             chooseBestOverlappingSets(
               box, foundNotes, templates, orthonormal.image)
@@ -2821,9 +2885,7 @@ val y = (y0 + y1) / 2
 */
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
-    val realNotes = filteredNotes.map { _.filter { note =>
-      note.templateName == "black_head" || note.templateName == "white_head" } }
-    val performance = calcPerformance(realNotes, annotation.notes)
+    val performance = calcPerformance(filteredNotes, annotation.notes)
     println("Case %2s: precision: %.3f, recall: %.3f".format(
       caseName, performance.precision, performance.recall))
     //printf("   correct: %s\n", performance.correctNotes.toString.replaceAll(
@@ -2836,7 +2898,7 @@ val y = (y0 + y1) / 2
         "\\)\\), \\(", ")),\n                ("))
 
     val demo = orthonormal.image.toColorImage
-    realNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point =>
+    filteredNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point =>
       val color =
         if (performance.correctNotes.filter{ _._2 == point }.size > 0)
           (0, 128, 0)
