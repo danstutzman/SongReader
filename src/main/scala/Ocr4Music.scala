@@ -1682,37 +1682,45 @@ val y = (y0 + y1) / 2
   }
 
   def chooseBestOverlappingSets(
+      bounds:BoundingBox,
       overlappingPointGroups:List[Set[TemplateMatch]],
-      templates:Map[String,GrayImage], justNotesInverse:GrayImage) = {
+      templates:Map[String,GrayImage], orthonormalImage:GrayImage) = {
     overlappingPointGroups.map { group =>
       val alternatives = listNonOverlappingAlternatives(group.toList)
 
-      var x0 = alternatives.map { _.map { note => note.x - note.w/2 }.min }.min
-      var x1 = alternatives.map { _.map { note => note.x + note.w/2 }.max }.max
-      var y0 = alternatives.map { _.map { note => note.y - note.h/2 }.min }.min
-      var y1 = alternatives.map { _.map { note => note.y + note.h/2 }.max }.max
-
       var bestAlternative = alternatives.toList(0)
+      var bestI = 0
       var maxScore = -999999
       var i = 0
       alternatives.foreach { pointGroup =>
-        var proposal = new GrayImage(x1 - x0 + 1, y1 - y0 + 1)
+        var proposal = new ColorImage(bounds.maxX - bounds.minX + 1,
+                                     bounds.maxY - bounds.minY + 1)
+        (0 until proposal.w).foreach { x =>
+          (0 until proposal.h).foreach { y =>
+            var b = orthonormalImage(x + bounds.minX, y + bounds.minY)
+            proposal(x, y) = (0, 0, b)
+
+          }
+        }
         pointGroup.foreach { point =>
           val template = templates(point.templateName)
           (0 until template.h).foreach { templateY =>
             (0 until template.w).foreach { templateX =>
-              val x = (point.x - point.w/2) + templateX - x0
-              val y = (point.y - point.h/2) + templateY - y0
-              proposal(x, y) = proposal(x, y) max template(templateX, templateY)
+              val x = (point.x - point.w/2) + templateX - bounds.minX
+              val y = (point.y - point.h/2) + templateY - bounds.minY
+              val (r, g, b) = proposal(x, y)
+              proposal(x, y) = (r max template(templateX, templateY), g, b)
             }
           }
         }
-        //proposal.saveTo(new File("demos/proposal-%d.png".format(i)))
+        //proposal.saveTo(new File(
+        //  "demos/proposal.%03d.%02d.png".format(bounds.minX, i)))
 
         var diff = 0
         (0 until proposal.w).foreach { x =>
           (0 until proposal.h).foreach { y =>
-            diff += Math.abs(proposal(x, y) - justNotesInverse(x + x0, y + y0))
+            diff += Math.abs(proposal(x, y)._1 -
+              orthonormalImage(x + bounds.minX, y + bounds.minY))
           }
         }
         val score = -diff
@@ -1720,10 +1728,12 @@ val y = (y0 + y1) / 2
         if (score > maxScore) {
           maxScore = score
           bestAlternative = pointGroup
+          bestI = i
         }
 
         i += 1
       }
+      //println("best for %03d is %d".format(bounds.minX, bestI))
       bestAlternative
     }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
   }
