@@ -43,15 +43,20 @@ case class LabeledPoint (
   val staffY:Int
 ) {}
 
+case class ExpectedNote (
+  val label:String,
+  val staffY:Int
+) {}
+
 case class Annotation (
   val points:List[LabeledPoint],
-  val notes:List[Set[Int]]
+  val notes:List[Set[ExpectedNote]]
 ) {}
 
 case class Performance (
-  val correctNotes:List[(Int,TemplateMatch)],
-  val spuriousNotes:List[(Int,TemplateMatch)],
-  val missingNotes:List[(Int,Int)]
+  val correctNotes:Set[(Int,TemplateMatch)],
+  val spuriousNotes:Set[(Int,TemplateMatch)],
+  val missingNotes:Set[(Int,ExpectedNote)]
 ) {
   def numCorrect() = { correctNotes.size }
   def numSpurious() = { spuriousNotes.size }
@@ -490,8 +495,8 @@ object Ocr4Music {
         )
       }
 
-    var noteGroups:List[Set[Int]] = Nil
-    var currentNoteGroup = Set[Int]()
+    var noteGroups:List[Set[ExpectedNote]] = Nil
+    var currentNoteGroup = Set[ExpectedNote]()
     var lastNoteX = -999
     val realPoints = points.filter { point =>
       Set("8", "4", "2", "1").contains(point.label)
@@ -499,10 +504,18 @@ object Ocr4Music {
     realPoints.sortBy { _.x }.foreach { point =>
       if (Math.abs(point.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
-        currentNoteGroup = Set[Int]()
+        currentNoteGroup = Set[ExpectedNote]()
       }
 
-      currentNoteGroup += point.staffY
+      val templateName = point.label match {
+        case "8" => Some("black_head")
+        case "4" => Some("black_head")
+        case "2" => Some("white_head")
+        case _   => None
+      }
+      templateName.foreach { name =>
+        currentNoteGroup += ExpectedNote(name, point.staffY)
+      }
 
       lastNoteX = point.x
     }
@@ -518,11 +531,14 @@ object Ocr4Music {
   // This ensures that a spurious or missed note only causes one
   // error instead of throwing off all the notes to the right.
   def calcPerformance(
-      estimatedNotes:List[Set[TemplateMatch]], annotated:List[Set[Int]]) = {
+      estimatedNotes:List[Set[TemplateMatch]],
+      annotated:List[Set[ExpectedNote]]) = {
     //printf("init estimated: %s\n", estimatedNotes.map { _.map { _.staffY } })
     //printf("init annotated: %s\n", annotated)
 
-    val estimated = estimatedNotes.map { _.map { _.staffY } }
+    val estimated = estimatedNotes.map { _.map { _match =>
+      ExpectedNote(_match.templateName, _match.staffY)
+    } }
     var w = estimated.size
     var h = annotated.size
     var matrix = new Array[Array[Int]](h + 1)
@@ -593,7 +609,7 @@ object Ocr4Music {
     case class PairedNoteGroup (
       val staffX:Int,
       val estimatedNotes:Set[TemplateMatch],
-      val annotated:Set[Int]
+      val annotated:Set[ExpectedNote]
     ) {}
     var pairedNoteGroups:List[PairedNoteGroup] = Nil
     var x = w
@@ -627,23 +643,25 @@ object Ocr4Music {
 
     var correctNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
     var spuriousNotes:List[(Int,TemplateMatch)] = Nil // staffX, note
-    var missingNotes:List[(Int,Int)] = Nil // staffX, staffY
+    var missingNotes:List[(Int,ExpectedNote)] = Nil // staffX, (type, staffY)
     pairedNoteGroups.foreach { pair =>
       val PairedNoteGroup(staffX, estimatedNotes, annotated) = pair
       estimatedNotes.foreach { note =>
-        if (!(annotated.contains(note.staffY)))
+        if (!(annotated.contains(ExpectedNote(note.templateName, note.staffY))))
           spuriousNotes = (staffX, note) :: spuriousNotes
         else
           correctNotes = (staffX, note) :: correctNotes
       }
-      val estimatedStaffYs = estimatedNotes.map { _.staffY }
+      val estimatedStaffYs = estimatedNotes.map { _match =>
+        ExpectedNote(_match.templateName, _match.staffY)
+      }
       annotated.foreach { i =>
         if (!(estimatedStaffYs.contains(i)))
           missingNotes = (staffX, i) :: missingNotes
       }
     }
 
-    Performance(correctNotes, spuriousNotes, missingNotes)
+    Performance(correctNotes.toSet, spuriousNotes.toSet, missingNotes.toSet)
   }
 
   def demoStaffLines(excerpt:GrayImage, metrics:Metrics,
@@ -811,18 +829,18 @@ object Ocr4Music {
   }
 
   def drawTemplateMatch(
-      _match:TemplateMatch, output:ColorImage, template:GrayImage) {
+      _match:TemplateMatch, output:ColorImage, template:GrayImage,
+      rgb:(Int,Int,Int)) {
     val templateScaled = scaleTemplate(template, _match.w, _match.h)
+    val (templateR, templateG, templateB) = rgb
     (0 until templateScaled.h).foreach { templateScaledY =>
       (0 until templateScaled.w).foreach { templateScaledX =>
         val templateV = templateScaled(templateScaledX, templateScaledY)
         val demoX = (_match.x + templateScaledX - templateScaled.w / 2)
         val demoY = (_match.y + templateScaledY - templateScaled.h / 2)
         val (r, g, b) = output(demoX, demoY)
-        val rNew = r max templateV
-        val gNew = g * (255 - templateV) / 255
-        val bNew = b * (255 - templateV) / 255
-        output(demoX, demoY) = (rNew, gNew, bNew)
+        if (templateV >= 128)
+          output(demoX, demoY) = rgb
       }
     }
   }
@@ -2745,7 +2763,7 @@ val y = (y0 + y1) / 2
     }
     val filteredNotes = predictedNotes
 
-    var casePerformance = Performance(List(), List(), List())
+    var casePerformance = Performance(Set(), Set(), Set())
 /*
     val c = metrics.cSpacing.intValue
     val templateSpecs =
@@ -2801,13 +2819,6 @@ val y = (y0 + y1) / 2
     val filteredNotes = groupedPoints
 
 */
-    val demo = orthonormal.image.toColorImage
-    filteredNotes.foreach { noteGroup =>
-      noteGroup.foreach { point =>
-        drawTemplateMatch(point, demo, templates(point.templateName))
-      }
-    }
-    demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
     val realNotes = filteredNotes.map { _.filter { note =>
@@ -2823,6 +2834,17 @@ val y = (y0 + y1) / 2
     if (performance.missingNotes.size > 0)
       printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
         "\\)\\), \\(", ")),\n                ("))
+
+    val demo = orthonormal.image.toColorImage
+    realNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point =>
+      val color =
+        if (performance.correctNotes.filter{ _._2 == point }.size > 0)
+          (0, 128, 0)
+        else
+          (255, 0, 0) // spurious
+        drawTemplateMatch(point, demo, templates(point.templateName), color)
+    }
+    demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
 
     casePerformance = Performance(
       casePerformance.correctNotes ++ performance.correctNotes,
@@ -2935,7 +2957,7 @@ val y = (y0 + y1) / 2
     try {
       println(Colors.ansiEscapeToHighlightProgramOutput)
 
-      var globalPerformance = Performance(List(), List(), List())
+      var globalPerformance = Performance(Set(), Set(), Set())
       val caseNames = expandCaseNames(args)
       caseNames.foreach { caseName =>
         println("Case %s:".format(caseName))
