@@ -1285,7 +1285,6 @@ object Ocr4Music {
   }
 
   def tryTemplateAt(input:GrayImage, template:GrayImage,
-      demo:ColorImage, drawOnDemo:Boolean,
       centerX:Int, centerY:Int)(scorer:(Int,Int)=>Boolean) : Float = {
     var score = 0
     (0 until template.w).foreach { templateX =>
@@ -1296,15 +1295,6 @@ object Ocr4Music {
         val templateV = template(templateX, templateY)
         val scoreDelta = (if (scorer(inputV, templateV)) 1 else 0)
         score += scoreDelta
-
-        if (drawOnDemo) {
-          val (r, _, _) = demo(inputX, inputY)
-          val b =
-            if (scoreDelta == 1) 255
-            else if (templateV > 0) 128
-            else 0
-          demo(inputX, inputY) = (r, 0, b)
-        }
       }
     }
     score / (template.w * template.h).floatValue
@@ -1561,7 +1551,6 @@ object Ocr4Music {
   }
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      demo:ColorImage, annotatedStaffYs:Set[Int],
       possiblePoints:List[(Int,Int,Int)], caseName:String) : List[Float] = {
     /*val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
     val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
@@ -1587,11 +1576,11 @@ object Ocr4Music {
 
     val threshold = 128
     val templateDistance = distance(rightSizeTemplate, threshold)
-    templateDistance.scaleValueToMax255.saveTo(new File(
-      "demos/distance.t.%s.png".format(caseName)))
+    //templateDistance.scaleValueToMax255.saveTo(new File(
+    //  "demos/distance.t.%s.png".format(caseName)))
     val inputDistance = distance(justNotes, threshold)
-    inputDistance.scaleValueToMax255.saveTo(new File(
-      "demos/distance.i.%s.png".format(caseName)))
+    //inputDistance.scaleValueToMax255.saveTo(new File(
+    //  "demos/distance.i.%s.png".format(caseName)))
 
     val scores = possiblePoints.map { possiblePoint =>
       val (centerX, centerY, staffY) = possiblePoint
@@ -1600,9 +1589,9 @@ object Ocr4Music {
       var argmaxCenterY = 0
       (-1 to 1).foreach { xAdjust =>
         (-1 to 1).foreach { yAdjust =>
-          val score = tryTemplateAt(
-              inputDistance, templateDistance, demo, false,
-              centerX + xAdjust, centerY + yAdjust) { (inputV, templateV) =>
+          val score = tryTemplateAt(inputDistance, templateDistance,
+              centerX + xAdjust, centerY + yAdjust) {
+            (inputV, templateV) =>
             inputV > 0 && templateV > 0 && inputV - templateV >= 0
           }
           if (score > maxScore) {
@@ -1612,17 +1601,6 @@ object Ocr4Music {
           }
         }
       }
-
-      // run it again to draw on the demo
-      //if (annotatedStaffYs.contains(staffY)) {
-      if (maxScore >= 0.2f) {
-        tryTemplateAt(
-            inputDistance, templateDistance, demo, true,
-            argmaxCenterX, argmaxCenterY) { (inputV, templateV) =>
-          inputV > 0 && templateV > 0 && inputV - templateV >= 0
-        }
-      }
-
       maxScore
     }
     scores
@@ -2622,36 +2600,36 @@ val y = (y0 + y1) / 2
     }
   }
 
-  def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
-      demo:ColorImage, annotatedStaffYs:Set[Int], caseName:String) :
-      Set[TemplateMatch] = {
+  def prepareTemplate(templateName:String, cSpacing:Float) : GrayImage = {
     val templateName = "black_head"
     val templatePath = new File("templates/%s.png".format(templateName))
     val bigTemplate =
       ColorImage.readFromFile(templatePath).toGrayImage.inverse
     val templateW = 16
     val heightInStaffLines = 1.0f
-    val templateH =
-      Math.round(heightInStaffLines * orthonormal.cSpacing).intValue
+    val templateH = Math.round(heightInStaffLines * cSpacing).intValue
     val template = scaleTemplate(bigTemplate, templateW, templateH)
+    template
+  }
+
+  def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
+      template:GrayImage, caseName:String) : List[TemplateMatch] = {
     val midX = (box.minX + box.maxX) / 2
     val possibleStaffYs = (-8 to 8).toList
     val possiblePoints = possibleStaffYs.map { staffY =>
       (midX, orthonormal.yForStaffY(staffY), staffY)
     }
     val results = findBlackHeads(orthonormal.image, template,
-      demo, annotatedStaffYs, possiblePoints, caseName)
+      possiblePoints, caseName)
     var foundNotes:List[TemplateMatch] = Nil
     (0 until results.size).foreach { i =>
       val (centerX, centerY, staffY) = possiblePoints(i)
       val result = results(i)
       if (result >= 0.2f)
-        foundNotes = TemplateMatch(centerX, centerY, templateW, templateH,
+        foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
           staffY, "black_head") :: foundNotes
     }
-
-    val templates = Map("black_head" -> template)
-    chooseBestOverlappingSets(box, foundNotes, templates, orthonormal.image)
+    foundNotes
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
@@ -2727,11 +2705,6 @@ val y = (y0 + y1) / 2
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
-    val demoGray = distance(orthonormal.image, 128).scaleValueToMax255
-    val demo = ColorImage.giveRGBPerPixel(
-        orthonormal.image.w, orthonormal.image.h) { (x, y) =>
-      (demoGray(x, y), 0, 0)
-    }
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
@@ -2739,13 +2712,17 @@ val y = (y0 + y1) / 2
         if (width >= 18)
           Set[TemplateMatch]() // clef
         else if (width >= 5) {
-          findNotesInColumn(box, orthonormal, demo, annotatedStaffYs, caseName)
+          val template = prepareTemplate("black_head", orthonormal.cSpacing)
+          val templates = Map("black_head" -> template)
+          val foundNotes =
+            findNotesInColumn(box, orthonormal, template, caseName)
+          chooseBestOverlappingSets(
+            box, foundNotes, templates, orthonormal.image)
         }
         else
           Set[TemplateMatch]() // measure line
       predictedNotes ++= List(prediction)
     }
-    demo.saveTo(new File("demos/find_notes.%s.png".format(caseName)))
     val filteredNotes = predictedNotes
 
     var casePerformance = Performance(List(), List(), List())
