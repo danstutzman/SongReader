@@ -45,7 +45,7 @@ case class LabeledPoint (
 
 case class Annotation (
   val points:List[LabeledPoint],
-  val notes:List[List[Int]]
+  val notes:List[Set[Int]]
 ) {}
 
 case class Performance (
@@ -366,7 +366,7 @@ object Ocr4Music {
   }
 
   def demoNotes(
-      noteGroups:List[List[TemplateMatch]], input:ColorImage, caseName:String) {
+      noteGroups:List[Set[TemplateMatch]], input:ColorImage, caseName:String) {
     val staffSeparation = 6
     val xSeparation = 18
     val darkYellow = (128, 128, 0)
@@ -490,8 +490,8 @@ object Ocr4Music {
         )
       }
 
-    var noteGroups:List[List[Int]] = Nil
-    var currentNoteGroup:List[Int] = Nil
+    var noteGroups:List[Set[Int]] = Nil
+    var currentNoteGroup = Set[Int]()
     var lastNoteX = -999
     val realPoints = points.filter { point =>
       Set("8", "4", "2", "1").contains(point.label)
@@ -499,10 +499,10 @@ object Ocr4Music {
     realPoints.sortBy { _.x }.foreach { point =>
       if (Math.abs(point.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
-        currentNoteGroup = Nil
+        currentNoteGroup = Set[Int]()
       }
 
-      currentNoteGroup = point.staffY :: currentNoteGroup
+      currentNoteGroup += point.staffY
 
       lastNoteX = point.x
     }
@@ -518,7 +518,7 @@ object Ocr4Music {
   // This ensures that a spurious or missed note only causes one
   // error instead of throwing off all the notes to the right.
   def calcPerformance(
-      estimatedNotes:List[List[TemplateMatch]], annotated:List[List[Int]]) = {
+      estimatedNotes:List[Set[TemplateMatch]], annotated:List[Set[Int]]) = {
     //printf("init estimated: %s\n", estimatedNotes.map { _.map { _.staffY } })
     //printf("init annotated: %s\n", annotated)
 
@@ -592,8 +592,8 @@ object Ocr4Music {
 
     case class PairedNoteGroup (
       val staffX:Int,
-      val estimatedNotes:List[TemplateMatch],
-      val annotated:List[Int]
+      val estimatedNotes:Set[TemplateMatch],
+      val annotated:Set[Int]
     ) {}
     var pairedNoteGroups:List[PairedNoteGroup] = Nil
     var x = w
@@ -602,12 +602,12 @@ object Ocr4Music {
       backPointer(y)(x) match {
         case (-1, 0) =>
           pairedNoteGroups =
-            PairedNoteGroup(x - 1, estimatedNotes(x - 1), List()) ::
+            PairedNoteGroup(x - 1, estimatedNotes(x - 1), Set()) ::
             pairedNoteGroups
           x -= 1
         case (0, -1) =>
           pairedNoteGroups =
-            PairedNoteGroup(x - 1, List(), annotated(y - 1)) ::
+            PairedNoteGroup(x - 1, Set(), annotated(y - 1)) ::
             pairedNoteGroups
           y -= 1
         case (-1, -1) =>
@@ -2623,7 +2623,8 @@ val y = (y0 + y1) / 2
   }
 
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
-      demo:ColorImage, annotatedStaffYs:Set[Int], caseName:String) = {
+      demo:ColorImage, annotatedStaffYs:Set[Int], caseName:String) :
+      Set[TemplateMatch] = {
     val templateName = "black_head"
     val templatePath = new File("templates/%s.png".format(templateName))
     val bigTemplate =
@@ -2723,7 +2724,7 @@ val y = (y0 + y1) / 2
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
-    var predictedNotes:List[List[TemplateMatch]] = Nil
+    var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
     val demoGray = distance(orthonormal.image, 128).scaleValueToMax255
@@ -2736,13 +2737,13 @@ val y = (y0 + y1) / 2
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       val prediction =
         if (width >= 18)
-          List[TemplateMatch]() // clef
+          Set[TemplateMatch]() // clef
         else if (width >= 5) {
           findNotesInColumn(box, orthonormal, demo, annotatedStaffYs, caseName)
         }
         else
-          List[TemplateMatch]() // measure line
-      predictedNotes ++= List[List[TemplateMatch]](prediction)
+          Set[TemplateMatch]() // measure line
+      predictedNotes ++= List(prediction)
     }
     demo.saveTo(new File("demos/find_notes.%s.png".format(caseName)))
     val filteredNotes = predictedNotes
