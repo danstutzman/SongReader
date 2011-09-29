@@ -2257,15 +2257,9 @@ val y = (y0 + y1) / 2
     }
     squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
 
-    // We want to find the y value that corresponds to staffY = 4 and -4.
-    // Start with: (y' means original image y, y means staffY)
-    //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
-    // For simplicity set xCentered to 0, so xUncentered = w/2.
-    //   y' = c0 + c*y
     def yForStaffY(staffY:Int) = {
-      val sourceY = Math.round(
-        metrics.c + metrics.cSpacing * staffY/2.0f + input.h/2).intValue
-      targetYFor(input.w/2, sourceY) - minTargetY
+      val y = Math.round(staffY/2.0f * metrics.cSpacing + input.h/2).intValue
+      y - minTargetY
     }
 
     val xForXIntercept = (0 until input.w).map {
