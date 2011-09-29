@@ -2649,7 +2649,10 @@ val y = (y0 + y1) / 2
         foundNotes = TemplateMatch(centerX, centerY, templateW, templateH,
           staffY, "black_head") :: foundNotes
     }
-    foundNotes
+
+    val templates = Map("black_head" -> template)
+    chooseBestOverlappingSets(box, List(foundNotes.toSet), templates,
+      orthonormal.image)
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
