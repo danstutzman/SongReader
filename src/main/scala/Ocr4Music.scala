@@ -2663,9 +2663,9 @@ val y = (y0 + y1) / 2
       val points = annotation.points.filter { point =>
         val (x, y) = transformXY(point.x, point.y)
         val matches = x >= (box.minX - 5) && x <= (box.maxX + 5)
-        if (matches && !missedPoints.contains(point))
-          throw new RuntimeException(
-            "Too many bounding boxes for annotation %s".format(point))
+        //if (matches && !missedPoints.contains(point))
+        //  throw new RuntimeException(
+        //    "Too many bounding boxes for annotation %s".format(point))
         matches
       }
       missedPoints = missedPoints.filter { !points.contains(_) }
