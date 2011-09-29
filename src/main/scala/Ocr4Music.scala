@@ -1320,7 +1320,7 @@ object Ocr4Music {
   }
 
   def findWhiteHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      caseName:String) = {
+      possiblePoints:List[(Int,Int,Int)], caseName:String) = {
     val templateDipsT = findDiagonalLines(rightSizeTemplate, true)
     val templateDipsF = findDiagonalLines(rightSizeTemplate, false)
     templateDipsT.saveTo(new File(
@@ -1328,32 +1328,37 @@ object Ocr4Music {
     templateDipsF.saveTo(new File(
       "demos/find_white.tdf.%s.png".format(caseName)))
 
-    val inputDipsT = findDiagonalLines(justNotes.inverse, true)
-    val inputDipsF = findDiagonalLines(justNotes.inverse, false)
+    val inputDipsT = findDiagonalLines(justNotes, true)
+    val inputDipsF = findDiagonalLines(justNotes, false)
     inputDipsT.saveTo(new File("demos/find_white.idt.%s.png".format(caseName)))
     inputDipsF.saveTo(new File("demos/find_white.idf.%s.png".format(caseName)))
 
-    val trueMatch = slideTemplate(inputDipsT, templateDipsT) {
-      (inputV, templateV) =>
-      inputV > 20 && templateV > 20
-    }
-    trueMatch.scaleValueToMax255.saveTo(new File(
-      "demos/find_white.t.%s.png".format(caseName)))
-
-    val falseMatch = slideTemplate(inputDipsF, templateDipsF) {
-      (inputV, templateV) =>
-      inputV > 20 && templateV > 20
-    }
-    falseMatch.scaleValueToMax255.saveTo(new File(
-      "demos/find_white.f.%s.png".format(caseName)))
-
-    val combinedMatch =
-      GrayImage.giveBrightnessPerPixel(justNotes.w, justNotes.h) { (x, y) =>
-        trueMatch(x, y) * falseMatch(x, y) / 2 // divide by two for image
+    val scores = possiblePoints.map { possiblePoint =>
+      val (centerX, centerY, staffY) = possiblePoint
+      var maxScore = 0.0f
+      var argmaxCenterX = 0
+      var argmaxCenterY = 0
+      (-1 to 1).foreach { xAdjust =>
+        (-1 to 1).foreach { yAdjust =>
+          val trueScore = tryTemplateAt(inputDipsT, templateDipsT,
+              centerX + xAdjust, centerY + yAdjust) {
+            (inputV, templateV) => inputV > 20 && templateV > 20
+          }
+          val falseScore = tryTemplateAt(inputDipsF, templateDipsF,
+              centerX + xAdjust, centerY + yAdjust) {
+            (inputV, templateV) => inputV > 20 && templateV > 20
+          }
+          val score = trueScore * falseScore
+          if (score > maxScore) {
+            maxScore = score
+            argmaxCenterX = centerX + xAdjust
+            argmaxCenterY = centerY + yAdjust
+          }
+        }
       }
-    combinedMatch.scaleValueToMax255.saveTo(new File(
-      "demos/find_white.tf.%s.png".format(caseName)))
-    combinedMatch
+      maxScore
+    }
+    scores
   }
 
   def findAccidental(justNotes:GrayImage, rightSizeTemplate:GrayImage,
