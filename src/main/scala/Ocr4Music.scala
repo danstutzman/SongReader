@@ -819,7 +819,10 @@ object Ocr4Music {
         val demoX = (_match.x + templateScaledX - templateScaled.w / 2)
         val demoY = (_match.y + templateScaledY - templateScaled.h / 2)
         val (r, g, b) = output(demoX, demoY)
-        output(demoX, demoY) = (templateV, g, b)
+        val rNew = r max templateV
+        val gNew = g * (255 - templateV) / 255
+        val bNew = b * (255 - templateV) / 255
+        output(demoX, demoY) = (rNew, gNew, bNew)
       }
     }
   }
