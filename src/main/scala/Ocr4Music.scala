@@ -1683,59 +1683,58 @@ val y = (y0 + y1) / 2
 
   def chooseBestOverlappingSets(
       bounds:BoundingBox,
-      overlappingPointGroups:List[Set[TemplateMatch]],
-      templates:Map[String,GrayImage], orthonormalImage:GrayImage) = {
-    overlappingPointGroups.map { group =>
-      val alternatives = listNonOverlappingAlternatives(group.toList)
+      overlappingPointGroup:List[TemplateMatch],
+      templates:Map[String,GrayImage], orthonormalImage:GrayImage) :
+      Set[TemplateMatch] = {
+    val alternatives = listNonOverlappingAlternatives(overlappingPointGroup)
 
-      var bestAlternative = alternatives.toList(0)
-      var bestI = 0
-      var maxScore = -999999
-      var i = 0
-      alternatives.foreach { pointGroup =>
-        var proposal = new ColorImage(bounds.maxX - bounds.minX + 1,
-                                     bounds.maxY - bounds.minY + 1)
-        (0 until proposal.w).foreach { x =>
-          (0 until proposal.h).foreach { y =>
-            var b = orthonormalImage(x + bounds.minX, y + bounds.minY)
-            proposal(x, y) = (0, 0, b)
+    var bestAlternative = alternatives.toList(0)
+    var bestI = 0
+    var maxScore = -999999
+    var i = 0
+    alternatives.foreach { pointGroup =>
+      var proposal = new ColorImage(bounds.maxX - bounds.minX + 1,
+                                   bounds.maxY - bounds.minY + 1)
+      (0 until proposal.w).foreach { x =>
+        (0 until proposal.h).foreach { y =>
+          var b = orthonormalImage(x + bounds.minX, y + bounds.minY)
+          proposal(x, y) = (0, 0, b)
 
-          }
         }
-        pointGroup.foreach { point =>
-          val template = templates(point.templateName)
-          (0 until template.h).foreach { templateY =>
-            (0 until template.w).foreach { templateX =>
-              val x = (point.x - point.w/2) + templateX - bounds.minX
-              val y = (point.y - point.h/2) + templateY - bounds.minY
-              val (r, g, b) = proposal(x, y)
-              proposal(x, y) = (r max template(templateX, templateY), g, b)
-            }
-          }
-        }
-        //proposal.saveTo(new File(
-        //  "demos/proposal.%03d.%02d.png".format(bounds.minX, i)))
-
-        var diff = 0
-        (0 until proposal.w).foreach { x =>
-          (0 until proposal.h).foreach { y =>
-            diff += Math.abs(proposal(x, y)._1 -
-              orthonormalImage(x + bounds.minX, y + bounds.minY))
-          }
-        }
-        val score = -diff
-        
-        if (score > maxScore) {
-          maxScore = score
-          bestAlternative = pointGroup
-          bestI = i
-        }
-
-        i += 1
       }
-      //println("best for %03d is %d".format(bounds.minX, bestI))
-      bestAlternative
-    }.foldLeft(List[TemplateMatch]()) { _ ++ _ }
+      pointGroup.foreach { point =>
+        val template = templates(point.templateName)
+        (0 until template.h).foreach { templateY =>
+          (0 until template.w).foreach { templateX =>
+            val x = (point.x - point.w/2) + templateX - bounds.minX
+            val y = (point.y - point.h/2) + templateY - bounds.minY
+            val (r, g, b) = proposal(x, y)
+            proposal(x, y) = (r max template(templateX, templateY), g, b)
+          }
+        }
+      }
+      //proposal.saveTo(new File(
+      //  "demos/proposal.%03d.%02d.png".format(bounds.minX, i)))
+
+      var diff = 0
+      (0 until proposal.w).foreach { x =>
+        (0 until proposal.h).foreach { y =>
+          diff += Math.abs(proposal(x, y)._1 -
+            orthonormalImage(x + bounds.minX, y + bounds.minY))
+        }
+      }
+      val score = -diff
+        
+      if (score > maxScore) {
+        maxScore = score
+        bestAlternative = pointGroup
+        bestI = i
+      }
+
+      i += 1
+    }
+    //println("best for %03d is %d".format(bounds.minX, bestI))
+    bestAlternative
   }
 
   def excerptComparison(x:Int, y:Int,
@@ -2651,8 +2650,7 @@ val y = (y0 + y1) / 2
     }
 
     val templates = Map("black_head" -> template)
-    chooseBestOverlappingSets(box, List(foundNotes.toSet), templates,
-      orthonormal.image)
+    chooseBestOverlappingSets(box, foundNotes, templates, orthonormal.image)
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
