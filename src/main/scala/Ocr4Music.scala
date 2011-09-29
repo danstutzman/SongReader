@@ -2815,11 +2815,14 @@ val y = (y0 + y1) / 2
     val performance = calcPerformance(realNotes, annotation.notes)
     println("Case %2s: precision: %.3f, recall: %.3f".format(
       caseName, performance.precision, performance.recall))
-    //printf("  correct: %s\n", performance.correctNotes)
+    //printf("   correct: %s\n", performance.correctNotes.toString.replaceAll(
+    //    "\\)\\), \\(", ")),\n                ("))
     if (performance.spuriousNotes.size > 0)
-      printf("  spurious: %s\n", performance.spuriousNotes)
+      printf("  spurious: %s\n", performance.spuriousNotes.toString.replaceAll(
+        "\\)\\), \\(", ")),\n                ("))
     if (performance.missingNotes.size > 0)
-      printf("  missing: %s\n", performance.missingNotes)
+      printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
+        "\\)\\), \\(", ")),\n                ("))
 
     casePerformance = Performance(
       casePerformance.correctNotes ++ performance.correctNotes,
