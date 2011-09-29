@@ -493,7 +493,10 @@ object Ocr4Music {
     var noteGroups:List[List[Int]] = Nil
     var currentNoteGroup:List[Int] = Nil
     var lastNoteX = -999
-    points.sortBy { _.x }.foreach { point =>
+    val realPoints = points.filter { point =>
+      Set("8", "4", "2", "1").contains(point.label)
+    }
+    realPoints.sortBy { _.x }.foreach { point =>
       if (Math.abs(point.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
         noteGroups = currentNoteGroup :: noteGroups
         currentNoteGroup = Nil
