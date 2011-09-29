@@ -2608,12 +2608,11 @@ val y = (y0 + y1) / 2
     }
   }
 
-  def prepareTemplate(templateName:String, cSpacing:Float) : GrayImage = {
-    val templateName = "black_head"
+  def prepareTemplate(templateName:String, templateW:Int, cSpacing:Float) :
+      GrayImage = {
     val templatePath = new File("templates/%s.png".format(templateName))
     val bigTemplate =
       ColorImage.readFromFile(templatePath).toGrayImage.inverse
-    val templateW = 16
     val heightInStaffLines = 1.0f
     val templateH = Math.round(heightInStaffLines * cSpacing).intValue
     val template = scaleTemplate(bigTemplate, templateW, templateH)
@@ -2621,21 +2620,24 @@ val y = (y0 + y1) / 2
   }
 
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
-      template:GrayImage, caseName:String) : List[TemplateMatch] = {
+      templates:Map[String,GrayImage], templateName:String, threshold:Float,
+      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Float],
+      caseName:String) : List[TemplateMatch] = {
+    val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
     val possibleStaffYs = (-8 to 8).toList
     val possiblePoints = possibleStaffYs.map { staffY =>
       (midX, orthonormal.yForStaffY(staffY), staffY)
     }
-    val results = findBlackHeads(orthonormal.image, template,
+    val results = finder(orthonormal.image, template,
       possiblePoints, caseName)
     var foundNotes:List[TemplateMatch] = Nil
     (0 until results.size).foreach { i =>
       val (centerX, centerY, staffY) = possiblePoints(i)
       val result = results(i)
-      if (result >= 0.2f)
+      if (result >= threshold)
         foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
-          staffY, "black_head") :: foundNotes
+          staffY, templateName) :: foundNotes
     }
     foundNotes
   }
@@ -2712,6 +2714,10 @@ val y = (y0 + y1) / 2
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
+    val templates = Map(
+      "white_head" -> prepareTemplate("white_head", 10, orthonormal.cSpacing),
+      "black_head" -> prepareTemplate("black_head", 16, orthonormal.cSpacing))
+
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
@@ -2722,12 +2728,16 @@ val y = (y0 + y1) / 2
         if (width >= 18)
           Set[TemplateMatch]() // clef
         else if (width >= 5) {
-          val template = prepareTemplate("black_head", orthonormal.cSpacing)
-          val templates = Map("black_head" -> template)
           val foundNotes =
-            findNotesInColumn(box, orthonormal, template, caseName)
-          chooseBestOverlappingSets(
-            box, foundNotes, templates, orthonormal.image)
+            findNotesInColumn(box, orthonormal, templates,
+              "white_head", 0.02f, findWhiteHeads, caseName) ++
+            findNotesInColumn(box, orthonormal, templates,
+              "black_head", 0.2f, findBlackHeads, caseName)
+          if (foundNotes.size > 0)
+            chooseBestOverlappingSets(
+              box, foundNotes, templates, orthonormal.image)
+          else
+            Set[TemplateMatch]()
         }
         else
           Set[TemplateMatch]() // measure line
