@@ -505,11 +505,12 @@ object Ocr4Music {
       }
 
       val templateName = point.label match {
-        case "G" => Some("treble_clef")
-        case "8" => Some("black_head")
-        case "4" => Some("black_head")
-        case "2" => Some("white_head")
-        case _   => None
+        case "G"  => Some("treble_clef")
+        case "44" => Some("44")
+        case "8"  => Some("black_head")
+        case "4"  => Some("black_head")
+        case "2"  => Some("white_head")
+        case _    => None
       }
       templateName.foreach { name =>
         currentNoteGroup += ExpectedNote(name, point.staffY)
@@ -1459,7 +1460,7 @@ object Ocr4Music {
     List(gradientX, gradientY, gradientNorm)
   }
 
-  def findTrebleClef(
+  def findImmovable(
       input:GrayImage, template:GrayImage, possiblePoints:List[(Int,Int,Int)],
       caseName:String) = {
     val List(templateGradientX, templateGradientY, _) =
@@ -2687,11 +2688,11 @@ val y = (y0 + y1) / 2
 
   def findClefInColumn(box:BoundingBox, orthonormal:Orthonormal,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
+      fixedStaffY:Int,
       finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
       caseName:String) : Option[TemplateMatch] = {
     val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
-    val gForTrebleClefStaffY = 2
     val minY = box.minY + template.h/2
     val maxY = box.maxY - template.h/2
     val minX = box.minX + template.w/2 - 2
@@ -2699,7 +2700,7 @@ val y = (y0 + y1) / 2
     var possiblePoints:List[(Int,Int,Int)] = Nil
     (minY to maxY).toList.foreach { y =>
       possiblePoints ++= (minX to maxX).toList.map { x =>
-        (x, y, gForTrebleClefStaffY)
+        (x, y, fixedStaffY)
       }
     }
     val results = finder(orthonormal.image, template, possiblePoints, caseName)
@@ -2710,6 +2711,7 @@ val y = (y0 + y1) / 2
       val result = results(i)
       val note = TemplateMatch(centerX, centerY, template.w, template.h,
           staffY, templateName)
+//if (templateName == "44") println(result)
       if (result > maxResult) {
         maxResult = result
         argmaxNote = Some(note)
@@ -2796,8 +2798,12 @@ val y = (y0 + y1) / 2
       "black_head" -> prepareTemplate("black_head", 16,
         Math.round(orthonormal.cSpacing * 1.0f).intValue),
       "treble_clef" -> prepareTemplate("treble_clef", 20,
-        Math.round(orthonormal.cSpacing * 7.0f).intValue))
+        Math.round(orthonormal.cSpacing * 7.0f).intValue),
+      "44" -> prepareTemplate("44", 12,
+        Math.round(orthonormal.cSpacing * 4.0f).intValue))
 
+    val gClefStaffY = 2
+    val middleStaffY = 0
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
@@ -2807,14 +2813,16 @@ val y = (y0 + y1) / 2
       val prediction =
         if (width >= 18) {
           val maybeClef = findClefInColumn(box, orthonormal, templates,
-            "treble_clef", 10000, findTrebleClef, caseName)
+            "treble_clef", 10000, gClefStaffY, findImmovable, caseName)
           maybeClef.toSet
         } else if (width >= 5) {
           val foundNotes =
             findNotesInColumn(box, orthonormal, templates,
               "white_head", 100, findWhiteHeads, caseName) ++
             findNotesInColumn(box, orthonormal, templates,
-              "black_head", 20, findBlackHeads, caseName)
+              "black_head", 20, findBlackHeads, caseName) ++
+            findClefInColumn(box, orthonormal, templates,
+              "44", 3000, middleStaffY, findImmovable, caseName).toSet
           if (foundNotes.size > 0)
             chooseBestOverlappingSets(
               box, foundNotes, templates, orthonormal.image)
