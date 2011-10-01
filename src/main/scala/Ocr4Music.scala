@@ -1337,44 +1337,63 @@ object Ocr4Music {
     output
   }
 
-  def findWhiteHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      possiblePoints:List[(Int,Int,Int)], caseName:String) = {
-    val templateDipsT = findDiagonalLines(rightSizeTemplate, true)
-    val templateDipsF = findDiagonalLines(rightSizeTemplate, false)
-    templateDipsT.saveTo(new File(
-      "demos/find_white.tdt.%s.png".format(caseName)))
-    templateDipsF.saveTo(new File(
-      "demos/find_white.tdf.%s.png".format(caseName)))
+  def countDonutHolePoints(input:GrayImage, x0:Int, y0:Int, x1:Int, y1:Int,
+      donutDemo:ColorImage) = {
+    var numDonutHolePoints = 0
+    //val donutHole = new GrayImage(x1 - x0 + 1, y1 - y0 + 1)
+    val distance = 5
+    val threshold = 96
+    val threshold2 = 192
+    (y0 until y1).foreach { y =>
+      (x0 until x1).foreach { x =>
+        val v = input(x, y)
 
-    val inputDipsT = findDiagonalLines(justNotes, true)
-    val inputDipsF = findDiagonalLines(justNotes, false)
-    inputDipsT.saveTo(new File("demos/find_white.idt.%s.png".format(caseName)))
-    inputDipsF.saveTo(new File("demos/find_white.idf.%s.png".format(caseName)))
+        var hasBrighterLeftNeighbor = false
+        ((x - distance) to (x - 1)).foreach { xNeighbor =>
+          if (input(xNeighbor, y) > (threshold max v))
+            hasBrighterLeftNeighbor = true
+        }
 
-    val scores = possiblePoints.map { possiblePoint =>
-      val (centerX, centerY, staffY) = possiblePoint
-      var maxScore = 0
-      var argmaxCenterX = 0
-      var argmaxCenterY = 0
-      (-1 to 1).foreach { xAdjust =>
-        (-1 to 1).foreach { yAdjust =>
-          val trueScore = tryTemplateAt(inputDipsT, templateDipsT,
-              centerX + xAdjust, centerY + yAdjust) {
-            (inputV, templateV) => inputV > 20 && templateV > 20
-          }
-          val falseScore = tryTemplateAt(inputDipsF, templateDipsF,
-              centerX + xAdjust, centerY + yAdjust) {
-            (inputV, templateV) => inputV > 20 && templateV > 20
-          }
-          val score = trueScore * falseScore
-          if (score > maxScore) {
-            maxScore = score
-            argmaxCenterX = centerX + xAdjust
-            argmaxCenterY = centerY + yAdjust
-          }
+        var hasBrighterRightNeighbor = false
+        ((x + 1) to (x + distance)).foreach { xNeighbor =>
+          if (input(xNeighbor, y) > (threshold max v))
+            hasBrighterRightNeighbor = true
+        }
+
+        var hasBrighterTopNeighbor = false
+        ((y - distance) to (y - 1)).foreach { yNeighbor =>
+          if (input(x, yNeighbor) > (threshold max v))
+            hasBrighterTopNeighbor = true
+        }
+
+        var hasBrighterBottomNeighbor = false
+        ((y + 1) to (y + distance)).foreach { yNeighbor =>
+          if (input(x, yNeighbor) > (threshold max v))
+            hasBrighterBottomNeighbor = true
+        }
+
+        if (hasBrighterLeftNeighbor && hasBrighterRightNeighbor &&
+            hasBrighterTopNeighbor  && hasBrighterBottomNeighbor &&
+            v < threshold2) {
+          //donutHole(x - x0, y - y0) = 255
+          donutDemo(x, y) = (255, 0, 0)
+          numDonutHolePoints += 1
         }
       }
-      maxScore
+    }
+
+    numDonutHolePoints
+  }
+
+  def findWhiteHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
+      possiblePoints:List[(Int,Int,Int)], donutDemo:ColorImage,
+      caseName:String) = {
+    val scores = possiblePoints.map { possiblePoint =>
+      val (centerX, centerY, staffY) = possiblePoint
+      countDonutHolePoints(justNotes,
+        centerX - rightSizeTemplate.w/2, centerY - rightSizeTemplate.h/2,
+        centerX + rightSizeTemplate.w/2, centerY + rightSizeTemplate.h/2,
+        donutDemo)
     }
     scores
   }
@@ -1606,7 +1625,8 @@ object Ocr4Music {
   }
 
   def findBlackHeads(justNotes:GrayImage, rightSizeTemplate:GrayImage,
-      possiblePoints:List[(Int,Int,Int)], caseName:String) : List[Int] = {
+      possiblePoints:List[(Int,Int,Int)], ignored:ColorImage, caseName:String) :
+      List[Int] = {
     /*val leftEdge = Array(-1, 0, 1, -2, 0, 2, -1, 0, 1, 4)
     val rightEdge = Array(1, 0, -1, 2, 0, -2, 1, 0, -1, 4)
     val topEdge = Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4)
@@ -2685,7 +2705,8 @@ val y = (y0 + y1) / 2
 
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
-      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
+      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],ColorImage,String)=>List[Int],
+      donutDemo:ColorImage,
       caseName:String) : List[TemplateMatch] = {
     val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
@@ -2694,7 +2715,7 @@ val y = (y0 + y1) / 2
       (midX, orthonormal.yForStaffY(staffY), staffY)
     }
     val results = finder(orthonormal.image, template,
-      possiblePoints, caseName)
+      possiblePoints, donutDemo, caseName)
     var foundNotes:List[TemplateMatch] = Nil
     (0 until results.size).foreach { i =>
       val (centerX, centerY, staffY) = possiblePoints(i)
@@ -2831,18 +2852,19 @@ val y = (y0 + y1) / 2
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
+    val donutDemo = orthonormal.image.toColorImage
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
-      val foundNotes =
+      val foundNotes:Set[TemplateMatch] =
         findClefInColumn(box, orthonormal, templates,
           "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
         findClefInColumn(box, orthonormal, templates,
           "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet ++
         findNotesInColumn(box, orthonormal, templates,
-          "white_head", 100, findWhiteHeads, caseName) ++
+          "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
         findNotesInColumn(box, orthonormal, templates,
-          "black_head", 20, findBlackHeads, caseName) ++
+          "black_head", 20, findBlackHeads, donutDemo, caseName).toSet ++
         findClefInColumn(box, orthonormal, templates,
           "44", 3000, middleStaffY, findImmovable, caseName).toSet
       val prediction =
@@ -2853,6 +2875,7 @@ val y = (y0 + y1) / 2
             Set[TemplateMatch]()
       predictedNotes ++= List(prediction)
     }
+    donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
     val filteredNotes = predictedNotes
 
     var casePerformance = Performance(Set(), Set(), Set())
