@@ -2698,7 +2698,7 @@ val y = (y0 + y1) / 2
     val maxX = box.maxX - template.w/2 + 2
     var possiblePoints:List[(Int,Int,Int)] = Nil
     (minY to maxY).toList.foreach { y =>
-      possiblePoints ++= (maxX to maxX).toList.map { x =>
+      possiblePoints ++= (minX to maxX).toList.map { x =>
         (x, y, gForTrebleClefStaffY)
       }
     }
