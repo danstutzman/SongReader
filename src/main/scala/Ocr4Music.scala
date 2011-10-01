@@ -2727,7 +2727,7 @@ val y = (y0 + y1) / 2
     foundNotes
   }
 
-  def findClefInColumn(box:BoundingBox, orthonormal:Orthonormal,
+  def findImmovableInColumn(box:BoundingBox, orthonormal:Orthonormal,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
       fixedStaffY:Int,
       finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
@@ -2856,17 +2856,19 @@ val y = (y0 + y1) / 2
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
-      val foundNotes:Set[TemplateMatch] =
-        findClefInColumn(box, orthonormal, templates,
+      var foundNotes:Set[TemplateMatch] =
+        findImmovableInColumn(box, orthonormal, templates,
           "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
-        findClefInColumn(box, orthonormal, templates,
+        findImmovableInColumn(box, orthonormal, templates,
           "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet ++
-        findNotesInColumn(box, orthonormal, templates,
-          "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
-        findNotesInColumn(box, orthonormal, templates,
-          "black_head", 20, findBlackHeads, donutDemo, caseName).toSet ++
-        findClefInColumn(box, orthonormal, templates,
+        findImmovableInColumn(box, orthonormal, templates,
           "44", 3000, middleStaffY, findImmovable, caseName).toSet
+      if (foundNotes.size == 0)
+        foundNotes =
+          findNotesInColumn(box, orthonormal, templates,
+            "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
+          findNotesInColumn(box, orthonormal, templates,
+            "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
       val prediction =
         if (foundNotes.size > 0)
           chooseBestOverlappingSets(
