@@ -2351,6 +2351,24 @@ val y = (y0 + y1) / 2
         isFull(x) = true
     }
 
+    // Smooth over two-pixel gaps, for now
+    var timeSinceLastWasFull = 9999
+    var timeLastFull = 0
+    var gapThreshold = 2
+    (outer.minX to outer.maxX).foreach { x =>
+      if (isFull(x)) {
+        if (timeSinceLastWasFull <= gapThreshold) {
+          (timeLastFull to x - 1).foreach { x2 =>
+            isFull(x2) = true
+          }
+        }
+        timeSinceLastWasFull = 0
+        timeLastFull = x
+      } else {
+        timeSinceLastWasFull += 1
+      }
+    }
+
     var boxes:List[BoundingBox] = Nil
     var boxStartX = outer.minX
     (outer.minX to outer.maxX + 1).foreach { x =>
@@ -2820,7 +2838,7 @@ val y = (y0 + y1) / 2
           findClefInColumn(box, orthonormal, templates,
             "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
           findClefInColumn(box, orthonormal, templates,
-            "bass_clef", 5000, fClefStaffY, findImmovable, caseName).toSet
+            "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet
         } else if (width >= 5) {
           val foundNotes =
             findNotesInColumn(box, orthonormal, templates,
