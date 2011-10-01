@@ -1716,10 +1716,11 @@ val y = (y0 + y1) / 2
 
   def chooseBestOverlappingSets(
       bounds:BoundingBox,
-      overlappingPointGroup:List[TemplateMatch],
+      overlappingPointGroup:Set[TemplateMatch],
       templates:Map[String,GrayImage], orthonormalImage:GrayImage) :
       Set[TemplateMatch] = {
-    val alternatives = listNonOverlappingAlternatives(overlappingPointGroup)
+    val alternatives =
+      listNonOverlappingAlternatives(overlappingPointGroup.toList)
 
     var bestAlternative = alternatives.toList(0)
     var bestI = 0
@@ -2833,28 +2834,23 @@ val y = (y0 + y1) / 2
     boxes.sortBy { _.minX }.foreach { box =>
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
+      val foundNotes =
+        findClefInColumn(box, orthonormal, templates,
+          "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
+        findClefInColumn(box, orthonormal, templates,
+          "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet ++
+        findNotesInColumn(box, orthonormal, templates,
+          "white_head", 100, findWhiteHeads, caseName) ++
+        findNotesInColumn(box, orthonormal, templates,
+          "black_head", 20, findBlackHeads, caseName) ++
+        findClefInColumn(box, orthonormal, templates,
+          "44", 3000, middleStaffY, findImmovable, caseName).toSet
       val prediction =
-        if (width >= 18) {
-          findClefInColumn(box, orthonormal, templates,
-            "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
-          findClefInColumn(box, orthonormal, templates,
-            "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet
-        } else if (width >= 5) {
-          val foundNotes =
-            findNotesInColumn(box, orthonormal, templates,
-              "white_head", 100, findWhiteHeads, caseName) ++
-            findNotesInColumn(box, orthonormal, templates,
-              "black_head", 20, findBlackHeads, caseName) ++
-            findClefInColumn(box, orthonormal, templates,
-              "44", 3000, middleStaffY, findImmovable, caseName).toSet
-          if (foundNotes.size > 0)
-            chooseBestOverlappingSets(
-              box, foundNotes, templates, orthonormal.image)
+        if (foundNotes.size > 0)
+          chooseBestOverlappingSets(
+            box, foundNotes, templates, orthonormal.image)
           else
             Set[TemplateMatch]()
-        }
-        else
-          Set[TemplateMatch]() // measure line
       predictedNotes ++= List(prediction)
     }
     val filteredNotes = predictedNotes
