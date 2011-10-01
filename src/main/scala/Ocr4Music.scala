@@ -505,6 +505,7 @@ object Ocr4Music {
       }
 
       val templateName = point.label match {
+        case "F"  => Some("bass_clef")
         case "G"  => Some("treble_clef")
         case "44" => Some("44")
         case "8"  => Some("black_head")
@@ -2711,7 +2712,7 @@ val y = (y0 + y1) / 2
       val result = results(i)
       val note = TemplateMatch(centerX, centerY, template.w, template.h,
           staffY, templateName)
-//if (templateName == "44") println(result)
+//if (templateName == "bass_clef") println(result)
       if (result > maxResult) {
         maxResult = result
         argmaxNote = Some(note)
@@ -2797,13 +2798,17 @@ val y = (y0 + y1) / 2
         Math.round(orthonormal.cSpacing * 1.0f).intValue),
       "black_head" -> prepareTemplate("black_head", 16,
         Math.round(orthonormal.cSpacing * 1.0f).intValue),
+      "bass_clef" -> prepareTemplate("bass_clef", 24,
+        Math.round(orthonormal.cSpacing * 4.0f).intValue),
       "treble_clef" -> prepareTemplate("treble_clef", 20,
         Math.round(orthonormal.cSpacing * 7.0f).intValue),
       "44" -> prepareTemplate("44", 12,
         Math.round(orthonormal.cSpacing * 4.0f).intValue))
 
+    val fClefStaffY = -2
     val gClefStaffY = 2
     val middleStaffY = 0
+
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
@@ -2812,9 +2817,10 @@ val y = (y0 + y1) / 2
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       val prediction =
         if (width >= 18) {
-          val maybeClef = findClefInColumn(box, orthonormal, templates,
-            "treble_clef", 10000, gClefStaffY, findImmovable, caseName)
-          maybeClef.toSet
+          findClefInColumn(box, orthonormal, templates,
+            "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
+          findClefInColumn(box, orthonormal, templates,
+            "bass_clef", 5000, fClefStaffY, findImmovable, caseName).toSet
         } else if (width >= 5) {
           val foundNotes =
             findNotesInColumn(box, orthonormal, templates,
