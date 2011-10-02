@@ -2243,14 +2243,12 @@ val y = (y0 + y1) / 2
   def orthonormalize(input:GrayImage,
       vLineSlopeRange:(Float,Float), metrics:Metrics, yCorrection:Array[Float],
       caseName:String) : Orthonormal = {
-    val (b0, b1) = vLineSlopeRange
+    val (m0, m1) = vLineSlopeRange
 
     def targetYFor(xUncentered:Int, yUncentered:Int) = {
       val xCentered = xUncentered - input.w/2
       val yCentered = yUncentered - input.h/2
 
-      // TODO poorly chosen notation:
-      //   b0 below means something different than b0 above
       // Equation for y-skewing: (y stands for staffY)
       //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
       // Solve for y (staffY):
@@ -2272,14 +2270,14 @@ val y = (y0 + y1) / 2
 
     def targetXFor(sourceX:Int, sourceY:Int) = {
       // Equation for x-skewing:
-      //   x' = x0 + (b0 + (x0/w)*(b1-b0)) * y
+      //   x' = x0 + (m0 + (x0/w)*(m1-m0)) * y
       // Solve for x0 given x':
-      //   x' = x0 + b0*y + x0*(b1-b0)*y/w
-      //   x' - b0*y = x0 + x0*(b1-b0)*y/w
-      //   x0 * (1 + (b1-b0)*y/w) = x' - b0*y
-      //   x0 = (x' - b0*y) / (1 + (b1-b0)*y/w)
+      //   x' = x0 + m0*y + x0*(m1-m0)*y/w
+      //   x' - m0*y = x0 + x0*(m1-m0)*y/w
+      //   x0 * (1 + (m1-m0)*y/w) = x' - m0*y
+      //   x0 = (x' - m0*y) / (1 + (m1-m0)*y/w)
       val targetX =
-        (sourceX - b0 * sourceY) / (1.0f + (b1-b0) * sourceY / input.w)
+        (sourceX - m0 * sourceY) / (1.0f + (m1-m0) * sourceY / input.w)
 
       // Although we don't model x-scaling or how it changes from left to
       // right, it should correlate with the y-scaling
