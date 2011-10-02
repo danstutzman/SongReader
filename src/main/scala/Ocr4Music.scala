@@ -1514,6 +1514,7 @@ object Ocr4Music {
       gradientXResults(x, y) * gradientYResults(x, y) / 64
     }*/
 
+    val blackWhiteMatchThreshold = (0.75f * template.w * template.h).intValue
     val scores = possiblePoints.map { possiblePoint =>
       val (centerX, centerY, staffY) = possiblePoint
       var maxScore = 0
@@ -1522,19 +1523,23 @@ object Ocr4Music {
       (-1 to 1).foreach { xAdjust =>
         (-1 to 1).foreach { yAdjust =>
           val xScore = tryTemplateAt(inputGradientX, templateGradientX,
-              centerX + xAdjust, centerY + yAdjust) {
-            (inputV, templateV) =>
-              inputV != 127 && templateV != 127 &&
-                Math.abs(templateV - inputV) < 2
+              centerX + xAdjust, centerY + yAdjust) { (inputV, templateV) =>
+            inputV != 127 && templateV != 127 &&
+              Math.abs(templateV - inputV) < 2
           }
           val yScore = tryTemplateAt(inputGradientY, templateGradientY,
-              centerX + xAdjust, centerY + yAdjust) {
-            (inputV, templateV) =>
-              inputV != 127 && templateV != 127 &&
-                Math.abs(templateV - inputV) < 2
+              centerX + xAdjust, centerY + yAdjust) { (inputV, templateV) =>
+            inputV != 127 && templateV != 127 &&
+              Math.abs(templateV - inputV) < 2
+          }
+          val blackWhiteMatchScore = tryTemplateAt(input, template,
+              centerX + xAdjust, centerY + yAdjust) { (inputV, templateV) =>
+            (inputV > 128 && templateV > 128) ||
+            (inputV < 128 && templateV < 128)
           }
           val score = xScore * yScore
-          if (score > maxScore) {
+          if (score > maxScore &&
+              blackWhiteMatchScore > blackWhiteMatchThreshold) {
             maxScore = score
             argmaxCenterX = centerX + xAdjust
             argmaxCenterY = centerY + yAdjust
