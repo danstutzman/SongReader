@@ -1,3 +1,4 @@
+import java.io.File
 import scala.collection.immutable.TreeMap
 
 sealed abstract class Warning {}
@@ -86,8 +87,7 @@ object WidthSpeculator {
     }
   }
 
-  def readWidthPairs() = {
-    val caseName = "3b"
+  def readWidthPairs(caseName:String) = {
     val path = "output/widths/%s.txt".format(caseName)
     val contents = scala.io.Source.fromFile(path).mkString
     val allLines = contents.split("\n")
@@ -102,17 +102,31 @@ object WidthSpeculator {
     }
   }
 
-  def main(args:Array[String]) {
-    val widthPairs = readWidthPairs
-    val predictions = widthPairs.map { pair =>
-      val (margin, width) = pair
-      val prediction =
-        if (width >= 18) "F/G"
-        else if (width >= 4) "*"
-        else "|"
-      (prediction, width)
+  def expandCaseNames(args:Array[String]) = {
+    var caseNames:List[String] = Nil
+    val filenames = new File("input").listFiles
+    args.foreach { arg =>
+      val GlobMatch = ("(" + arg.replaceAll("\\*", ".*") + ")\\.json").r
+      filenames.foreach { filename =>
+        filename.getName match {
+          case GlobMatch(caseName) => caseNames = caseName :: caseNames
+          case _ => ()
+        }
+      }
     }
-    println(predictions.toList)
+    if (args.length == 0)
+      throw new RuntimeException("1st arg: case name from input/*.json")
+    caseNames.reverse
+  }
+
+  def main(args:Array[String]) {
+    val caseNames = expandCaseNames(args)
+    println(caseNames)
+    caseNames.foreach { caseName =>
+      val widthPairs = readWidthPairs(caseName)
+      val widths = widthPairs.map { _._2 + 1 }.toList.filter { _ > 4 }.sorted
+      println((caseName, widths(widths.size * 3 / 4)))
+    }
 
 /*
     val caseNameToSymbols = readAnnotations()

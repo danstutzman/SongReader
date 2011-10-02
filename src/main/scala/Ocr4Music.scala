@@ -2375,6 +2375,7 @@ val y = (y0 + y1) / 2
         isFull(x) = true
     }
 
+    /*
     // Smooth over two-pixel gaps, for now
     var timeSinceLastWasFull = 9999
     var timeLastFull = 0
@@ -2391,7 +2392,7 @@ val y = (y0 + y1) / 2
       } else {
         timeSinceLastWasFull += 1
       }
-    }
+    }*/
 
     var boxes:List[BoundingBox] = Nil
     var boxStartX = outer.minX
@@ -2544,7 +2545,7 @@ val y = (y0 + y1) / 2
     val verticalSlices = findEasyVerticalCuts(wholeImage, input, orthonormal)
     val vlineXs = vlines.map { vline =>
       orthonormal.xForXIntercept(vline.xIntercept) }
-    //val boxes = cutOnVLines(verticalSlices, mergeAdjacent(vlineXs))
+    val boxes = cutOnVLines(verticalSlices, mergeAdjacent(vlineXs))
 
     val demo = input.toColorImage
     val color = (255, 0, 0)
@@ -2555,7 +2556,7 @@ val y = (y0 + y1) / 2
       val bNew = (b + color._3) min 255
       demo(x, y) = (rNew, gNew, bNew)
     }
-    verticalSlices.foreach { box =>
+    boxes.foreach { box =>
       (box.minX to box.maxX).foreach { x =>
         draw(x, box.minY)
         draw(x, box.maxY)
@@ -2566,7 +2567,7 @@ val y = (y0 + y1) / 2
       }
     }
     demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
-    verticalSlices
+    boxes
 
 /*
 
@@ -2708,7 +2709,7 @@ val y = (y0 + y1) / 2
 
   def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
-      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],ColorImage,String)=>List[Int],
+  finder:(GrayImage,GrayImage,List[(Int,Int,Int)],ColorImage,String)=>List[Int],
       donutDemo:ColorImage,
       caseName:String) : List[TemplateMatch] = {
     val template = templates(templateName)
@@ -2720,12 +2721,14 @@ val y = (y0 + y1) / 2
     val results = finder(orthonormal.image, template,
       possiblePoints, donutDemo, caseName)
     var foundNotes:List[TemplateMatch] = Nil
-    (0 until results.size).foreach { i =>
-      val (centerX, centerY, staffY) = possiblePoints(i)
-      val result = results(i)
-      if (result >= threshold)
-        foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
-          staffY, templateName) :: foundNotes
+    if (box.maxX - box.minX + 1 + 4 >= template.w) {
+      (0 until results.size).foreach { i =>
+        val (centerX, centerY, staffY) = possiblePoints(i)
+        val result = results(i)
+        if (result >= threshold)
+          foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
+            staffY, templateName) :: foundNotes
+      }
     }
     foundNotes
   }
@@ -2836,16 +2839,20 @@ val y = (y0 + y1) / 2
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
+    val widths = boxes.map { box => box.maxX - box.minX + 1 }.toList
+    val orderedWidths = widths.filter { _ > 4 }.sorted
+    val noteWidth = orderedWidths(orderedWidths.size * 3 / 4)
+
     val templates = Map(
-      "white_head" -> prepareTemplate("white_head", 10,
+      "white_head" -> prepareTemplate("white_head", noteWidth,
         Math.round(orthonormal.cSpacing * 1.0f).intValue),
-      "black_head" -> prepareTemplate("black_head", 16,
+      "black_head" -> prepareTemplate("black_head", noteWidth * 10/10,
         Math.round(orthonormal.cSpacing * 1.0f).intValue),
-      "bass_clef" -> prepareTemplate("bass_clef", 24,
+      "bass_clef" -> prepareTemplate("bass_clef", noteWidth * 24/10,
         Math.round(orthonormal.cSpacing * 4.0f).intValue),
-      "treble_clef" -> prepareTemplate("treble_clef", 20,
+      "treble_clef" -> prepareTemplate("treble_clef", noteWidth * 20/10,
         Math.round(orthonormal.cSpacing * 7.0f).intValue),
-      "44" -> prepareTemplate("44", 12,
+      "44" -> prepareTemplate("44", noteWidth * 12/10,
         Math.round(orthonormal.cSpacing * 4.0f).intValue))
 
     val fClefStaffY = -2
