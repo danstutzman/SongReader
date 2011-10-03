@@ -1489,12 +1489,20 @@ object Ocr4Music {
       "demos/template_gradient_x.%s.png".format(caseName)))
     templateGradientY.saveTo(new File(
       "demos/template_gradient_y.%s.png".format(caseName)))
+    //templateGradientX.saveTo(new File(
+    //  "demos/template_gradient_x.%s.png".format(caseName)))
+    //templateGradientY.saveTo(new File(
+    //  "demos/template_gradient_y.%s.png".format(caseName)))
 
     val List(inputGradientX, inputGradientY, _) = makeGradientImages(input, 3)
     inputGradientX.saveTo(new File(
       "demos/input_gradient_x.%s.png".format(caseName)))
     inputGradientY.saveTo(new File(
       "demos/input_gradient_y.%s.png".format(caseName)))
+    //inputGradientX.saveTo(new File(
+    //  "demos/input_gradient_x.%s.png".format(caseName)))
+    //inputGradientY.saveTo(new File(
+    //  "demos/input_gradient_y.%s.png".format(caseName)))
 
     /*val gradientXResults =
       slideTemplate(inputGradientX, templateGradientX) { (inputV, templateV) =>
