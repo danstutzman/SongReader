@@ -1481,47 +1481,10 @@ object Ocr4Music {
   }
 
   def findImmovable(
-      input:GrayImage, template:GrayImage, possiblePoints:List[(Int,Int,Int)],
-      caseName:String) = {
-    val List(templateGradientX, templateGradientY, _) =
-      makeGradientImages(template.addMargin(4), 3)
-    templateGradientX.saveTo(new File(
-      "demos/template_gradient_x.%s.png".format(caseName)))
-    templateGradientY.saveTo(new File(
-      "demos/template_gradient_y.%s.png".format(caseName)))
-    //templateGradientX.saveTo(new File(
-    //  "demos/template_gradient_x.%s.png".format(caseName)))
-    //templateGradientY.saveTo(new File(
-    //  "demos/template_gradient_y.%s.png".format(caseName)))
-
-    val List(inputGradientX, inputGradientY, _) = makeGradientImages(input, 3)
-    inputGradientX.saveTo(new File(
-      "demos/input_gradient_x.%s.png".format(caseName)))
-    inputGradientY.saveTo(new File(
-      "demos/input_gradient_y.%s.png".format(caseName)))
-    //inputGradientX.saveTo(new File(
-    //  "demos/input_gradient_x.%s.png".format(caseName)))
-    //inputGradientY.saveTo(new File(
-    //  "demos/input_gradient_y.%s.png".format(caseName)))
-
-    /*val gradientXResults =
-      slideTemplate(inputGradientX, templateGradientX) { (inputV, templateV) =>
-        inputV != 127 && templateV != 127 && Math.abs(templateV - inputV) < 2
-      }
-    val gradientYResults =
-      slideTemplate(inputGradientY, templateGradientY) { (inputV, templateV) =>
-        inputV != 127 && templateV != 127 && Math.abs(templateV - inputV) < 2
-      }
-
-    val hough255X = gradientXResults.scaleValueToMax255
-    val hough255Y = gradientYResults.scaleValueToMax255
-    hough255X.saveTo(new File("demos/treble_match_x.%s.png".format(caseName)))
-    hough255Y.saveTo(new File("demos/treble_match_y.%s.png".format(caseName)))
-
-    val output = GrayImage.giveBrightnessPerPixel(input.w, input.h) { (x, y) =>
-      gradientXResults(x, y) * gradientYResults(x, y) / 64
-    }*/
-
+      inputGradientX:GrayImage, inputGradientY:GrayImage,
+      templateGradientX:GrayImage, templateGradientY:GrayImage,
+      input:GrayImage, template:GrayImage,
+      possiblePoints:List[(Int,Int,Int)], caseName:String) = {
     val blackWhiteMatchThreshold = (0.75f * template.w * template.h).intValue
     val scores = possiblePoints.map { possiblePoint =>
       val (centerX, centerY, staffY) = possiblePoint
@@ -2576,27 +2539,6 @@ val y = (y0 + y1) / 2
     }
     demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
     boxes
-
-/*
-
-    val demo = justNotes2.toColorImage
-    (0 until image.w).foreach { xIntercept =>
-      val progress = xIntercept / image.w.floatValue
-      val inverseSlope =
-        vLineSlopeAtLeft + (vLineSlopeAtRight - vLineSlopeAtLeft) * progress
-
-      val (rAdjust, gAdjust, bAdjust) = color(xIntercept)
-      (0 until image.h).foreach { y =>
-        val x = xIntercept + Math.round(inverseSlope * y).intValue
-        val (r, g, b) = demo(x, y)
-        val rNew = r max rAdjust
-        val gNew = g max gAdjust
-        val bNew = b max bAdjust
-        demo(x, y) = (rNew, gNew, bNew)
-      }
-    }
-    demo.saveTo(new File("demos/widths.%s.png".format(caseName)))
-*/
   }
 
   def findYBounds(orthonormal:Orthonormal, caseName:String) = {
@@ -2741,11 +2683,12 @@ val y = (y0 + y1) / 2
     foundNotes
   }
 
-  def findImmovableInColumn(box:BoundingBox, orthonormal:Orthonormal,
+  def findImmovableInColumn(box:BoundingBox,
+      inputGradientX:GrayImage, inputGradientY:GrayImage,
+      templateGradientX:GrayImage, templateGradientY:GrayImage,
+      input:GrayImage, template:GrayImage,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
-      fixedStaffY:Int,
-      finder:(GrayImage,GrayImage,List[(Int,Int,Int)],String)=>List[Int],
-      caseName:String) : Option[TemplateMatch] = {
+      fixedStaffY:Int, caseName:String) : Option[TemplateMatch] = {
     val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
     val minY = box.minY + template.h/2
@@ -2758,7 +2701,10 @@ val y = (y0 + y1) / 2
         (x, y, fixedStaffY)
       }
     }
-    val results = finder(orthonormal.image, template, possiblePoints, caseName)
+
+    val results = findImmovable(
+      inputGradientX, inputGradientY, templateGradientX, templateGradientY,
+      input, template, possiblePoints, caseName)
     var maxResult = threshold 
     var argmaxNote:Option[TemplateMatch] = None
     (0 until results.size).foreach { i =>
@@ -2806,6 +2752,7 @@ val y = (y0 + y1) / 2
     val annotationString = scala.io.Source.fromFile(annotationPath).mkString
     val annotation = loadAnnotationJson(annotationString)
 
+    println("  separateNotes")
     val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
       separateNotes(image, caseName)
 
@@ -2814,16 +2761,23 @@ val y = (y0 + y1) / 2
       () => estimateMetrics(partiallyErased, caseName)
     }
 
+    println("  determineYcorrection")
     val yCorrection = determineYCorrection(
       partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
+
+    println("  eraseStaffLines")
     val (justNotes, justNotes2) =
       eraseStaffLines(image, augmentedBinaryNonStaff,
       metrics, yCorrection, caseName)
 
+    println("  findThickHorizontalLines")
     val thickLines = findThickHorizontalLines(justNotes, metrics, caseName)
+
+    println("  findBeams")
     val beams = findBeams(thickLines, image, caseName)
     demoBeams(beams, image, caseName)
 
+    println("  eraseBeams")
     val justNotesNoBeams = eraseBeams(justNotes2, beams, metrics)
 /*
     val segments = scanSegments(justNotesNoBeams)
@@ -2835,11 +2789,14 @@ val y = (y0 + y1) / 2
     demoSegmentGroups(mergedShapes, image, caseName)
 */
 
+    println("  findVLineInverseSlopeRange")
     val inverseSlopeRange =
       findVLineInverseSlopeRange(justNotes2, image, caseName)
+    println("  doVLineDetection")
     val vlines =
       doVLineDetection(justNotes2, image, inverseSlopeRange, caseName)
 
+    println("  orthonormalize")
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
     //orthonormal.image.saveTo(new File(
@@ -2868,20 +2825,36 @@ val y = (y0 + y1) / 2
     val gClefStaffY = 2
     val middleStaffY = 0
 
+    val List(inputGradientX, inputGradientY, _) =
+      makeGradientImages(orthonormal.image, 3)
+    val List(templateTrebleGradientX, templateTrebleGradientY, _) =
+      makeGradientImages(templates("treble_clef").addMargin(4), 3)
+    val List(templateBassGradientX, templateBassGradientY, _) =
+      makeGradientImages(templates("bass_clef").addMargin(4), 3)
+    val List(template44GradientX, template44GradientY, _) =
+      makeGradientImages(templates("44").addMargin(4), 3)
+
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs =
       matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
     val donutDemo = orthonormal.image.toColorImage
     boxes.sortBy { _.minX }.foreach { box =>
+      printf("  Box at x=%04d, ".format(box.minX))
       val width = box.maxX - box.minX + 1
       val annotatedStaffYs = boxToAnnotatedStaffYs(box)
       var foundNotes:Set[TemplateMatch] =
-        findImmovableInColumn(box, orthonormal, templates,
-          "treble_clef", 10000, gClefStaffY, findImmovable, caseName).toSet ++
-        findImmovableInColumn(box, orthonormal, templates,
-          "bass_clef", 4000, fClefStaffY, findImmovable, caseName).toSet ++
-        findImmovableInColumn(box, orthonormal, templates,
-          "44", 3000, middleStaffY, findImmovable, caseName).toSet
+        findImmovableInColumn(box, inputGradientX, inputGradientY,
+          templateTrebleGradientX, templateTrebleGradientY,
+          orthonormal.image, templates("treble_clef"),
+          templates, "treble_clef", 10000, gClefStaffY, caseName).toSet ++
+        findImmovableInColumn(box, inputGradientX, inputGradientY,
+          templateBassGradientX, templateBassGradientY,
+          orthonormal.image, templates("bass_clef"),
+          templates, "bass_clef", 4000, fClefStaffY, caseName).toSet ++
+        findImmovableInColumn(box, inputGradientX, inputGradientY,
+          template44GradientX, template44GradientY,
+          orthonormal.image, templates("44"),
+          templates, "44", 3000, middleStaffY, caseName).toSet
       if (foundNotes.size == 0)
         foundNotes =
           findNotesInColumn(box, orthonormal, templates,
@@ -2892,8 +2865,8 @@ val y = (y0 + y1) / 2
         if (foundNotes.size > 0)
           chooseBestOverlappingSets(
             box, foundNotes, templates, orthonormal.image)
-          else
-            Set[TemplateMatch]()
+        else
+          Set[TemplateMatch]()
       predictedNotes ++= List(prediction)
     }
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
@@ -2957,6 +2930,7 @@ val y = (y0 + y1) / 2
 */
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
+    println("  calcPerformance")
     val performance = calcPerformance(filteredNotes, annotation.notes)
     println("Case %2s: precision: %.3f, recall: %.3f".format(
       caseName, performance.precision, performance.recall))
