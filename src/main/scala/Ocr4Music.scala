@@ -149,7 +149,7 @@ object Ocr4Music {
         adjusted(x, y) = if (newV < 0) 0 else if (newV > 255) 255 else newV
       }
     }
-    adjusted.saveTo(new File("demos/adjusted.%s.png".format(caseName)))
+    //adjusted.saveTo(new File("demos/adjusted.%s.png".format(caseName)))
 
     val augmentedBinaryNonStaff = new GrayImage(input.w, input.h)
     (0 until input.w).foreach { x =>
@@ -179,8 +179,8 @@ object Ocr4Music {
           else adjusted(x, y)
       }
     }
-    partiallyErased.saveTo(new File(
-      "demos/partially_erased.%s.png".format(caseName)))
+    //partiallyErased.saveTo(new File(
+    //  "demos/partially_erased.%s.png".format(caseName)))
 
     (adjusted, partiallyErased, augmentedBinaryNonStaff)
   }
@@ -351,7 +351,7 @@ object Ocr4Music {
         hough2(c, b) = (hough2(c, b) * (250.0 / max2)).intValue
       }
     }
-    hough2.saveTo(new File("demos/hough.%s.png".format(caseName)))
+    //hough2.saveTo(new File("demos/hough.%s.png".format(caseName)))
 
     val centerCSteps =
       brightestCSteps + bestStaffSeparationInCAxis * -bestBrightestIsPointN
@@ -1065,7 +1065,7 @@ object Ocr4Music {
         demo(x, y) = (positiveDiff, 0, normalizedV2)
       }
     }
-    demo.saveTo(new File("demos/erase.%s.png".format(caseName)))
+    //demo.saveTo(new File("demos/erase.%s.png".format(caseName)))
 
     val demo2 = new GrayImage(input.w, input.h)
     val demo4 = new GrayImage(input.w, input.h)
@@ -1091,8 +1091,8 @@ object Ocr4Music {
         demo4(x, y) = demo(x, y)._3
       }
     }
-    demo2.saveTo(new File("demos/erase2.%s.png".format(caseName)))
-    demo4.saveTo(new File("demos/erase4.%s.png".format(caseName)))
+    //demo2.saveTo(new File("demos/erase2.%s.png".format(caseName)))
+    //demo4.saveTo(new File("demos/erase4.%s.png".format(caseName)))
 
     // Draw staff lines on image to see if they look right
     val demo3 = new GrayImage(input.w, input.h)
@@ -1115,7 +1115,7 @@ object Ocr4Music {
         demo3(x, y + yInner) = yNeighborToMedians(yInner)(x)
       }
     }
-    demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
+    //demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
 
     (demo2, demo4)
   }
@@ -1998,7 +1998,7 @@ val y = (y0 + y1) / 2
         thickLines(x, y) = (r, g, 0)
       }
     }
-    thickLines.saveTo(new File("demos/beamlike.%s.png".format(caseName)))
+    //thickLines.saveTo(new File("demos/beamlike.%s.png".format(caseName)))
     thickLines
   }
 
@@ -2056,7 +2056,7 @@ val y = (y0 + y1) / 2
         }
       }
     }
-    demo.saveTo(new File("demos/beams.%s.png".format(caseName)))
+    //demo.saveTo(new File("demos/beams.%s.png".format(caseName)))
     beams
   }
 
@@ -2157,8 +2157,8 @@ val y = (y0 + y1) / 2
       }
     }
 
-    hough.scaleValueToMax255.saveTo(new File(
-      "demos/vhough2.%s.png".format(caseName)))
+    //hough.scaleValueToMax255.saveTo(new File(
+    //  "demos/vhough2.%s.png".format(caseName)))
     hough
   }
 
@@ -2178,8 +2178,8 @@ val y = (y0 + y1) / 2
     val vhough = verticalHough(demo, caseName)
     val (atLeft, atRight) =
       findVLineInverseSlopeRangeGivenHough(vhough, image, 0, caseName)
-    demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
-    justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(caseName)))
+    //demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
+   //justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(caseName)))
 
     ((atLeft - 20) / 80.0f, (atRight - 20) / 80.0f)
   }
@@ -2188,7 +2188,7 @@ val y = (y0 + y1) / 2
   def doVLineDetection(justNotes2:GrayImage, image:GrayImage,
       inverseSlopeRange:(Float,Float), caseName:String) = {
     val vEdges = findVerticalLines(justNotes2).binarize(10)
-    vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
+    //vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
 
     val justNotes2Blurred = edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
@@ -2244,7 +2244,7 @@ val y = (y0 + y1) / 2
         vlines = VLine(xIntercept, argmaxY0, argmaxY1) :: vlines
       }
     }
-    demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
+    //demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
 
     vlines
   }
@@ -2319,7 +2319,7 @@ val y = (y0 + y1) / 2
         squaredUp(targetX + 1, targetY + 1) = v
       }
     }
-    squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
+    //squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
 
     def yForStaffY(staffY:Int) = {
       val y = Math.round(staffY/2.0f * metrics.cSpacing + input.h/2).intValue
@@ -2842,8 +2842,9 @@ val y = (y0 + y1) / 2
 
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
-    orthonormal.image.saveTo(new File(
-      "demos/orthonormal.%s.png".format(caseName)))
+    //orthonormal.image.saveTo(new File(
+    //  "demos/orthonormal.%s.png".format(caseName)))
+    println("  doWidthDetection")
     val boxes = doWidthDetection(orthonormal, vlines, caseName)
     saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
 
@@ -2895,7 +2896,7 @@ val y = (y0 + y1) / 2
             Set[TemplateMatch]()
       predictedNotes ++= List(prediction)
     }
-    donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
+    //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
     val filteredNotes = predictedNotes
 
     var casePerformance = Performance(Set(), Set(), Set())
