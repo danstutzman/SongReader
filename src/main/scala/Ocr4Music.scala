@@ -2304,7 +2304,7 @@ val y = (y0 + y1) / 2
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
-      ledgerLines:Orthonormal) = {
+      gapSmoothing:Int, ledgerLines:Orthonormal) = {
     val maxVs = new Array[Int](outer.maxX + 1)
     val ledgerLineYs:List[Int] = List(8, 6, -6, -8).map { staffY =>
       ledgerLines.yForStaffY(staffY)
@@ -2346,24 +2346,24 @@ val y = (y0 + y1) / 2
         isFull(x) = true
     }
 
-    /*
-    // Smooth over two-pixel gaps, for now
-    var timeSinceLastWasFull = 9999
-    var timeLastFull = 0
-    var gapThreshold = 2
-    (outer.minX to outer.maxX).foreach { x =>
-      if (isFull(x)) {
-        if (timeSinceLastWasFull <= gapThreshold) {
-          (timeLastFull to x - 1).foreach { x2 =>
-            isFull(x2) = true
+    if (gapSmoothing > 0) {
+      // Smooth over two-pixel gaps, for now
+      var timeSinceLastWasFull = 9999
+      var timeLastFull = 0
+      (outer.minX to outer.maxX).foreach { x =>
+        if (isFull(x)) {
+          if (timeSinceLastWasFull <= gapSmoothing) {
+            (timeLastFull to x - 1).foreach { x2 =>
+              isFull(x2) = true
+            }
           }
+          timeSinceLastWasFull = 0
+          timeLastFull = x
+        } else {
+          timeSinceLastWasFull += 1
         }
-        timeSinceLastWasFull = 0
-        timeLastFull = x
-      } else {
-        timeSinceLastWasFull += 1
       }
-    }*/
+    }
 
     var boxes:List[BoundingBox] = Nil
     var boxStartX = outer.minX
@@ -2506,39 +2506,63 @@ val y = (y0 + y1) / 2
     newPoints
   }
 
-  def doWidthDetection(
+  def findVerticalSlices(
       orthonormal:Orthonormal, vlines:List[VLine], caseName:String) = {
     val (minY, maxY) = findYBounds(orthonormal, caseName)
     val input = orthonormal.image
     val wholeImage = BoundingBox(0, input.w - 1, minY, maxY)
 
-    //val horizontalSlices = findHorizontalCuts(wholeImage, input)
-    val verticalSlices = findEasyVerticalCuts(wholeImage, input, orthonormal)
+    val verticalSlices = findEasyVerticalCuts(wholeImage, input, 2, orthonormal)
+
     val vlineXs = vlines.map { vline =>
       orthonormal.xForXIntercept(vline.xIntercept) }
-    val boxes = cutOnVLines(verticalSlices, mergeAdjacent(vlineXs))
+    val adjacentVLines = mergeAdjacent(vlineXs)
 
+    var boxToChildBoxes = Map[BoundingBox,List[BoundingBox]]()
+    verticalSlices.foreach { parentBox =>
+      val vlineXs = vlines.map { vline =>
+        orthonormal.xForXIntercept(vline.xIntercept) }
+      val furtherCuts = findEasyVerticalCuts(parentBox, input, 0, orthonormal)
+      val childBoxes = cutOnVLines(furtherCuts, adjacentVLines)
+      boxToChildBoxes = boxToChildBoxes.updated(parentBox, childBoxes)
+    }
+    boxToChildBoxes
+  }
+
+  def demoVerticalSlices(input:GrayImage,
+      boxToChildBoxes:Map[BoundingBox,List[BoundingBox]], caseName:String) {
     val demo = input.toColorImage
-    val color = (255, 0, 0)
-    def draw(x:Int, y:Int) {
+    val outerColor = (255, 0, 0)
+    val innerColor = (128, 0, 0)
+
+    def draw(x:Int, y:Int, color:(Int,Int,Int)) {
       val (r, g, b) = demo(x, y)
       val rNew = (r + color._1) min 255
       val gNew = (g + color._2) min 255
       val bNew = (b + color._3) min 255
       demo(x, y) = (rNew, gNew, bNew)
     }
-    boxes.foreach { box =>
+
+    def drawBox(box:BoundingBox, color:(Int,Int,Int)) {
       (box.minX to box.maxX).foreach { x =>
-        draw(x, box.minY)
-        draw(x, box.maxY)
+        draw(x, box.minY, color)
+        draw(x, box.maxY, color)
       }
       (box.minY to box.maxY).foreach { y =>
-        draw(box.minX, y)
-        draw(box.maxX, y)
+        draw(box.minX, y, color)
+        draw(box.maxX, y, color)
       }
     }
+
+    boxToChildBoxes.keys.foreach { parentBox =>
+      val childBoxes = boxToChildBoxes(parentBox)
+      childBoxes.foreach { childBox =>
+        drawBox(childBox, innerColor)
+      }
+      drawBox(parentBox, outerColor)
+    }
+
     demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
-    boxes
   }
 
   def findYBounds(orthonormal:Orthonormal, caseName:String) = {
@@ -2801,11 +2825,14 @@ val y = (y0 + y1) / 2
       metrics, yCorrection, caseName)
     //orthonormal.image.saveTo(new File(
     //  "demos/orthonormal.%s.png".format(caseName)))
-    println("  doWidthDetection")
-    val boxes = doWidthDetection(orthonormal, vlines, caseName)
-    saveWidths(boxes, new File("output/widths/%s.txt".format(caseName)))
+    println("  findVerticalSlices")
+    val boxToChildBoxes = findVerticalSlices(orthonormal, vlines, caseName)
+    val allChildBoxes =
+      boxToChildBoxes.values.foldLeft(List[BoundingBox]()){ _++_ }
+    demoVerticalSlices(orthonormal.image, boxToChildBoxes, caseName)
+    saveWidths(allChildBoxes, new File("output/widths/%s.txt".format(caseName)))
 
-    val widths = boxes.map { box => box.maxX - box.minX + 1 }.toList
+    val widths = allChildBoxes.map { box => box.maxX - box.minX + 1 }.toList
     val orderedWidths = widths.filter { _ > 4 }.sorted
     val noteWidth = orderedWidths(orderedWidths.size * 3 / 4)
 
@@ -2835,36 +2862,38 @@ val y = (y0 + y1) / 2
       makeGradientImages(templates("44").addMargin(4), 3)
 
     var predictedNotes:List[Set[TemplateMatch]] = Nil
-    val boxToAnnotatedStaffYs =
-      matchBoxesToAnnotations(boxes, annotation, orthonormal.transformXY)
+    val boxToAnnotatedStaffYs = matchBoxesToAnnotations(
+      boxToChildBoxes.keys.toList, annotation, orthonormal.transformXY)
     val donutDemo = orthonormal.image.toColorImage
-    boxes.sortBy { _.minX }.foreach { box =>
-      printf("  Box at x=%04d, ".format(box.minX))
-      val width = box.maxX - box.minX + 1
-      val annotatedStaffYs = boxToAnnotatedStaffYs(box)
+    boxToChildBoxes.keys.toList.sortBy { _.minX }.foreach { parentBox =>
+      printf("  Box at x=%04d,    ".format(parentBox.minX))
       var foundNotes:Set[TemplateMatch] =
-        findImmovableInColumn(box, inputGradientX, inputGradientY,
+        findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateTrebleGradientX, templateTrebleGradientY,
           orthonormal.image, templates("treble_clef"),
           templates, "treble_clef", 10000, gClefStaffY, caseName).toSet ++
-        findImmovableInColumn(box, inputGradientX, inputGradientY,
+        findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateBassGradientX, templateBassGradientY,
           orthonormal.image, templates("bass_clef"),
           templates, "bass_clef", 4000, fClefStaffY, caseName).toSet ++
-        findImmovableInColumn(box, inputGradientX, inputGradientY,
+        findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           template44GradientX, template44GradientY,
           orthonormal.image, templates("44"),
           templates, "44", 3000, middleStaffY, caseName).toSet
-      if (foundNotes.size == 0)
-        foundNotes =
-          findNotesInColumn(box, orthonormal, templates,
-            "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
-          findNotesInColumn(box, orthonormal, templates,
-            "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
+      if (foundNotes.size == 0) {
+        val childBoxes = boxToChildBoxes(parentBox)
+        childBoxes.foreach { box =>
+          foundNotes ++=
+            findNotesInColumn(box, orthonormal, templates,
+              "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
+            findNotesInColumn(box, orthonormal, templates,
+              "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
+        }
+      }
       val prediction =
         if (foundNotes.size > 0)
           chooseBestOverlappingSets(
-            box, foundNotes, templates, orthonormal.image)
+            parentBox, foundNotes, templates, orthonormal.image)
         else
           Set[TemplateMatch]()
       predictedNotes ++= List(prediction)
