@@ -1,8 +1,13 @@
 #!/bin/sh
+
+#MAIN=Ocr4Music
+#MAIN=WidthSpeculator
+MAIN=FullPage
+DEFAULT_ARGS=photo1
+
 cd `dirname $0`/..
 bin/build
 if [ "$?" == "0" ]; then
   echo Running...
-  java -Xmx1024M -Djava.awt.headless=true -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar Ocr4Music "$@"
-  #java -Xmx1024M -Djava.awt.headless=true -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar WidthSpeculator "$@"
+  java -Xmx1024M -Djava.awt.headless=true -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar $MAIN $DEFAULT_ARGS "$@"
 fi
