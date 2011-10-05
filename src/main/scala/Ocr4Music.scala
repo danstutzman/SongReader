@@ -28,7 +28,16 @@ case class BoundingBox (
   val maxX:Int,
   val minY:Int,
   val maxY:Int
-) {}
+) {
+  def toMap() : Map[String,Int] = {
+    Map("minX" -> minX, "maxX" -> maxX, "minY" -> minY, "maxY" -> maxY)
+  }
+}
+object BoundingBox {
+  def fromMap(map:Map[String,Int]) : BoundingBox = {
+    BoundingBox(map("minX"), map("maxX"), map("minY"), map("maxY"))
+  }
+}
 
 case class Beam (
   val x0:Int,
@@ -120,6 +129,8 @@ case class VLine (
 ) {}
 
 case class Staff (
+  val staffName:String,
+  val bounds:BoundingBox,
   val midlineYs:Array[Int],
   val staffSeparations:Array[Float]
 ) {}
@@ -2786,10 +2797,7 @@ val y = (y0 + y1) / 2
   }
 
   def saveBounds(bounds:List[BoundingBox], file:File) {
-    val boundsAsMaps = bounds.map { box =>
-      Map("minX" -> box.minX, "maxX" -> box.maxX,
-          "minY" -> box.minY, "maxY" -> box.maxY)
-    }
+    val boundsAsMaps = bounds.map { _.toMap }
     val out = Json.build(boundsAsMaps).toString().replaceAll(
       "\\},\\{", "},\n{")
     printToFile(file) { writer =>
@@ -2806,7 +2814,9 @@ val y = (y0 + y1) / 2
 
   def saveStaffs(staffs:List[Staff], file:File) {
     val staffAsLists = staffs.map { staff =>
-      Map("midlineYs"        -> staff.midlineYs,
+      Map("staffName"        -> staff.staffName,
+          "bounds"           -> staff.bounds.toMap,
+          "midlineYs"        -> staff.midlineYs,
           "staffSeparations" -> staff.staffSeparations)
     }
     val out = Json.build(staffAsLists).toString().replaceAll(
@@ -2819,10 +2829,13 @@ val y = (y0 + y1) / 2
   def loadStaffs(file:File) : List[Staff] = {
     val inString = readFile(file)
     Json.parse(inString).asInstanceOf[List[Map[String,AnyVal]]].map { map =>
+      val staffName = map("staffName").asInstanceOf[String]
+      val bounds =
+        BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
       val midlineYs = map("midlineYs").asInstanceOf[List[Int]].toArray
       val staffSeparations = map("staffSeparations"
         ).asInstanceOf[List[BigDecimal]].map { _.toFloat }.toArray
-      Staff(midlineYs, staffSeparations)
+      Staff(staffName, bounds, midlineYs, staffSeparations)
     }
   }
 
@@ -2847,26 +2860,44 @@ val y = (y0 + y1) / 2
     val staffs = readOrGenerate(staffsPath, saveStaffs, loadStaffs) { () =>
       FindStaffs.run(midlines, image, bounds, caseName)
     }
-    
-/*
-    println("  separateNotes")
-    val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
-      separateNotes(image, caseName)
 
-    val metricsPath = new File("output/metrics/%s.json".format(caseName))
-    val metrics = readOrGenerate(metricsPath, saveMetrics, restoreMetrics) {
-      () => estimateMetrics(partiallyErased, caseName)
+    staffs.foreach { staffAbsolute =>
+      val staffName = staffAbsolute.staffName
+      val (x0, x1) = (staffAbsolute.bounds.minX, staffAbsolute.bounds.maxX)
+      val y0 = (Math.floor(staffAbsolute.midlineYs.filter { _ > -1 }.min -
+        staffAbsolute.staffSeparations.max * 8.0f).intValue) max 0
+      val y1 = (Math.ceil(staffAbsolute.midlineYs.filter { _ > -1 }.max +
+        staffAbsolute.staffSeparations.max * 8.0f).intValue) min (image.h - 1)
+      val (w, h) = (x1 - x0 + 1, y1 - y0 + 1)
+
+      val midlineYs = new Array[Int](w)
+      (0 until w).foreach { x =>
+        val oldY = staffAbsolute.midlineYs(x + x0)
+        midlineYs(x) = (if (oldY == -1) oldY else oldY - y0)
+      }
+
+      val staffSeparations = new Array[Float](w)
+      (0 until w).foreach { x =>
+        staffSeparations(x) = staffAbsolute.staffSeparations(x + x0)
+      }
+
+      val staffRelative = Staff(staffName,
+        BoundingBox(0, x1 - x0, 0, y1 - y0), midlineYs, staffSeparations)
+      val cropped = image.crop(x0, y0, w, h)
+
+      val erasedPath1 = new File("output/erased1/%s.jpeg".format(staffName))
+      val justNotes =
+          readOrGenerate(erasedPath1, saveGrayImage, loadGrayImage) { () =>
+        EraseStaff.run(cropped, staffRelative, true, staffName)
+      }
+      
+      val erasedPath2 = new File("output/erased2/%s.jpeg".format(staffName))
+      val justNotes2 =
+          readOrGenerate(erasedPath2, saveGrayImage, loadGrayImage) { () =>
+        EraseStaff.run(cropped, staffRelative, false, staffName)
+      }
     }
-
-    println("  determineYcorrection")
-    val yCorrection = determineYCorrection(
-      partiallyErased, augmentedBinaryNonStaff, metrics, caseName)
-
-    println("  eraseStaffLines")
-    val (justNotes, justNotes2) =
-      eraseStaffLines(image, augmentedBinaryNonStaff,
-      metrics, yCorrection, caseName)
-
+ /*
     println("  findThickHorizontalLines")
     val thickLines = findThickHorizontalLines(justNotes, metrics, caseName)
 

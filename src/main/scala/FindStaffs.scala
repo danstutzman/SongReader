@@ -226,6 +226,7 @@ object FindStaffs {
     val demo2 = image.toColorImage
     val red = (255, 0, 0)
 
+    var staffNum = 'a'.asInstanceOf[Int] - 1
     var staffs = segments.map { segment =>
       val (midlineYs, staffSeparations) =
         findMidlineYs(segment, highlighted, demo, caseName)
@@ -242,7 +243,9 @@ object FindStaffs {
         }
       }
 
-      Staff(midlineYs, staffSeparations)
+      staffNum += 1
+      val staffName = "%s%c".format(caseName, staffNum)
+      Staff(staffName, segment, midlineYs, staffSeparations)
     }
 
     demo.saveTo(new File("demos/hline.%s.png".format(caseName)))
