@@ -2925,11 +2925,13 @@ val y = (y0 + y1) / 2
       val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
         FindBeams.run(justNotes, image, staffRelative, staffName)
       }
+
+      val noBeamsPath = new File("output/no_beams/%s.jpeg".format(staffName))
+      val justNotesNoBeams =
+          readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
+        EraseBeams.run(justNotes2, beams, staffRelative, staffName)
+      }
     }
- /*
-    println("  eraseBeams")
-    val justNotesNoBeams = eraseBeams(justNotes2, beams, metrics)
-*/
 /*
     val segments = scanSegments(justNotesNoBeams)
     val shapes = groupTouchingSegments(segments)
