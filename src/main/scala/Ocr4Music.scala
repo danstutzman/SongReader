@@ -135,7 +135,16 @@ case class VLine (
   val xIntercept:Int,
   val y0:Int,
   val y1:Int
-) {}
+) {
+  def toMap() : Map[String,Int] = {
+    Map("xIntercept" -> xIntercept, "y0" -> y0, "y1" -> y1)
+  }
+}
+object VLine {
+  def fromMap(map:Map[String,Int]) : VLine = {
+    VLine(map("xIntercept"), map("y0"), map("y1"))
+  }
+}
 
 case class Staff (
   val staffName:String,
@@ -2875,6 +2884,21 @@ val y = (y0 + y1) / 2
     (int1.toFloat, int2.toFloat)
   }
 
+  def saveVLines(vLines:List[VLine], file:File) {
+    val vLinesAsMaps = vLines.map { _.toMap }
+    val out = Json.build(vLinesAsMaps).toString().replaceAll(
+      "\\},\\{", "},\n{")
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
+  }
+
+  def loadVLines(file:File) : List[VLine] = {
+    val inString = readFile(file)
+    Json.parse(inString).asInstanceOf[List[Map[String,Int]]].map {
+      VLine.fromMap(_) }
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2950,12 +2974,14 @@ val y = (y0 + y1) / 2
           saveFloatPair, loadFloatPair) { () =>
         FindVSlopeRange.run(justNotes2, image, staffName)
       }
+
+      val vLinesPath = new File("output/v_lines/%s.json".format(staffName))
+      val vLines = readOrGenerate(vLinesPath, saveVLines, loadVLines) { () =>
+        FindVLines.run(justNotes2, image, vSlopeRange, staffName)
+      }
     }
 
-/*    println("  doVLineDetection")
-    val vlines =
-      doVLineDetection(justNotes2, image, inverseSlopeRange, caseName)
-
+/*
     println("  orthonormalize")
     val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
       metrics, yCorrection, caseName)
