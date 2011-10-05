@@ -1,8 +1,8 @@
 #!/bin/sh
 
-#MAIN=Ocr4Music
+MAIN=Ocr4Music
 #MAIN=WidthSpeculator
-MAIN=FullPage
+#MAIN=FullPage
 DEFAULT_ARGS=
 
 cd `dirname $0`/..

@@ -6,6 +6,7 @@ import java.lang.Math
 import javax.imageio.ImageIO
 import scala.collection.mutable.PriorityQueue
 import scala.io.Source
+import scala.math.BigDecimal
 import scala.util.Random
 import scala.util.Sorting
 
@@ -116,6 +117,11 @@ case class VLine (
   val xIntercept:Int,
   val y0:Int,
   val y1:Int
+) {}
+
+case class Staff (
+  val midlineYs:Array[Int],
+  val staffSeparations:Array[Float]
 ) {}
 
 object Ocr4Music {
@@ -1582,20 +1588,14 @@ object Ocr4Music {
     )
   }
 
-  def saveGrayImage(image:GrayImage, file:File) {
-    image.saveTo(file)
-  }
-
-  def loadGrayImage(file:File) = {
-    ColorImage.readFromFile(file).toGrayImage.inverse
-  }
-
   def readOrGenerate[T](file:File, save:((T,File)=>Unit), restore:(File=>T))(
       generator:()=>T) = {
     if (!file.exists()) {
       printf("Generating %s...\n", file.getPath())
       val output = generator()
       save(output, file)
+    } else {
+      printf("Loading    %s...\n", file.getPath())
     }
     restore(file)
   }
@@ -2769,6 +2769,63 @@ val y = (y0 + y1) / 2
     boxToAnnotatedStaffYs
   }
 
+  def saveGrayImage(image:GrayImage, file:File) {
+    image.saveTo(file)
+  }
+
+  def loadGrayImage(file:File) : GrayImage = {
+    ColorImage.readFromFile(file).toGrayImage
+  }
+
+  def saveColorImage(image:ColorImage, file:File) {
+    image.saveTo(file)
+  }
+
+  def loadColorImage(file:File) : ColorImage = {
+    ColorImage.readFromFile(file)
+  }
+
+  def saveBounds(bounds:List[BoundingBox], file:File) {
+    val boundsAsMaps = bounds.map { box =>
+      Map("minX" -> box.minX, "maxX" -> box.maxX,
+          "minY" -> box.minY, "maxY" -> box.maxY)
+    }
+    val out = Json.build(boundsAsMaps).toString().replaceAll(
+      "\\},\\{", "},\n{")
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
+  }
+
+  def loadBounds(file:File) : List[BoundingBox] = {
+    val inString = readFile(file)
+    Json.parse(inString).asInstanceOf[List[Map[String,Int]]].map { map =>
+      BoundingBox(map("minX"), map("maxX"), map("minY"), map("maxY"))
+    }
+  }
+
+  def saveStaffs(staffs:List[Staff], file:File) {
+    val staffAsLists = staffs.map { staff =>
+      Map("midlineYs"        -> staff.midlineYs,
+          "staffSeparations" -> staff.staffSeparations)
+    }
+    val out = Json.build(staffAsLists).toString().replaceAll(
+      "\\},\\{", "},\n{")
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
+  }
+
+  def loadStaffs(file:File) : List[Staff] = {
+    val inString = readFile(file)
+    Json.parse(inString).asInstanceOf[List[Map[String,AnyVal]]].map { map =>
+      val midlineYs = map("midlineYs").asInstanceOf[List[Int]].toArray
+      val staffSeparations = map("staffSeparations"
+        ).asInstanceOf[List[BigDecimal]].map { _.toFloat }.toArray
+      Staff(midlineYs, staffSeparations)
+    }
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2776,6 +2833,22 @@ val y = (y0 + y1) / 2
     val annotationString = scala.io.Source.fromFile(annotationPath).mkString
     val annotation = loadAnnotationJson(annotationString)
 
+    val midlinesPath = new File("output/midlines/%s.jpeg".format(caseName))
+    val midlines = readOrGenerate(midlinesPath, saveColorImage, loadColorImage){
+      () => FindMidlines.run(image, caseName)
+    }
+
+    val boundsPath = new File("output/bounds/%s.json".format(caseName))
+    val bounds = readOrGenerate(boundsPath, saveBounds, loadBounds) { () =>
+      FindBounds.run(midlines, caseName)
+    }
+
+    val staffsPath = new File("output/staffs/%s.json".format(caseName))
+    val staffs = readOrGenerate(staffsPath, saveStaffs, loadStaffs) { () =>
+      FindStaffs.run(midlines, image, bounds, caseName)
+    }
+    
+/*
     println("  separateNotes")
     val (inputAdjusted, partiallyErased, augmentedBinaryNonStaff) =
       separateNotes(image, caseName)
@@ -2803,6 +2876,7 @@ val y = (y0 + y1) / 2
 
     println("  eraseBeams")
     val justNotesNoBeams = eraseBeams(justNotes2, beams, metrics)
+*/
 /*
     val segments = scanSegments(justNotesNoBeams)
     val shapes = groupTouchingSegments(segments)
@@ -2812,6 +2886,7 @@ val y = (y0 + y1) / 2
     }
     demoSegmentGroups(mergedShapes, image, caseName)
 */
+/*
 
     println("  findVLineInverseSlopeRange")
     val inverseSlopeRange =
@@ -2900,6 +2975,7 @@ val y = (y0 + y1) / 2
     }
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
     val filteredNotes = predictedNotes
+*/
 
     var casePerformance = Performance(Set(), Set(), Set())
 /*
@@ -2957,6 +3033,7 @@ val y = (y0 + y1) / 2
     val filteredNotes = groupedPoints
 
 */
+/*
     demoNotes(filteredNotes, image.toColorImage, caseName)
 
     println("  calcPerformance")
@@ -2987,6 +3064,7 @@ val y = (y0 + y1) / 2
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
+*/
     casePerformance
   }
 
