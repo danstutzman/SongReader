@@ -3,7 +3,7 @@
 #MAIN=Ocr4Music
 #MAIN=WidthSpeculator
 MAIN=FullPage
-DEFAULT_ARGS=photo1
+DEFAULT_ARGS=
 
 cd `dirname $0`/..
 bin/build
