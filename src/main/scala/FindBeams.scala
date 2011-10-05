@@ -89,7 +89,12 @@ object FindBeams {
       }
     }
     //demo.saveTo(new File("demos/beams.%s.png".format(staffName)))
-    beams
+
+    val beamsCropped = beams.map { beam =>
+      Beam(beam.x0 max 0, beam.x1 min (image.w - 1),
+           beam.y0 max 0, beam.y1 min (image.h - 1))
+    }
+    beamsCropped
   }
 
   def demoBeams(beams:List[Beam], image:GrayImage, staffName:String) {
