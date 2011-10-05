@@ -2863,6 +2863,18 @@ val y = (y0 + y1) / 2
     }
   }
 
+  def saveFloatPair(floats:(Float,Float), file:File) {
+    printToFile(file) { writer =>
+      writer.write(Json.build(List(floats._1, floats._2)).toString())
+    }
+  }
+
+  def loadFloatPair(file:File) : (Float,Float) = {
+    val inString = readFile(file)
+    val List(int1, int2) = Json.parse(inString).asInstanceOf[List[BigDecimal]]
+    (int1.toFloat, int2.toFloat)
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2931,22 +2943,16 @@ val y = (y0 + y1) / 2
           readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
         EraseBeams.run(justNotes2, beams, staffRelative, staffName)
       }
-    }
-/*
-    val segments = scanSegments(justNotesNoBeams)
-    val shapes = groupTouchingSegments(segments)
-    val shapeGroups = groupXOverlappingShapes(shapes)
-    val mergedShapes = shapeGroups.map { shapes =>
-      shapes.foldLeft(List[Segment]()) { _ ++ _ }
-    }
-    demoSegmentGroups(mergedShapes, image, caseName)
-*/
-/*
 
-    println("  findVLineInverseSlopeRange")
-    val inverseSlopeRange =
-      findVLineInverseSlopeRange(justNotes2, image, caseName)
-    println("  doVLineDetection")
+      val vSlopeRangePath =
+        new File("output/v_slope_range/%s.json".format(staffName))
+      val vSlopeRange = readOrGenerate(vSlopeRangePath,
+          saveFloatPair, loadFloatPair) { () =>
+        FindVSlopeRange.run(justNotes2, image, staffName)
+      }
+    }
+
+/*    println("  doVLineDetection")
     val vlines =
       doVLineDetection(justNotes2, image, inverseSlopeRange, caseName)
 
