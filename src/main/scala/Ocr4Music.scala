@@ -44,7 +44,16 @@ case class Beam (
   val x1:Int,
   val y0:Int,
   val y1:Int
-) {}
+) {
+  def toMap() : Map[String,Int] = {
+    Map("x0" -> x0, "x1" -> x1, "y0" -> y1, "y1" -> y1)
+  }
+}
+object Beam {
+  def fromMap(map:Map[String,Int]) : Beam = {
+    Beam(map("x0"), map("x1"), map("y0"), map("y1"))
+  }
+}
 
 case class LabeledPoint (
   val label:String,
@@ -2839,6 +2848,21 @@ val y = (y0 + y1) / 2
     }
   }
 
+  def saveBeams(beams:List[Beam], file:File) {
+    val out = Json.build(beams.map { _.toMap }).toString().replaceAll(
+      "\\},\\{", "},\n{")
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
+  }
+
+  def loadBeams(file:File) : List[Beam] = {
+    val inString = readFile(file)
+    Json.parse(inString).asInstanceOf[List[Map[String,Int]]].map { map =>
+      Beam.fromMap(map)
+    }
+  }
+
   def processCase(caseName:String) : Performance = {
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
@@ -2896,15 +2920,13 @@ val y = (y0 + y1) / 2
           readOrGenerate(erasedPath2, saveGrayImage, loadGrayImage) { () =>
         EraseStaff.run(cropped, staffRelative, false, staffName)
       }
+
+      val beamsPath = new File("output/beams/%s.json".format(staffName))
+      val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
+        FindBeams.run(justNotes, image, staffRelative, staffName)
+      }
     }
  /*
-    println("  findThickHorizontalLines")
-    val thickLines = findThickHorizontalLines(justNotes, metrics, caseName)
-
-    println("  findBeams")
-    val beams = findBeams(thickLines, image, caseName)
-    demoBeams(beams, image, caseName)
-
     println("  eraseBeams")
     val justNotesNoBeams = eraseBeams(justNotes2, beams, metrics)
 */
