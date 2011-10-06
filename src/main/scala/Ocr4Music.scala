@@ -2241,60 +2241,95 @@ val y = (y0 + y1) / 2
     vlines
   }
 
+  def targetYFor(x:Int, y:Int, staff:Staff, staffSeparationsMax:Float) = {
+    // Equation for y-skewing:
+    //   y = midlineYs(x) + staffY * staffSeparations(x)
+    // Solve for staffY:
+    //   staffY = (y - midlineYs(x)) / staffSeparations(x)
+    val midlineY = staff.midlineYs(x)
+    val ss = staff.staffSeparations(x)
+    if (midlineY > -1 && ss > 0) {
+      val staffY = (y - midlineY) / ss * 2.0f
+
+      // We don't want to use staffY for the transformed input, because it
+      // has only two pixels per staff line; instead multiply by the max
+      // staff separation so no pixels are lost.
+      Math.round(staffY/2.0f * staffSeparationsMax).intValue
+    }
+    else 0
+  }
+
+  def targetXFor(sourceX:Int, sourceY:Int, m0:Float, m1:Float, w:Int) = {
+    // Equation for x-skewing:
+    //   x' = x0 + (m0 + (x0/w)*(m1-m0)) * y
+    // Solve for x0 given x':
+    //   x' = x0 + m0*y + x0*(m1-m0)*y/w
+    //   x' - m0*y = x0 + x0*(m1-m0)*y/w
+    //   x0 * (1 + (m1-m0)*y/w) = x' - m0*y
+    //   x0 = (x' - m0*y) / (1 + (m1-m0)*y/w)
+    Math.round(
+      (sourceX - m0 * sourceY) / (1.0f + (m1-m0) * sourceY / w)
+    ).intValue
+  }
+
+  case class OrthonormalTransform (
+    val staff:Staff,
+    val staffSeparationsMax:Float, // just here for speed
+    val m0:Float, // v slope at left of image
+    val m1:Float, // v slope at right of image
+    val bounds:BoundingBox, // subtract minX and minY to find real coordinates
+    val yForStaffY:Map[Int,Int],
+    val xForXIntercept:Array[Int]
+  ) {}
+
   // by "orthonormal" I mean that the vertical lines in the image are pointing
   // straight up and down, and the horizontal staff lines are pointing
   // straight left and right, instead of both being somewhat diagonal.
   // It doesn't mean that the x and y vectors are unit length.
-  def orthonormalize(input:GrayImage,
-      vLineSlopeRange:(Float,Float), metrics:Metrics, yCorrection:Array[Float],
-      caseName:String) : Orthonormal = {
+  def setupOrthonormalTransform(w:Int, h:Int, staff:Staff,
+      vLineSlopeRange:(Float,Float), staffName:String) : OrthonormalTransform ={
     val (m0, m1) = vLineSlopeRange
+    val staffSeparationsMax = staff.staffSeparations.max // calc only once
 
-    def targetYFor(xUncentered:Int, yUncentered:Int) = {
-      val xCentered = xUncentered - input.w/2
-      val yCentered = yUncentered - input.h/2
+    val minTargetY = (0 until w).map {
+      targetYFor(_, 0, staff, staffSeparationsMax)
+    }.min
+    val maxTargetY = (0 until w).map {
+      targetYFor(_, h - 1, staff, staffSeparationsMax)
+    }.max
 
-      // Equation for y-skewing: (y stands for staffY)
-      //   y' = a0*x*x + (b0 + b*y)*x + (c0 + c*y) + correct(x)
-      // Solve for y (staffY):
-      //   y' - a0*x*x - b0*x - c0 - correct(x) = b*y/2*x + c*y/2
-      //   y = (y' - a0*x*x - b0*x - c0 - correct(x)) / (b*x + c) * 2
-      val staffY = (yCentered -
-        metrics.a * xCentered * xCentered -
-        metrics.b * xCentered - metrics.c - yCorrection(xUncentered)) /
-        (metrics.bSpacing * xCentered + metrics.cSpacing) * 2.0f
+    val minTargetX = targetXFor(0, 0, m0, m1, w) min
+                     targetXFor(0, h - 1, m0, m1, w)
+    val maxTargetX = targetXFor(w - 1, 0, m0, m1, w) max
+                     targetXFor(w - 1, h - 1, m0, m1, w)
 
-      // We don't want to use staffY for the transformed input, because it
-      // has too few pixels per staff line; instead we want staffY*c,
-      // which has one target pixel per source pixel in the center, and
-      // slightly more/less than that at the edges
-      Math.round(staffY/2.0f * metrics.cSpacing + input.h/2).intValue
+    def yForStaffY(staffY:Int) = {
+      val y = Math.round(staffY/2.0f * staffSeparationsMax).intValue
+      y - minTargetY
     }
-    val minTargetY = (0 until input.w).map { targetYFor(_, 0) }.min
-    val maxTargetY = (0 until input.w).map { targetYFor(_, input.h - 1) }.max
 
-    def targetXFor(sourceX:Int, sourceY:Int) = {
-      // Equation for x-skewing:
-      //   x' = x0 + (m0 + (x0/w)*(m1-m0)) * y
-      // Solve for x0 given x':
-      //   x' = x0 + m0*y + x0*(m1-m0)*y/w
-      //   x' - m0*y = x0 + x0*(m1-m0)*y/w
-      //   x0 * (1 + (m1-m0)*y/w) = x' - m0*y
-      //   x0 = (x' - m0*y) / (1 + (m1-m0)*y/w)
-      val targetX =
-        (sourceX - m0 * sourceY) / (1.0f + (m1-m0) * sourceY / input.w)
-
-      // Although we don't model x-scaling or how it changes from left to
-      // right, it should correlate with the y-scaling
-      val xCentered = sourceX - input.w/2
-      val staffSeparation = (xCentered * metrics.bSpacing) + metrics.cSpacing
-      val proportion = staffSeparation / metrics.cSpacing
-      Math.round(targetX / proportion).intValue
+    val xForXIntercept = (0 until w).map {
+      targetXFor(_, 0, m0, m1, w) - minTargetX
+    }.toArray
+    val yForStaffYMap = (-8 to 8).foldLeft(Map[Int,Int]()) { (map, staffY) =>
+      map.updated(staffY, yForStaffY(staffY))
     }
-    val minTargetX =
-      targetXFor(0, 0) min targetXFor(0, input.h - 1)
-    val maxTargetX =
-      targetXFor(input.w - 1, 0) max targetXFor(input.w - 1, input.h - 1)
+    val transformXY = { (x:Int, y:Int) =>
+      (targetXFor(x, y, m0, m1, w) - minTargetX,
+       targetYFor(x, y, staff, staffSeparationsMax) - minTargetY)
+    }
+
+    val bounds = BoundingBox(minTargetX, maxTargetX, minTargetY, maxTargetY)
+    OrthonormalTransform(
+      staff, staffSeparationsMax, m0, m1, bounds, yForStaffYMap, xForXIntercept)
+  }
+
+  def doOrthonormalTransform(input:GrayImage, transform:OrthonormalTransform) :
+      GrayImage = {
+    val (m0, m1, staff, staffSeparationsMax) = (transform.m0, transform.m1,
+      transform.staff, transform.staffSeparationsMax)
+    val BoundingBox(minTargetX, maxTargetX, minTargetY, maxTargetY) =
+      transform.bounds
 
     val squaredUp = new GrayImage(maxTargetX - minTargetX + 1 + 1,
                                   maxTargetY - minTargetY + 1 + 1)
@@ -2302,8 +2337,10 @@ val y = (y0 + y1) / 2
       (0 until input.h).foreach { sourceY =>
         val v = input(sourceX, sourceY)
 
-        val targetX = targetXFor(sourceX, sourceY) - minTargetX
-        val targetY = targetYFor(sourceX, sourceY) - minTargetY
+        val targetX =
+          targetXFor(sourceX, sourceY, m0, m1, input.w) - minTargetX
+        val targetY =
+          targetYFor(sourceX, sourceY, staff, staffSeparationsMax) - minTargetY
 
         squaredUp(targetX,     targetY)     = v
         squaredUp(targetX + 1, targetY)     = v
@@ -2311,25 +2348,7 @@ val y = (y0 + y1) / 2
         squaredUp(targetX + 1, targetY + 1) = v
       }
     }
-    //squaredUp.saveTo(new File("demos/squared.%s.png".format(caseName)))
-
-    def yForStaffY(staffY:Int) = {
-      val y = Math.round(staffY/2.0f * metrics.cSpacing + input.h/2).intValue
-      y - minTargetY
-    }
-
-    val xForXIntercept = (0 until input.w).map {
-      targetXFor(_, 0) - minTargetX
-    }.toArray
-    val yForStaffYMap = (-8 to 8).foldLeft(Map[Int,Int]()) { (map, staffY) =>
-      map.updated(staffY, yForStaffY(staffY))
-    }
-    val transformXY = { (x:Int, y:Int) =>
-      (targetXFor(x, y) - minTargetX, targetYFor(x, y) - minTargetY)
-    }
-
-    Orthonormal(squaredUp, yForStaffYMap, xForXIntercept, metrics.cSpacing,
-      transformXY)
+    squaredUp
   }
 
   def findEasyVerticalCuts(outer:BoundingBox, input:GrayImage,
@@ -2959,7 +2978,7 @@ val y = (y0 + y1) / 2
 
       val beamsPath = new File("output/beams/%s.json".format(staffName))
       val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
-        FindBeams.run(justNotes, image, staffRelative, staffName)
+        FindBeams.run(justNotes, cropped, staffRelative, staffName)
       }
 
       val noBeamsPath = new File("output/no_beams/%s.jpeg".format(staffName))
@@ -2972,21 +2991,21 @@ val y = (y0 + y1) / 2
         new File("output/v_slope_range/%s.json".format(staffName))
       val vSlopeRange = readOrGenerate(vSlopeRangePath,
           saveFloatPair, loadFloatPair) { () =>
-        FindVSlopeRange.run(justNotes2, image, staffName)
+        FindVSlopeRange.run(justNotes2, cropped, staffName)
       }
 
       val vLinesPath = new File("output/v_lines/%s.json".format(staffName))
       val vLines = readOrGenerate(vLinesPath, saveVLines, loadVLines) { () =>
-        FindVLines.run(justNotes2, image, vSlopeRange, staffName)
+        FindVLines.run(justNotes2, cropped, vSlopeRange, staffName)
       }
-    }
 
+      val transform = setupOrthonormalTransform(cropped.w, cropped.h,
+        staffRelative, vSlopeRange, caseName)
+      val orthonormalImage = doOrthonormalTransform(justNotesNoBeams, transform)
+      orthonormalImage.saveTo(new File(
+        "demos/orthonormal.%s.png".format(staffName)))
+    }
 /*
-    println("  orthonormalize")
-    val orthonormal = orthonormalize(justNotesNoBeams, inverseSlopeRange,
-      metrics, yCorrection, caseName)
-    //orthonormal.image.saveTo(new File(
-    //  "demos/orthonormal.%s.png".format(caseName)))
     println("  findVerticalSlices")
     val boxToChildBoxes = findVerticalSlices(orthonormal, vlines, caseName)
     val allChildBoxes =
