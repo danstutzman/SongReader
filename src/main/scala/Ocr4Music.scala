@@ -151,7 +151,60 @@ case class Staff (
   val bounds:BoundingBox,
   val midlineYs:Array[Int],
   val staffSeparations:Array[Float]
-) {}
+) {
+  def toMap() : Map[String,Any] = {
+    Map("staffName"        -> staffName,
+        "bounds"           -> bounds.toMap,
+        "midlineYs"        -> midlineYs,
+        "staffSeparations" -> staffSeparations)
+  }
+}
+object Staff {
+  def fromMap(map:Map[String,Any]) : Staff = {
+    val staffName = map("staffName").asInstanceOf[String]
+    val bounds =
+      BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
+    val midlineYs = map("midlineYs").asInstanceOf[List[Int]].toArray
+    val staffSeparations = map("staffSeparations"
+      ).asInstanceOf[List[BigDecimal]].map { _.toFloat }.toArray
+    Staff(staffName, bounds, midlineYs, staffSeparations)
+  }
+}
+
+case class OrthonormalTransform (
+  val staff:Staff,
+  val staffSeparationsMax:Float, // just here for speed
+  val m0:Float, // v slope at left of image
+  val m1:Float, // v slope at right of image
+  val bounds:BoundingBox, // subtract minX and minY to find real coordinates
+  val yForStaffY:Map[Int,Int],
+  val xForXIntercept:Array[Int]
+) {
+  def toMap() : Map[String,Any] = {
+    Map("staff"               -> staff.toMap,
+        "staffSeparationsMax" -> staffSeparationsMax,
+        "m0"                  -> m0,
+        "m1"                  -> m1,
+        "bounds"              -> bounds.toMap,
+        "yForStaffY"          -> yForStaffY,
+        "xForXIntercept"      -> xForXIntercept)
+  }
+}
+object OrthonormalTransform {
+  def fromMap(map:Map[String,Any]) : OrthonormalTransform = {
+    val staff = Staff.fromMap(map("staff").asInstanceOf[Map[String,Any]])
+    val staffSeparationsMax =
+      map("staffSeparationsMax").asInstanceOf[BigDecimal].toFloat
+    val m0 = map("m0").asInstanceOf[BigDecimal].toFloat
+    val m1 = map("m1").asInstanceOf[BigDecimal].toFloat
+    val bounds =
+      BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
+    val yForStaffY = map("yForStaffY").asInstanceOf[Map[Int,Int]]
+    val xForXIntercept = map("xForXIntercept").asInstanceOf[List[Int]].toArray
+    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, bounds,
+      yForStaffY, xForXIntercept)
+  }
+}
 
 object Ocr4Music {
   def separateNotes(input:GrayImage, caseName:String) = {
@@ -2272,16 +2325,6 @@ val y = (y0 + y1) / 2
     ).intValue
   }
 
-  case class OrthonormalTransform (
-    val staff:Staff,
-    val staffSeparationsMax:Float, // just here for speed
-    val m0:Float, // v slope at left of image
-    val m1:Float, // v slope at right of image
-    val bounds:BoundingBox, // subtract minX and minY to find real coordinates
-    val yForStaffY:Map[Int,Int],
-    val xForXIntercept:Array[Int]
-  ) {}
-
   // by "orthonormal" I mean that the vertical lines in the image are pointing
   // straight up and down, and the horizontal staff lines are pointing
   // straight left and right, instead of both being somewhat diagonal.
@@ -2850,12 +2893,7 @@ val y = (y0 + y1) / 2
   }
 
   def saveStaffs(staffs:List[Staff], file:File) {
-    val staffAsLists = staffs.map { staff =>
-      Map("staffName"        -> staff.staffName,
-          "bounds"           -> staff.bounds.toMap,
-          "midlineYs"        -> staff.midlineYs,
-          "staffSeparations" -> staff.staffSeparations)
-    }
+    val staffAsLists = staffs.map { _.toMap }
     val out = Json.build(staffAsLists).toString().replaceAll(
       "\\},\\{", "},\n{")
     printToFile(file) { writer =>
@@ -2865,14 +2903,8 @@ val y = (y0 + y1) / 2
 
   def loadStaffs(file:File) : List[Staff] = {
     val inString = readFile(file)
-    Json.parse(inString).asInstanceOf[List[Map[String,AnyVal]]].map { map =>
-      val staffName = map("staffName").asInstanceOf[String]
-      val bounds =
-        BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
-      val midlineYs = map("midlineYs").asInstanceOf[List[Int]].toArray
-      val staffSeparations = map("staffSeparations"
-        ).asInstanceOf[List[BigDecimal]].map { _.toFloat }.toArray
-      Staff(staffName, bounds, midlineYs, staffSeparations)
+    Json.parse(inString).asInstanceOf[List[Map[String,Any]]].map { map =>
+      Staff.fromMap(map) 
     }
   }
 
@@ -2916,6 +2948,29 @@ val y = (y0 + y1) / 2
     val inString = readFile(file)
     Json.parse(inString).asInstanceOf[List[Map[String,Int]]].map {
       VLine.fromMap(_) }
+  }
+
+/*
+    val staff:Staff,
+    val staffSeparationsMax:Float, // just here for speed
+    val m0:Float, // v slope at left of image
+    val m1:Float, // v slope at right of image
+    val bounds:BoundingBox, // subtract minX and minY to find real coordinates
+    val yForStaffY:Map[Int,Int],
+    val xForXIntercept:Array[Int]
+*/
+
+  def saveOrthonormalTransform(transform:OrthonormalTransform, file:File) {
+    val out = Json.build(transform.toMap).toString()
+    printToFile(file) { writer =>
+      writer.write(out)
+    }
+  }
+
+  def loadOrthonormalTransform(file:File) : OrthonormalTransform = {
+    val inString = readFile(file)
+    val map = Json.parse(inString).asInstanceOf[Map[String,Any]]
+    OrthonormalTransform.fromMap(map)
   }
 
   def processCase(caseName:String) : Performance = {
@@ -2999,11 +3054,20 @@ val y = (y0 + y1) / 2
         FindVLines.run(justNotes2, cropped, vSlopeRange, staffName)
       }
 
-      val transform = setupOrthonormalTransform(cropped.w, cropped.h,
-        staffRelative, vSlopeRange, caseName)
-      val orthonormalImage = doOrthonormalTransform(justNotesNoBeams, transform)
-      orthonormalImage.saveTo(new File(
-        "demos/orthonormal.%s.png".format(staffName)))
+      val transformPath = new File(
+        "output/orthonormal_transform/%s.json".format(staffName))
+      val transform = readOrGenerate(transformPath, saveOrthonormalTransform,
+          loadOrthonormalTransform) { () =>
+        SetupOrthonormalTransform.run(cropped.w, cropped.h, staffRelative,
+          vSlopeRange, staffName)
+      }
+
+      val orthonormalImagePath = new File(
+        "output/orthonormal_image/%s.png".format(staffName))
+      val orthonormalImage = readOrGenerate(
+          orthonormalImagePath, saveGrayImage, loadGrayImage) { () =>
+        DoOrthonormalTransform.run(justNotesNoBeams, transform)
+      }
     }
 /*
     println("  findVerticalSlices")
