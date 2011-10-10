@@ -122,7 +122,7 @@ case class TemplateSpec (
   val finder:(GrayImage,GrayImage,String)=>GrayImage,
   val threshold:Double
 ) {}
-
+ 
 case class Orthonormal (
   val image:GrayImage,
   val yForStaffY:Map[Int,Int],
@@ -186,7 +186,8 @@ case class OrthonormalTransform (
         "m0"                  -> m0,
         "m1"                  -> m1,
         "bounds"              -> bounds.toMap,
-        "yForStaffY"          -> yForStaffY,
+        "yForStaffY"          -> yForStaffY.map { pair =>
+                                   List(pair._1, pair._2) },
         "xForXIntercept"      -> xForXIntercept)
   }
 }
@@ -199,7 +200,9 @@ object OrthonormalTransform {
     val m1 = map("m1").asInstanceOf[BigDecimal].toFloat
     val bounds =
       BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
-    val yForStaffY = map("yForStaffY").asInstanceOf[Map[Int,Int]]
+    val yForStaffY = map("yForStaffY").asInstanceOf[List[List[Int]]].flatMap {
+      pair => List((pair(0), pair(1)))
+    }.toMap
     val xForXIntercept = map("xForXIntercept").asInstanceOf[List[Int]].toArray
     OrthonormalTransform(staff, staffSeparationsMax, m0, m1, bounds,
       yForStaffY, xForXIntercept)
