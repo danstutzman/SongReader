@@ -1617,63 +1617,8 @@ object Ocr4Music {
     }
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
 
-//demoNotes(predictedNotes, orthonormalImage.toColorImage, staffName)
+    demoNotes(predictedNotes, orthonormalImage.toColorImage, staffName)
 
-/*
-    val c = metrics.cSpacing.intValue
-    val templateSpecs =
-      //TemplateSpec("treble_clef",   3,    8, findTrebleClef, 0.1) ::
-      //TemplateSpec("sharp",       1.3,  2.6, findAccidental) ::
-      //TemplateSpec("flat",        1.1, 2.35, findAccidental) ::
-      //TemplateSpec("natural",       1,    3, findAccidental) ::
-      TemplateSpec("black_head",   2.00, 1.25, findBlackHeads, 0.25) ::
-      //TemplateSpec("white_head",  1.5, 1.25, findWhiteHeads, 1.0) ::
-      Nil
-    var casePerformance = Performance(List(), List(), List())
-    var points:List[TemplateMatch] = Nil
-    var templates = Map[String,GrayImage]()
-    templateSpecs.foreach { templateSpec =>
-      val templateName = templateSpec.name
-      printf(" Searching for %s...\n", templateName)
-
-      val templatePath = new File("templates/%s.png".format(templateName))
-      val bigTemplate =
-        ColorImage.readFromFile(templatePath).toGrayImage.inverse
-      val templateW =
-        (templateSpec.widthInStaffLines * metrics.cSpacing).intValue
-      val templateH =
-        (templateSpec.heightInStaffLines * metrics.cSpacing).intValue
-      val template = scaleTemplate(bigTemplate, templateW, templateH)
-      templates = templates.updated(templateName, template)
-      val detected = templateSpec.finder(
-        justNotes, template, templateName + "." + caseName)
-      detected.saveTo(new File("demos/detected.%s.%s.png".format(
-        templateName, caseName)))
-
-      val thresholdInt =
-        (templateSpec.threshold * templateW * templateH).intValue
-      val detectedThreshold =
-        ColorImage.giveRGBPerPixel(detected.w, detected.h) { (x, y) =>
-          val v = detected(x, y)
-          if (v < thresholdInt) (v * 255 / thresholdInt, 0, 0)
-          else (v, v, v)
-        }
-      detectedThreshold.saveTo(new File("demos/detected2.%s.%s.png".format(
-        templateName, caseName)))
-      points ++= gleanPoints(detected, metrics, yCorrection, templateW,
-        templateH, thresholdInt, templateName)
-    }
-
-    val overlappingPointGroups = groupOverlappingPoints(points)
-    demoAlternatives(overlappingPointGroups, inputAdjusted, caseName)
-    demoPointGroups(overlappingPointGroups, inputAdjusted, caseName)
-    val culledPointGroups = chooseBestOverlappingSets(
-      overlappingPointGroups, templates, justNotes.inverse)
-
-    val groupedPoints = groupTemplateMatches(culledPointGroups)
-    val filteredNotes = groupedPoints
-
-*/
     println("  calcPerformance")
     val performance = calcPerformance(predictedNotes,
       annotationBox.foldLeft(List[Set[ExpectedNote]]()) { _ ++ _.notes })
