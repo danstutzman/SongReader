@@ -93,7 +93,7 @@ object FindBounds {
     }
     demo.saveTo(new File("demos/split.%s.png".format(caseName)))
 
-    segments.map { segment =>
+    segments.sortBy { _.y0 }.map { segment =>
       BoundingBox(0, highlighted.w - 1, segment.y0, segment.y1)
     }
   }
