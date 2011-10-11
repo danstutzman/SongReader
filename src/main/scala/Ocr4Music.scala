@@ -18,38 +18,6 @@ object Colors {
   val ansiEscapeNormal  = "\u001b" + "[0m"
 }
 
-case class BoundingBox (
-  val minX:Int,
-  val maxX:Int,
-  val minY:Int,
-  val maxY:Int
-) {
-  def toMap() : Map[String,Int] = {
-    Map("minX" -> minX, "maxX" -> maxX, "minY" -> minY, "maxY" -> maxY)
-  }
-}
-object BoundingBox {
-  def fromMap(map:Map[String,Int]) : BoundingBox = {
-    BoundingBox(map("minX"), map("maxX"), map("minY"), map("maxY"))
-  }
-}
-
-case class Beam (
-  val x0:Int,
-  val x1:Int,
-  val y0:Int,
-  val y1:Int
-) {
-  def toMap() : Map[String,Int] = {
-    Map("x0" -> x0, "x1" -> x1, "y0" -> y1, "y1" -> y1)
-  }
-}
-object Beam {
-  def fromMap(map:Map[String,Int]) : Beam = {
-    Beam(map("x0"), map("x1"), map("y0"), map("y1"))
-  }
-}
-
 case class LabeledPoint (
   val label:String,
   val x:Int,
@@ -84,31 +52,6 @@ case class Performance (
   def recall() = { numCorrect.floatValue / (numCorrect + numMissing) }
 }
 
-case class TemplateMatch (
-  val x:Int,
-  val y:Int,
-  val w:Int,
-  val h:Int,
-  val staffY:Int,
-  val templateName:String
-) {
-  def toMap() : Map[String,Any] = {
-    Map("x" -> x, "y" -> y, "w" -> w, "h" -> h, "staffY" -> staffY,
-      "templateName" -> templateName)
-  }
-}
-object TemplateMatch {
-  def fromMap(map:Map[String,Any]) : TemplateMatch = {
-    TemplateMatch(
-      map("x").asInstanceOf[Int],
-      map("y").asInstanceOf[Int],
-      map("w").asInstanceOf[Int],
-      map("h").asInstanceOf[Int],
-      map("staffY").asInstanceOf[Int],
-      map("templateName").asInstanceOf[String])
-  }
-}
-
 case class TemplateSpec (
   val name:String,
   val widthInStaffLines:Double,
@@ -117,112 +60,6 @@ case class TemplateSpec (
   val threshold:Double
 ) {}
  
-case class VLine (
-  val xIntercept:Int,
-  val y0:Int,
-  val y1:Int
-) {
-  def toMap() : Map[String,Int] = {
-    Map("xIntercept" -> xIntercept, "y0" -> y0, "y1" -> y1)
-  }
-}
-object VLine {
-  def fromMap(map:Map[String,Int]) : VLine = {
-    VLine(map("xIntercept"), map("y0"), map("y1"))
-  }
-}
-
-case class Staff (
-  val staffName:String,
-  val bounds:BoundingBox,
-  val midlineYs:Array[Int],
-  val staffSeparations:Array[Float]
-) {
-  def toMap() : Map[String,Any] = {
-    Map("staffName"        -> staffName,
-        "bounds"           -> bounds.toMap,
-        "midlineYs"        -> midlineYs,
-        "staffSeparations" -> staffSeparations)
-  }
-}
-object Staff {
-  def fromMap(map:Map[String,Any]) : Staff = {
-    val staffName = map("staffName").asInstanceOf[String]
-    val bounds =
-      BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
-    val midlineYs = map("midlineYs").asInstanceOf[List[Int]].toArray
-    val staffSeparations = map("staffSeparations"
-      ).asInstanceOf[List[BigDecimal]].map { _.toFloat }.toArray
-    Staff(staffName, bounds, midlineYs, staffSeparations)
-  }
-}
-
-case class OrthonormalTransform (
-  val staff:Staff,
-  val staffSeparationsMax:Float, // just here for speed
-  val m0:Float, // v slope at left of image
-  val m1:Float, // v slope at right of image
-  val w:Int, // width of image
-  val bounds:BoundingBox, // subtract minX and minY to find real coordinates
-  val yForStaffY:Map[Int,Int],
-  val xForXIntercept:Array[Int]
-) {
-  def transformXY = { (x:Int, y:Int) =>
-    (Ocr4Music.targetXFor(x, y, m0, m1, w) - bounds.minX,
-     Ocr4Music.targetYFor(x, y, staff, staffSeparationsMax) - bounds.minY)
-  }
-  def toMap() : Map[String,Any] = {
-    Map("staff" -> staff.toMap,
-        "staffSeparationsMax" -> staffSeparationsMax,
-        "m0" -> m0, "m1" -> m1, "w" -> w,
-        "bounds"         -> bounds.toMap,
-        "yForStaffY"     -> yForStaffY.map { pair => List(pair._1, pair._2) },
-        "xForXIntercept" -> xForXIntercept)
-  }
-}
-object OrthonormalTransform {
-  def fromMap(map:Map[String,Any]) : OrthonormalTransform = {
-    val staff = Staff.fromMap(map("staff").asInstanceOf[Map[String,Any]])
-    val staffSeparationsMax =
-      map("staffSeparationsMax").asInstanceOf[BigDecimal].toFloat
-    val m0 = map("m0").asInstanceOf[BigDecimal].toFloat
-    val m1 = map("m1").asInstanceOf[BigDecimal].toFloat
-    val w = map("w").asInstanceOf[Int]
-    val bounds =
-      BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
-    val yForStaffY = map("yForStaffY").asInstanceOf[List[List[Int]]].flatMap {
-      pair => List((pair(0), pair(1)))
-    }.toMap
-    val xForXIntercept = map("xForXIntercept").asInstanceOf[List[Int]].toArray
-    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, w, bounds,
-      yForStaffY, xForXIntercept)
-  }
-}
-
-case class BoxOfTemplates (
-  val box:BoundingBox,
-  val templates:Set[TemplateMatch],
-  val childBoxes:List[BoxOfTemplates]
-) {
-  def toMap() : Map[String,Any] = {
-    Map("box"       -> box.toMap,
-        "templates" -> templates.map { _.toMap }.toList,
-        "childBoxes" -> childBoxes.map { _.toMap })
-  }
-}
-object BoxOfTemplates {
-  def fromMap(map:Map[String,Any]) : BoxOfTemplates = {
-    val box = BoundingBox.fromMap(map("box").asInstanceOf[Map[String,Int]])
-    val templates = map("templates").asInstanceOf[List[Map[String,Any]]].map {
-      map2 => TemplateMatch.fromMap(map2.asInstanceOf[Map[String,Any]])
-    }.toSet
-    val childBoxes = map("childBoxes").asInstanceOf[List[Map[String,Any]]].map {
-      map2 => BoxOfTemplates.fromMap(map2.asInstanceOf[Map[String,Any]])
-    }
-    BoxOfTemplates(box, templates, childBoxes)
-  }
-}
-
 class TemplateResizer(val cache:MutableMap[(String,Int,Int),GrayImage]) {
   def this() = this(MutableMap[(String,Int,Int),GrayImage]())
   def apply(point:TemplateMatch) = {
