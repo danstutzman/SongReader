@@ -182,6 +182,12 @@ object OrthonormalTransform {
   }
 }
 
+case class BoxOfTemplates (
+  val box:BoundingBox,
+  val templates:Set[TemplateMatch],
+  val childBoxes:List[BoxOfTemplates]
+) {}
+
 object Ocr4Music {
   def demoNotes(
       noteGroups:List[Set[TemplateMatch]], input:ColorImage, caseName:String) {
@@ -1579,13 +1585,14 @@ object Ocr4Music {
     val List(template44GradientX, template44GradientY, _) =
       makeGradientImages(templates("44").addMargin(4), 3)
 
-    var predictedNotes:List[Set[TemplateMatch]] = Nil
+    var allFoundNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs = matchBoxesToAnnotations(
       boxToChildBoxes.keys.toList, allAnnotationPoints, transform)
     val donutDemo = orthonormalImage.toColorImage
-    boxToChildBoxes.keys.toList.sortBy { _.minX }.foreach { parentBox =>
+    val parentBoxes = boxToChildBoxes.keys.toList.sortBy { _.minX }
+    val boxesOfTemplates = parentBoxes.map { parentBox =>
       printf("  Box at x=%04d,    ".format(parentBox.minX))
-      var foundNotes:Set[TemplateMatch] = 
+      val immovables:Set[TemplateMatch] = 
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateTrebleGradientX, templateTrebleGradientY,
           orthonormalImage, templates("treble_clef"),
@@ -1600,22 +1607,30 @@ object Ocr4Music {
           template44GradientX, template44GradientY,
           orthonormalImage, templates("44"),
           templates, "44", 3000, middleStaffY, transform, caseName).toSet
-      if (foundNotes.size == 0) {
-        val childBoxes = boxToChildBoxes(parentBox)
-        childBoxes.foreach { box =>
-          val newFoundNotes =
-            findNotesInColumn(box, orthonormalImage, transform, templates,
-              "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
-            findNotesInColumn(box, orthonormalImage, transform, templates,
-              "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
-          if (newFoundNotes.size > 0)
-            foundNotes ++= chooseBestOverlappingSets(
-              parentBox, newFoundNotes, templates, orthonormalImage)
-        }
-      }
-      predictedNotes ++= List(foundNotes)
+      val childBoxes =
+        if (immovables.size == 0) {
+          boxToChildBoxes(parentBox).map { box =>
+            val newFoundNotes:Set[TemplateMatch] =
+              findNotesInColumn(box, orthonormalImage, transform, templates,
+                "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
+              findNotesInColumn(box, orthonormalImage, transform, templates,
+                "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
+            BoxOfTemplates(box, newFoundNotes, Nil)
+          }
+        } else Nil
+      BoxOfTemplates(parentBox, immovables, childBoxes)
     }
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
+
+    val predictedNotes = boxesOfTemplates.map { box =>
+      if (box.templates.size > 0)
+        box.templates
+      else
+        box.childBoxes.foldLeft(Set[TemplateMatch]()) { (accum, childBox) =>
+          accum ++ chooseBestOverlappingSets(childBox.box, childBox.templates,
+            templates, orthonormalImage)
+        }
+    }
 
     demoNotes(predictedNotes, orthonormalImage.toColorImage, staffName)
 
