@@ -39,7 +39,7 @@ object SetupOrthonormalTransform {
     }
 
     val bounds = BoundingBox(minTargetX, maxTargetX, minTargetY, maxTargetY)
-    OrthonormalTransform(
-      staff, staffSeparationsMax, m0, m1, bounds, yForStaffYMap, xForXIntercept)
+    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, w, bounds,
+      yForStaffYMap, xForXIntercept)
   }
 }

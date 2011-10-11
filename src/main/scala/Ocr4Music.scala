@@ -123,14 +123,6 @@ case class TemplateSpec (
   val threshold:Double
 ) {}
  
-case class Orthonormal (
-  val image:GrayImage,
-  val yForStaffY:Map[Int,Int],
-  val xForXIntercept:Array[Int],
-  val cSpacing:Float, // equal to Metrics.cSpacing (units haven't changed)
-  val transformXY:(Int,Int)=>(Int,Int)
-) {}
-
 case class VLine (
   val xIntercept:Int,
   val y0:Int,
@@ -176,19 +168,22 @@ case class OrthonormalTransform (
   val staffSeparationsMax:Float, // just here for speed
   val m0:Float, // v slope at left of image
   val m1:Float, // v slope at right of image
+  val w:Int, // width of image
   val bounds:BoundingBox, // subtract minX and minY to find real coordinates
   val yForStaffY:Map[Int,Int],
   val xForXIntercept:Array[Int]
 ) {
+  def transformXY = { (x:Int, y:Int) =>
+    (Ocr4Music.targetXFor(x, y, m0, m1, w) - bounds.minX,
+     Ocr4Music.targetYFor(x, y, staff, staffSeparationsMax) - bounds.minY)
+  }
   def toMap() : Map[String,Any] = {
-    Map("staff"               -> staff.toMap,
+    Map("staff" -> staff.toMap,
         "staffSeparationsMax" -> staffSeparationsMax,
-        "m0"                  -> m0,
-        "m1"                  -> m1,
-        "bounds"              -> bounds.toMap,
-        "yForStaffY"          -> yForStaffY.map { pair =>
-                                   List(pair._1, pair._2) },
-        "xForXIntercept"      -> xForXIntercept)
+        "m0" -> m0, "m1" -> m1, "w" -> w,
+        "bounds"         -> bounds.toMap,
+        "yForStaffY"     -> yForStaffY.map { pair => List(pair._1, pair._2) },
+        "xForXIntercept" -> xForXIntercept)
   }
 }
 object OrthonormalTransform {
@@ -198,13 +193,14 @@ object OrthonormalTransform {
       map("staffSeparationsMax").asInstanceOf[BigDecimal].toFloat
     val m0 = map("m0").asInstanceOf[BigDecimal].toFloat
     val m1 = map("m1").asInstanceOf[BigDecimal].toFloat
+    val w = map("w").asInstanceOf[Int]
     val bounds =
       BoundingBox.fromMap(map("bounds").asInstanceOf[Map[String,Int]])
     val yForStaffY = map("yForStaffY").asInstanceOf[List[List[Int]]].flatMap {
       pair => List((pair(0), pair(1)))
     }.toMap
     val xForXIntercept = map("xForXIntercept").asInstanceOf[List[Int]].toArray
-    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, bounds,
+    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, w, bounds,
       yForStaffY, xForXIntercept)
   }
 }
@@ -2360,14 +2356,10 @@ val y = (y0 + y1) / 2
     val yForStaffYMap = (-8 to 8).foldLeft(Map[Int,Int]()) { (map, staffY) =>
       map.updated(staffY, yForStaffY(staffY))
     }
-    val transformXY = { (x:Int, y:Int) =>
-      (targetXFor(x, y, m0, m1, w) - minTargetX,
-       targetYFor(x, y, staff, staffSeparationsMax) - minTargetY)
-    }
 
     val bounds = BoundingBox(minTargetX, maxTargetX, minTargetY, maxTargetY)
-    OrthonormalTransform(
-      staff, staffSeparationsMax, m0, m1, bounds, yForStaffYMap, xForXIntercept)
+    OrthonormalTransform(staff, staffSeparationsMax, m0, m1, w, bounds,
+      yForStaffYMap, xForXIntercept)
   }
 
   def doOrthonormalTransform(input:GrayImage, transform:OrthonormalTransform) :
@@ -2398,7 +2390,7 @@ val y = (y0 + y1) / 2
   }
 
   def demoVerticalSlices(input:GrayImage,
-      boxToChildBoxes:Map[BoundingBox,List[BoundingBox]], caseName:String) {
+      boxToChildBoxes:Map[BoundingBox,List[BoundingBox]], staffName:String) {
     val demo = input.toColorImage
     val outerColor = (255, 0, 0)
     val innerColor = (128, 0, 0)
@@ -2430,7 +2422,7 @@ val y = (y0 + y1) / 2
       drawBox(parentBox, outerColor)
     }
 
-    demo.saveTo(new File("demos/segments.%s.png".format(caseName)))
+    demo.saveTo(new File("demos/segments.%s.png".format(staffName)))
   }
 
   def saveWidths(boxes:List[BoundingBox], file:File) = {
@@ -2461,7 +2453,8 @@ val y = (y0 + y1) / 2
     template
   }
 
-  def findNotesInColumn(box:BoundingBox, orthonormal:Orthonormal,
+  def findNotesInColumn(box:BoundingBox, orthonormalImage:GrayImage,
+      transform:OrthonormalTransform,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
   finder:(GrayImage,GrayImage,List[(Int,Int,Int)],ColorImage,String)=>List[Int],
       donutDemo:ColorImage,
@@ -2470,9 +2463,9 @@ val y = (y0 + y1) / 2
     val midX = (box.minX + box.maxX) / 2
     val possibleStaffYs = (-8 to 8).toList
     val possiblePoints = possibleStaffYs.map { staffY =>
-      (midX, orthonormal.yForStaffY(staffY), staffY)
+      (midX, transform.yForStaffY(staffY), staffY)
     }
-    val results = finder(orthonormal.image, template,
+    val results = finder(orthonormalImage, template,
       possiblePoints, donutDemo, caseName)
     var foundNotes:List[TemplateMatch] = Nil
     if (box.maxX - box.minX + 1 + 4 >= template.w) {
@@ -2492,11 +2485,14 @@ val y = (y0 + y1) / 2
       templateGradientX:GrayImage, templateGradientY:GrayImage,
       input:GrayImage, template:GrayImage,
       templates:Map[String,GrayImage], templateName:String, threshold:Int,
-      fixedStaffY:Int, caseName:String) : Option[TemplateMatch] = {
+      fixedStaffY:Int, transform:OrthonormalTransform, caseName:String) :
+      Option[TemplateMatch] = {
     val template = templates(templateName)
     val midX = (box.minX + box.maxX) / 2
-    val minY = box.minY + template.h/2
-    val maxY = box.maxY - template.h/2
+    val minY = (box.minY + template.h/2) max (
+      transform.yForStaffY(4) - template.h/2 - 20)
+    val maxY = (box.maxY - template.h/2) max (
+      transform.yForStaffY(-4) + template.h/2 + 20)
     val minX = box.minX + template.w/2 - 2
     val maxX = box.maxX - template.w/2 + 2
     var possiblePoints:List[(Int,Int,Int)] = Nil
@@ -2526,12 +2522,12 @@ val y = (y0 + y1) / 2
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox], annotation:Annotation,
-      transformXY:(Int,Int)=>(Int,Int)) = {
+      transform:OrthonormalTransform) = {
     var boxToAnnotatedStaffYs = Map[BoundingBox,Set[Int]]()
     var missedPoints = annotation.points
     boxes.foreach { box =>
       val points = annotation.points.filter { point =>
-        val (x, y) = transformXY(point.x, point.y)
+        val (x, y) = transform.transformXY(point.x, point.y)
         val matches = x >= (box.minX - 5) && x <= (box.maxX + 5)
         //if (matches && !missedPoints.contains(point))
         //  throw new RuntimeException(
@@ -2672,6 +2668,8 @@ val y = (y0 + y1) / 2
   }
 
   def processCase(caseName:String) : Performance = {
+    var casePerformance = Performance(Set(), Set(), Set())
+
     val imagePath = new File("input/%s.jpeg".format(caseName))
     val image = ColorImage.readFromFile(imagePath).toGrayImage
     val annotationPath = "input/%s.json".format(caseName)
@@ -2693,6 +2691,7 @@ val y = (y0 + y1) / 2
       FindStaffs.run(midlines, image, bounds, caseName)
     }
 
+    var filteredNotes = List[Set[TemplateMatch]]()
     staffs.foreach { staffAbsolute =>
       val staffName = staffAbsolute.staffName
       val (x0, x1) = (staffAbsolute.bounds.minX, staffAbsolute.bounds.maxX)
@@ -2774,33 +2773,32 @@ val y = (y0 + y1) / 2
       }
       val allChildBoxes =
         boxToChildBoxes.values.foldLeft(List[BoundingBox]()){ _++_ }
-      demoVerticalSlices(orthonormalImage, boxToChildBoxes, caseName)
+      demoVerticalSlices(orthonormalImage, boxToChildBoxes, staffName)
       saveWidths(allChildBoxes,
-        new File("output/widths/%s.txt".format(caseName)))
-      }
-/*
+        new File("output/widths/%s.txt".format(staffName)))
+
     val widths = allChildBoxes.map { box => box.maxX - box.minX + 1 }.toList
     val orderedWidths = widths.filter { _ > 4 }.sorted
     val noteWidth = orderedWidths(orderedWidths.size * 3 / 4)
 
     val templates = Map(
       "white_head" -> prepareTemplate("white_head", noteWidth,
-        Math.round(orthonormal.cSpacing * 1.0f).intValue),
+        Math.round(transform.staffSeparationsMax * 1.0f).intValue),
       "black_head" -> prepareTemplate("black_head", noteWidth * 10/10,
-        Math.round(orthonormal.cSpacing * 1.0f).intValue),
+        Math.round(transform.staffSeparationsMax * 1.0f).intValue),
       "bass_clef" -> prepareTemplate("bass_clef", noteWidth * 24/10,
-        Math.round(orthonormal.cSpacing * 4.0f).intValue),
+        Math.round(transform.staffSeparationsMax * 4.0f).intValue),
       "treble_clef" -> prepareTemplate("treble_clef", noteWidth * 20/10,
-        Math.round(orthonormal.cSpacing * 7.0f).intValue),
+        Math.round(transform.staffSeparationsMax * 7.0f).intValue),
       "44" -> prepareTemplate("44", noteWidth * 12/10,
-        Math.round(orthonormal.cSpacing * 4.0f).intValue))
+        Math.round(transform.staffSeparationsMax * 4.0f).intValue))
 
     val fClefStaffY = -2
     val gClefStaffY = 2
     val middleStaffY = 0
 
     val List(inputGradientX, inputGradientY, _) =
-      makeGradientImages(orthonormal.image, 3)
+      makeGradientImages(orthonormalImage, 3)
     val List(templateTrebleGradientX, templateTrebleGradientY, _) =
       makeGradientImages(templates("treble_clef").addMargin(4), 3)
     val List(templateBassGradientX, templateBassGradientY, _) =
@@ -2810,46 +2808,56 @@ val y = (y0 + y1) / 2
 
     var predictedNotes:List[Set[TemplateMatch]] = Nil
     val boxToAnnotatedStaffYs = matchBoxesToAnnotations(
-      boxToChildBoxes.keys.toList, annotation, orthonormal.transformXY)
-    val donutDemo = orthonormal.image.toColorImage
+      boxToChildBoxes.keys.toList, annotation, transform)
+    val donutDemo = orthonormalImage.toColorImage
     boxToChildBoxes.keys.toList.sortBy { _.minX }.foreach { parentBox =>
       printf("  Box at x=%04d,    ".format(parentBox.minX))
-      var foundNotes:Set[TemplateMatch] =
+      var foundNotes:Set[TemplateMatch] = 
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateTrebleGradientX, templateTrebleGradientY,
-          orthonormal.image, templates("treble_clef"),
-          templates, "treble_clef", 10000, gClefStaffY, caseName).toSet ++
+          orthonormalImage, templates("treble_clef"),
+          templates, "treble_clef", 10000, gClefStaffY, transform, caseName
+          ).toSet ++
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateBassGradientX, templateBassGradientY,
-          orthonormal.image, templates("bass_clef"),
-          templates, "bass_clef", 4000, fClefStaffY, caseName).toSet ++
+          orthonormalImage, templates("bass_clef"),
+          templates, "bass_clef", 4000, fClefStaffY, transform, caseName
+          ).toSet ++
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           template44GradientX, template44GradientY,
-          orthonormal.image, templates("44"),
-          templates, "44", 3000, middleStaffY, caseName).toSet
+          orthonormalImage, templates("44"),
+          templates, "44", 3000, middleStaffY, transform, caseName).toSet
       if (foundNotes.size == 0) {
         val childBoxes = boxToChildBoxes(parentBox)
         childBoxes.foreach { box =>
-          foundNotes ++=
-            findNotesInColumn(box, orthonormal, templates,
+          val newFoundNotes =
+            findNotesInColumn(box, orthonormalImage, transform, templates,
               "white_head", 10, findWhiteHeads, donutDemo, caseName).toSet ++
-            findNotesInColumn(box, orthonormal, templates,
+            findNotesInColumn(box, orthonormalImage, transform, templates,
               "black_head", 20, findBlackHeads, donutDemo, caseName).toSet
+          if (newFoundNotes.size > 0)
+            foundNotes ++= chooseBestOverlappingSets(
+              parentBox, newFoundNotes, templates, orthonormalImage)
         }
       }
-      val prediction =
-        if (foundNotes.size > 0)
-          chooseBestOverlappingSets(
-            parentBox, foundNotes, templates, orthonormal.image)
-        else
-          Set[TemplateMatch]()
-      predictedNotes ++= List(prediction)
+      predictedNotes ++= List(foundNotes)
     }
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(caseName)))
-    val filteredNotes = predictedNotes
-*/
+    filteredNotes ++= predictedNotes
 
-    var casePerformance = Performance(Set(), Set(), Set())
+//demoNotes(predictedNotes, orthonormalImage.toColorImage, staffName)
+    val demo = orthonormalImage.toColorImage
+    predictedNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point =>
+      val color =
+        /*if (performance.correctNotes.filter{ _._2 == point }.size > 0)
+          (0, 128, 0)
+        else*/
+          (255, 0, 0) // spurious
+        drawTemplateMatch(point, demo, templates(point.templateName), color)
+    }
+    demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
+
+
 /*
     val c = metrics.cSpacing.intValue
     val templateSpecs =
@@ -2905,8 +2913,7 @@ val y = (y0 + y1) / 2
     val filteredNotes = groupedPoints
 
 */
-/*
-    demoNotes(filteredNotes, image.toColorImage, caseName)
+} // next staff
 
     println("  calcPerformance")
     val performance = calcPerformance(filteredNotes, annotation.notes)
@@ -2921,7 +2928,7 @@ val y = (y0 + y1) / 2
       printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
         "\\)\\), \\(", ")),\n                ("))
 
-    val demo = orthonormal.image.toColorImage
+    /*val demo = orthonormalImage.toColorImage
     filteredNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point =>
       val color =
         if (performance.correctNotes.filter{ _._2 == point }.size > 0)
@@ -2930,13 +2937,12 @@ val y = (y0 + y1) / 2
           (255, 0, 0) // spurious
         drawTemplateMatch(point, demo, templates(point.templateName), color)
     }
-    demo.saveTo(new File("demos/notes.%s.png".format(caseName)))
+    demo.saveTo(new File("demos/notes.%s.png".format(caseName)))*/
 
     casePerformance = Performance(
       casePerformance.correctNotes ++ performance.correctNotes,
       casePerformance.spuriousNotes ++ performance.spuriousNotes,
       casePerformance.missingNotes ++ performance.missingNotes)
-*/
     casePerformance
   }
 
