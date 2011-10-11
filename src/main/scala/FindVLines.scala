@@ -28,7 +28,7 @@ object FindVLines {
     val vEdges = findVerticalLines(justNotes2).binarize(10)
     //vEdges.saveTo(new File("demos/vedges.%s.png".format(staffName)))
 
-    val justNotes2Blurred = Ocr4Music.edgeDetection(
+    val justNotes2Blurred = ImageFilter.edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
 
     var vlines:List[VLine] = Nil

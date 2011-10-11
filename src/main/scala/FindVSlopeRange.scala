@@ -132,8 +132,8 @@ object FindVSlopeRange {
 
   def findVLineInverseSlopeRange(
       justNotes2:GrayImage, image:GrayImage, staffName:String) = {
-    val justNotes2Distance = Ocr4Music.distance(justNotes2, 200)
-    val justNotes2Blurred = Ocr4Music.edgeDetection(
+    val justNotes2Distance = ImageFilter.distance(justNotes2, 200)
+    val justNotes2Blurred = ImageFilter.edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
     val demo = ColorImage.giveRGBPerPixel(image.w, image.h) { (x, y) =>
       if (justNotes2Distance(x, y) >= 3)
