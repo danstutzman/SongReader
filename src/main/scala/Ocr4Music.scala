@@ -1038,59 +1038,6 @@ object Ocr4Music {
     scores
   }
 
-  def gleanPoints(detected:GrayImage, metrics:Metrics,
-      yCorrection:Array[Float], templateW:Int, templateH:Int,
-      threshold:Int, templateName:String) = {
-    //val simplified = image.copy
-    var points:List[TemplateMatch] = Nil
-    (-8 to 8).foreach { staffY =>
-      var maxV = 0
-      var argmaxX = 0
-      var argmaxY = 0
-      var argmaxStaffY = 0
-      (0 until detected.w).foreach { x =>
-        val xCentered = x - (detected.w / 2)
-        val a = metrics.a
-        val staffY0 = staffY - 0.5f
-        val staffY1 = staffY + 0.5f
-        val b0 = metrics.b + (staffY0 / 2.0f * metrics.bSpacing)
-        val b1 = metrics.b + (staffY1 / 2.0f * metrics.bSpacing)
-        val c0 = metrics.c + (staffY0 / 2.0f * metrics.cSpacing)
-        val c1 = metrics.c + (staffY1 / 2.0f * metrics.cSpacing)
-        val y0 = Math.round((a * xCentered * xCentered + b0 * xCentered +
-          c0) + yCorrection(x) + (detected.h / 2)).intValue
-        val y1 = Math.round((a * xCentered * xCentered + b1 * xCentered +
-          c1) + yCorrection(x) + (detected.h / 2)).intValue
-
-        var hasPointAboveThreshold = false
-//          (y0 until y1).foreach { y =>
-val y = (y0 + y1) / 2
-          val v = detected(x, y)
-          if (v > threshold) {
-            hasPointAboveThreshold = true
-            if (v > maxV) {
-              maxV = v
-              argmaxX = x
-              //argmaxY = y
-              argmaxY = (y0 + y1) / 2
-              argmaxStaffY = staffY
-            }
-          }
-//          }
-        if (!hasPointAboveThreshold && maxV != 0) {
-          //simplified(argmaxX, argmaxY) = 255
-          points = TemplateMatch(argmaxX, argmaxY, templateW, templateH,
-            argmaxStaffY, templateName) :: points
-          maxV = 0
-        }
-
-        //if (y0 >= 0 && y0 < simplified.h)
-        //  simplified(x, y0) = 0
-      }
-    }
-    points
-  }
-
   def chooseBestOverlappingSets(
       bounds:BoundingBox,
       overlappingPointGroup:Set[TemplateMatch],
