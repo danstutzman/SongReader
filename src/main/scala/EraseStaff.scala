@@ -3,7 +3,7 @@ import java.lang.Math
 import scala.util.Sorting
 
 object EraseStaff {
-  def separateNotes(input:GrayImage, staffName:String) = {
+  def separateNotes(input:GrayImage, caseName:String) = {
     val ceilings = new Array[Int](input.w)
     (0 until input.w).foreach { x =>
       val x0 = (x - 50) max 0
@@ -184,7 +184,7 @@ object EraseStaff {
           }
         }
       }
-      demo3.saveTo(new File("demos/erase3.%s.png".format(staffName)))*/
+      demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))*/
     }
 
     output
