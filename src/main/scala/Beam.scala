@@ -5,7 +5,7 @@ case class Beam (
   val y1:Int
 ) {
   def toMap() : Map[String,Int] = {
-    Map("x0" -> x0, "x1" -> x1, "y0" -> y1, "y1" -> y1)
+    Map("x0" -> x0, "x1" -> x1, "y0" -> y0, "y1" -> y1)
   }
 }
 object Beam {
