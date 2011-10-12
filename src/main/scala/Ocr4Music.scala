@@ -678,6 +678,11 @@ object Ocr4Music {
       FindStaffs.run(midlines, image, bounds, caseName)
     }
 
+    val erasedPath = new File("output/erased/%s.jpeg".format(caseName))
+    val justNotes = readOrGenerate(erasedPath, saveGrayImage, loadGrayImage) {
+      () => EraseStaff.run(image, staffs, caseName)
+    }
+
     var i = 0
     staffs.foreach { staffAbsolute =>
       val staffName = staffAbsolute.staffName
@@ -701,34 +706,29 @@ object Ocr4Music {
       val staffRelative = Staff(staffName,
         BoundingBox(0, x1 - x0, 0, y1 - y0), midlineYs, staffSeparations)
       val cropped = image.crop(x0, y0, w, h)
-
-      val erasedPath = new File("output/erased/%s.jpeg".format(staffName))
-      val justNotes =
-          readOrGenerate(erasedPath, saveGrayImage, loadGrayImage) { () =>
-        EraseStaff.run(cropped, staffRelative, false, staffName)
-      }
+      val justNotesCropped = justNotes.crop(x0, y0, w, h)
 
       val beamsPath = new File("output/beams/%s.json".format(staffName))
       val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
-        FindBeams.run(justNotes, cropped, staffRelative, staffName)
+        FindBeams.run(justNotesCropped, cropped, staffRelative, staffName)
       }
 
       val noBeamsPath = new File("output/no_beams/%s.jpeg".format(staffName))
       val justNotesNoBeams =
           readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
-        EraseBeams.run(justNotes, beams, staffRelative, staffName)
+        EraseBeams.run(justNotesCropped, beams, staffRelative, staffName)
       }
 
       val vSlopeRangePath =
         new File("output/v_slope_range/%s.json".format(staffName))
       val vSlopeRange = readOrGenerate(vSlopeRangePath,
           saveFloatPair, loadFloatPair) { () =>
-        FindVSlopeRange.run(justNotes, cropped, staffName)
+        FindVSlopeRange.run(justNotesCropped, cropped, staffName)
       }
 
       val vLinesPath = new File("output/v_lines/%s.json".format(staffName))
       val vLines = readOrGenerate(vLinesPath, saveVLines, loadVLines) { () =>
-        FindVLines.run(justNotes, cropped, vSlopeRange, staffName)
+        FindVLines.run(justNotesCropped, cropped, vSlopeRange, staffName)
       }
 
       val transformPath = new File(
