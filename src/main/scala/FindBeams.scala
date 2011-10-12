@@ -3,7 +3,8 @@ import java.lang.Math
 
 object FindBeams {
   def findThickHorizontalLines(
-      justNotes:GrayImage, staff:Staff, staffName:String) = {
+      justNotes:GrayImage, staffs:List[Staff], caseName:String) = {
+    
     val topEdges = ImageFilter.edgeDetection(
       justNotes, Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4))
     val topEdgesBlurred = ImageFilter.edgeDetection(
@@ -17,24 +18,32 @@ object FindBeams {
 
     val thickLines = new ColorImage(justNotes.w, justNotes.h)
     val multiplier = 0.8f
-    (0 until justNotes.w).foreach { x =>
-      val staffSeparation = staff.staffSeparations(x)
-      if (staffSeparation > 0.0f) {
-        val expectedBeamWidth =
-          Math.round(staffSeparation * multiplier).intValue - 2
-        (0 until justNotes.h).foreach { y =>
-          val r = topEdgesBlurred(x, y - expectedBeamWidth / 2)
-          val g = bottomEdgesBlurred(x, y + (expectedBeamWidth + 1) / 2)
-          //val b = blurred(x, y)
-          thickLines(x, y) = (r, g, 0)
+    (0 until justNotes.h).foreach { y =>
+      var minDistance = 9999
+      var closestStaff = staffs(0)
+      staffs.foreach { staff =>
+        val distance = (Math.abs(staff.bounds.minY - y)) min
+                       (Math.abs(staff.bounds.maxY - y))
+        if (distance < minDistance) {
+          minDistance = distance
+          closestStaff = staff
         }
       }
+
+      val expectedBeamWidth =
+        Math.round(closestStaff.staffSeparations.max * multiplier).intValue - 2
+      (0 until justNotes.w).foreach { x =>
+        val r = topEdgesBlurred(x, y - expectedBeamWidth / 2)
+        val g = bottomEdgesBlurred(x, y + (expectedBeamWidth + 1) / 2)
+        //val b = blurred(x, y)
+        thickLines(x, y) = (r, g, 0)
+      }
     }
-    //thickLines.saveTo(new File("demos/beamlike.%s.png".format(staffName)))
+    thickLines.saveTo(new File("demos/beamlike.%s.png".format(caseName)))
     thickLines
   }
 
-  def findBeams(thickLines:ColorImage, image:GrayImage, staffName:String) = {
+  def findBeams(thickLines:ColorImage, image:GrayImage, caseName:String) = {
     val minBeamLength = 25
     val threshold = 23
     val demo = image.toColorImage
@@ -88,7 +97,7 @@ object FindBeams {
         }
       }
     }
-    //demo.saveTo(new File("demos/beams.%s.png".format(staffName)))
+    demo.saveTo(new File("demos/beams.%s.png".format(caseName)))
 
     val beamsCropped = beams.map { beam =>
       Beam(beam.x0 max 0, beam.x1 min (image.w - 1),
@@ -97,7 +106,7 @@ object FindBeams {
     beamsCropped
   }
 
-  def demoBeams(beams:List[Beam], image:GrayImage, staffName:String) {
+  def demoBeams(beams:List[Beam], image:GrayImage, caseName:String) {
     val demo2 = image.toColorImage
     val red = (255, 0, 0)
     beams.foreach { beam =>
@@ -107,13 +116,14 @@ object FindBeams {
         demo2(x, y) = red
       }
     }
-    demo2.saveTo(new File("demos/beamboxes.%s.png".format(staffName)))
+    demo2.saveTo(new File("demos/beamboxes.%s.png".format(caseName)))
   }
 
-  def run(justNotes:GrayImage, image:GrayImage, staff:Staff, staffName:String)={
-    val thickLines = findThickHorizontalLines(justNotes, staff, staffName)
-    val beams = findBeams(thickLines, image, staffName)
-    //demoBeams(beams, image, staffName)
+  def run(justNotes:GrayImage, image:GrayImage, staffs:List[Staff],
+      caseName:String) = {
+    val thickLines = findThickHorizontalLines(justNotes, staffs, caseName)
+    val beams = findBeams(thickLines, image, caseName)
+    demoBeams(beams, image, caseName)
     beams
   }
 }

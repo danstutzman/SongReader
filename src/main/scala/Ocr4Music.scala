@@ -683,6 +683,17 @@ object Ocr4Music {
       () => EraseStaff.run(image, staffs, caseName)
     }
 
+    val beamsPath = new File("output/beams/%s.json".format(caseName))
+    val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
+      FindBeams.run(justNotes, image, staffs, caseName)
+    }
+
+    val noBeamsPath = new File("output/no_beams/%s.jpeg".format(caseName))
+    val justNotesNoBeams =
+        readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
+      EraseBeams.run(justNotes, beams, staffs, caseName)
+    }
+
     var i = 0
     staffs.foreach { staffAbsolute =>
       val staffName = staffAbsolute.staffName
@@ -707,17 +718,7 @@ object Ocr4Music {
         BoundingBox(0, x1 - x0, 0, y1 - y0), midlineYs, staffSeparations)
       val cropped = image.crop(x0, y0, w, h)
       val justNotesCropped = justNotes.crop(x0, y0, w, h)
-
-      val beamsPath = new File("output/beams/%s.json".format(staffName))
-      val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
-        FindBeams.run(justNotesCropped, cropped, staffRelative, staffName)
-      }
-
-      val noBeamsPath = new File("output/no_beams/%s.jpeg".format(staffName))
-      val justNotesNoBeams =
-          readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
-        EraseBeams.run(justNotesCropped, beams, staffRelative, staffName)
-      }
+      val justNotesNoBeamsCropped = justNotesNoBeams.crop(x0, y0, w, h)
 
       val vSlopeRangePath =
         new File("output/v_slope_range/%s.json".format(staffName))
@@ -735,15 +736,16 @@ object Ocr4Music {
         "output/orthonormal_transform/%s.json".format(staffName))
       val transform = readOrGenerate(transformPath, saveOrthonormalTransform,
           loadOrthonormalTransform) { () =>
-        SetupOrthonormalTransform.run(cropped.w, cropped.h, staffRelative,
-          vSlopeRange, staffName)
+        SetupOrthonormalTransform.run(
+          justNotesNoBeamsCropped.w, justNotesNoBeamsCropped.h,
+          staffRelative, vSlopeRange, staffName)
       }
 
       val orthonormalImagePath = new File(
         "output/orthonormal_image/%s.png".format(staffName))
       val orthonormalImage = readOrGenerate(
           orthonormalImagePath, saveGrayImage, loadGrayImage) { () =>
-        DoOrthonormalTransform.run(justNotesNoBeams, transform)
+        DoOrthonormalTransform.run(justNotesNoBeamsCropped, transform)
       }
 
       val slicesPath = new File("output/slices/%s.json".format(staffName))
