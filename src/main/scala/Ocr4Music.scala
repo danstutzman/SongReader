@@ -682,10 +682,7 @@ object Ocr4Music {
     staffs.foreach { staffAbsolute =>
       val staffName = staffAbsolute.staffName
       val (x0, x1) = (staffAbsolute.bounds.minX, staffAbsolute.bounds.maxX)
-      val y0 = (Math.floor(staffAbsolute.midlineYs.filter { _ > -1 }.min -
-        staffAbsolute.staffSeparations.max * 8.0f).intValue) max 0
-      val y1 = (Math.ceil(staffAbsolute.midlineYs.filter { _ > -1 }.max +
-        staffAbsolute.staffSeparations.max * 8.0f).intValue) min (image.h - 1)
+      val (y0, y1) = (staffAbsolute.bounds.minY, staffAbsolute.bounds.maxY)
       val (w, h) = (x1 - x0 + 1, y1 - y0 + 1)
       val annotationBox =
         (if (i < annotationBoxes.size) Some(annotationBoxes(i)) else None)

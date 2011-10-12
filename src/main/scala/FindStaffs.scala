@@ -243,9 +243,15 @@ object FindStaffs {
         }
       }
 
+      val y0 = (Math.floor(midlineYs.filter { _ > -1 }.min -
+        staffSeparations.max * 8.0f).intValue) max 0
+      val y1 = (Math.ceil(midlineYs.filter { _ > -1 }.max +
+        staffSeparations.max * 8.0f).intValue) min (image.h - 1)
+      val tallerSegment = BoundingBox(segment.minX, segment.maxX, y0, y1)
+
       staffNum += 1
       val staffName = "%s%c".format(caseName, staffNum)
-      Staff(staffName, segment, midlineYs, staffSeparations)
+      Staff(staffName, tallerSegment, midlineYs, staffSeparations)
     }
 
     demo.saveTo(new File("demos/hline.%s.png".format(caseName)))
