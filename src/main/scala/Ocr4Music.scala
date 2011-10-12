@@ -71,120 +71,6 @@ class TemplateResizer(val cache:MutableMap[(String,Int,Int),GrayImage]) {
 }
 
 object Ocr4Music {
-  def demoNotes(
-      noteGroups:List[Set[TemplateMatch]], input:ColorImage, caseName:String) {
-    val staffSeparation = 6
-    val xSeparation = 18
-    val darkYellow = (128, 128, 0)
-    val brightYellow = (255, 255, 0)
-    val staffHeight = 100
-    val image = new ColorImage(input.w, staffHeight + input.h)
-
-    // draw notes
-    var staffX = -1
-    noteGroups.foreach { noteGroup =>
-      staffX += 1
-    noteGroup.foreach { note =>
-      val staffY = note.staffY
-      val centerY = (staffHeight / 2) + (staffY * staffSeparation / 2).intValue
-      (-8 to 8).foreach { x =>
-        (-8 to 8).foreach { y =>
-          if ((x * x) + 2 * (y * y) < 20) {
-            image((staffX + 1) * xSeparation + x, centerY + y) =
-              brightYellow
-          }
-        }
-      }
-
-      def drawLedgerLine(staffY:Int) {
-        val ledgerLineY = ((staffY / 2).intValue * 2 * staffSeparation / 2) +
-          (staffHeight / 2)
-        (-8 to 8).foreach { x =>
-          image((staffX + 1) * xSeparation + x, ledgerLineY) = darkYellow
-        }
-      }
-
-      // draw ledger lines
-      var staffYTemp = staffY
-      while (staffYTemp >= 6) {
-        drawLedgerLine(staffYTemp)
-        staffYTemp -= 2
-      }
-      while (staffYTemp <= -6) {
-        drawLedgerLine(staffYTemp)
-        staffYTemp += 2
-      }
-
-      // draw staff (top-most so line vs. space notes are more obvious)
-      (-4 to 4 by 2).foreach { staffYTemp =>
-        (0 until image.w).foreach { x =>
-          image(x, (staffHeight / 2) + (staffYTemp * staffSeparation / 2)) =
-            darkYellow
-        }
-      }
-    } // next note in noteGroup
-    } // next noteGroup
-
-    // copy input
-    (0 to input.h).foreach { y =>
-      (0 to input.w).foreach { x =>
-        image(x, y + staffHeight) = input(x, y)
-      }
-    }
-
-    image.saveTo(new File("demos/notes2.%s.png".format(caseName)))
-  }
-
-  def demoPointGroups(groups:List[Set[TemplateMatch]], input:GrayImage,
-      caseName:String) {
-    val demo = input.toColorImage
-    groups.foreach { group =>
-      val x0 = group.foldLeft(9999) { (accum, point) =>
-        accum min (point.x - (point.w+1)/2)
-      }
-      val x1 = group.foldLeft(-9999) { (accum, point) =>
-        accum max (point.x + (point.w+1)/2)
-      }
-      val y0 = group.foldLeft(9999) { (accum, point) =>
-        accum min (point.y - (point.h+1)/2)
-      }
-      val y1 = group.foldLeft(-9999) { (accum, point) =>
-        accum max (point.y + (point.h+1)/2)
-      }
-
-      (x0 to x1).foreach { x =>
-        demo(x, y0) = (255, 0, 0)
-        demo(x, y1) = (255, 0, 0)
-      }
-      (y0 to y1).foreach { y =>
-        demo(x0, y) = (255, 0, 0)
-        demo(x1, y) = (255, 0, 0)
-      }
-    }
-    demo.saveTo(new File("demos/point_groups.%s.png".format(caseName)))
-  }
-
-  def groupTemplateMatches(matches:List[TemplateMatch]) = {
-    var noteGroups:List[List[TemplateMatch]] = Nil
-    var currentNoteGroup:List[TemplateMatch] = Nil
-    var lastNoteX = -1
-    val matchesSorted = matches.sortBy { _.x }
-    matchesSorted.foreach { _match =>
-      if (Math.abs(_match.x - lastNoteX) >= 20 && currentNoteGroup.size > 0) {
-        noteGroups = currentNoteGroup :: noteGroups
-        currentNoteGroup = Nil
-      }
-
-      currentNoteGroup = _match :: currentNoteGroup
-
-      lastNoteX = _match.x
-    }
-    if (currentNoteGroup.size > 0)
-      noteGroups = currentNoteGroup :: noteGroups
-
-    noteGroups.reverse
-  }
-
   def loadAnnotationsJson(annotationString : String) : List[AnnotationBox] = {
     val annotationsJson = Json.parse(annotationString)
     val boxes = annotationsJson.asInstanceOf[List[Map[String,Any]]].map { box =>
@@ -1056,8 +942,6 @@ object Ocr4Music {
               new TemplateResizer(), orthonormalImage)
           }
       }
-  
-      demoNotes(predictedNotes, orthonormalImage.toColorImage, staffName)
   
       println("  calcPerformance")
       val performance = calcPerformance(predictedNotes,
