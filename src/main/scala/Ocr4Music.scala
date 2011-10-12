@@ -694,6 +694,13 @@ object Ocr4Music {
       EraseBeams.run(justNotes, beams, staffs, caseName)
     }
 
+    val vSlopeRangePath =
+      new File("output/v_slope_range/%s.json".format(caseName))
+    val vSlopeRange = readOrGenerate(vSlopeRangePath,
+        saveFloatPair, loadFloatPair) { () =>
+      FindVSlopeRange.run(justNotes, image, staffs, caseName)
+    }
+
     var i = 0
     staffs.foreach { staffAbsolute =>
       val staffName = staffAbsolute.staffName
@@ -719,17 +726,13 @@ object Ocr4Music {
       val cropped = image.crop(x0, y0, w, h)
       val justNotesCropped = justNotes.crop(x0, y0, w, h)
       val justNotesNoBeamsCropped = justNotesNoBeams.crop(x0, y0, w, h)
-
-      val vSlopeRangePath =
-        new File("output/v_slope_range/%s.json".format(staffName))
-      val vSlopeRange = readOrGenerate(vSlopeRangePath,
-          saveFloatPair, loadFloatPair) { () =>
-        FindVSlopeRange.run(justNotesCropped, cropped, staffName)
-      }
+      val (m0, m1) = vSlopeRange
+      val vSlopeRangeCropped = (m0 + (m1 - m0) * (x0 / image.w.floatValue),
+                                m0 + (m1 - m0) * (x1 / image.w.floatValue))
 
       val vLinesPath = new File("output/v_lines/%s.json".format(staffName))
       val vLines = readOrGenerate(vLinesPath, saveVLines, loadVLines) { () =>
-        FindVLines.run(justNotesCropped, cropped, vSlopeRange, staffName)
+        FindVLines.run(justNotesCropped, cropped, vSlopeRangeCropped, staffName)
       }
 
       val transformPath = new File(
@@ -738,7 +741,7 @@ object Ocr4Music {
           loadOrthonormalTransform) { () =>
         SetupOrthonormalTransform.run(
           justNotesNoBeamsCropped.w, justNotesNoBeamsCropped.h,
-          staffRelative, vSlopeRange, staffName)
+          staffRelative, vSlopeRangeCropped, staffName)
       }
 
       val orthonormalImagePath = new File(

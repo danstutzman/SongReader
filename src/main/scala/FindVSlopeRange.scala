@@ -1,3 +1,4 @@
+import java.io.File
 import java.lang.Math
 
 object FindVSlopeRange {
@@ -13,7 +14,7 @@ object FindVSlopeRange {
   // (A line on the Hough transform corresponds to a series of nearly parallel
   // lines on the image).
   def findVLineInverseSlopeRangeGivenHough(
-      vhough:GrayImage, image:GrayImage, threshold:Int, staffName:String) = {
+      vhough:GrayImage, image:GrayImage, threshold:Int, caseName:String) = {
 
     // Brute force linear regression: use a threshold on the Hough output
     // to find just the bright spots.  Then try all possible lines
@@ -75,7 +76,7 @@ object FindVSlopeRange {
       val (r, g, b) = demo(x, y)
       demo(x, y) = (63 max r, g, b)
     }
-    demo.saveTo(new File("demos/vhoughnew.%s.png".format(staffName)))
+    demo.saveTo(new File("demos/vhoughnew.%s.png".format(caseName)))
     
     var vlines:List[(Int,Int)] = Nil
     (0 until vhough.w).foreach { x =>
@@ -94,44 +95,54 @@ object FindVSlopeRange {
         demo2(x, y) = ((r + 63) min 255, g, b)
       }
     }
-    demo2.saveTo(new File("demos/vlinesshown.%s.png".format(staffName)))*/
+    demo2.saveTo(new File("demos/vlinesshown.%s.png".format(caseName)))*/
 
     (argmaxYLeft, argmaxYRight)
   }
     
-  def verticalHough(input:ColorImage, staffName:String) = {
+  def verticalHough(input:ColorImage, staffs:List[Staff], caseName:String) = {
     val hough = new GrayImage(input.w, 40)
-    (0 until input.h).foreach { inputY =>
-      (10 until input.w - 10).foreach { inputX => // avoid edges
-        val v = input(inputX, inputY)
-        (-20 until 20).foreach { mCents =>
-          val inputXIntercept =
-            Math.round(inputX - (mCents / 80.0f * inputY)).intValue
-          if (inputXIntercept >= 0 && inputXIntercept < hough.w) {
-            if (v == (0, 0, 127)) // negative spot
-              hough(inputXIntercept, mCents + 20) =
-                hough(inputXIntercept, mCents + 20) - 3
-            else
-              hough(inputXIntercept, mCents + 20) =
-                hough(inputXIntercept, mCents + 20) + (v._1 / 63)
+    //val demo = new GrayImage(input.w, input.h)
+    staffs.foreach { staff =>
+      val bounds = staff.bounds
+      (bounds.minY to bounds.maxY).foreach { inputY =>
+        // add margin of 10 to avoid edges
+        (bounds.minX + 10 until bounds.maxX - 10).foreach { inputX =>
+          val v = input(inputX, inputY)
+          (-20 until 20).foreach { mCents =>
+            val inputXIntercept =
+              Math.round(inputX - (mCents / 80.0f * inputY)).intValue
+            if (inputXIntercept >= 0 && inputXIntercept < hough.w) {
+              if (v == (0, 0, 127)) { // negative spot
+                hough(inputXIntercept, mCents + 20) =
+                  hough(inputXIntercept, mCents + 20) - 3
+                //demo(inputX, inputY) = demo(inputX, inputY) - 255
+              }
+              else {
+                hough(inputXIntercept, mCents + 20) =
+                  hough(inputXIntercept, mCents + 20) + (v._1 / 63)
+                //demo(inputX, inputY) = demo(inputX, inputY) + (v._1 / 63)
+              }
+            }
           }
         }
       }
     }
+    //demo.saveTo(new File("demos/used4vhough.%s.png".format(caseName)))
     
     (0 until hough.h).foreach { y =>
       (0 until hough.w).foreach { x =>
-        hough(x, y) = (hough(x, y) - 40) max 0
+        hough(x, y) = (hough(x, y) - 200) max 0
       }
     }
 
     //hough.scaleValueToMax255.saveTo(new File(
-    //  "demos/vhough2.%s.png".format(staffName)))
+    //  "demos/vhough2.%s.png".format(caseName)))
     hough
   }
 
-  def findVLineInverseSlopeRange(
-      justNotes2:GrayImage, image:GrayImage, staffName:String) = {
+  def run(justNotes2:GrayImage, image:GrayImage, staffs:List[Staff],
+      caseName:String) = {
     val justNotes2Distance = ImageFilter.distance(justNotes2, 200)
     val justNotes2Blurred = ImageFilter.edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
@@ -143,16 +154,12 @@ object FindVSlopeRange {
         (v, v, v)
       }
     }
-    val vhough = verticalHough(demo, staffName)
+    val vhough = verticalHough(demo, staffs, caseName)
     val (atLeft, atRight) =
-      findVLineInverseSlopeRangeGivenHough(vhough, image, 0, staffName)
-    //demo.saveTo(new File("demos/stems.%s.png".format(staffName)))
-   //justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(staffName)))
+      findVLineInverseSlopeRangeGivenHough(vhough, image, 0, caseName)
+    //demo.saveTo(new File("demos/stems.%s.png".format(caseName)))
+   //justNotes2Blurred.saveTo(new File("demos/blurred.%s.png".format(caseName)))
 
     ((atLeft - 20) / 80.0f, (atRight - 20) / 80.0f)
-  }
-
-  def run(justNotes2:GrayImage, image:GrayImage, staffName:String) = {
-    findVLineInverseSlopeRange(justNotes2, image, staffName)
   }
 }
