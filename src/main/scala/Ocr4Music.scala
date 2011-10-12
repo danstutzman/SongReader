@@ -663,7 +663,7 @@ object Ocr4Music {
     val allAnnotationNoteGroups:List[Set[ExpectedNote]] =
       annotationBoxes.foldLeft(List[Set[ExpectedNote]]()) { _ ++ _.notes }
 
-    val midlinesPath = new File("output/midlines/%s.jpeg".format(caseName))
+    val midlinesPath = new File("output/midlines/%s.png".format(caseName))
     val midlines = readOrGenerate(midlinesPath, saveColorImage, loadColorImage){
       () => FindMidlines.run(image, caseName)
     }
