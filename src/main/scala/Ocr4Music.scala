@@ -263,39 +263,6 @@ object Ocr4Music {
     Performance(correctNotes.toSet, spuriousNotes.toSet, missingNotes.toSet)
   }
 
-  def scaleTemplateColor(template:ColorImage, templateW:Int, templateH:Int) = {
-    val templateScaled = new ColorImage(templateW, templateH)
-    (0 until templateH).foreach { templateScaledY =>
-      (0 until templateW).foreach { templateScaledX =>
-        val y0 = templateScaledY * template.h / templateH
-        val y1 =
-          ((templateScaledY + 1) * template.h / templateH) min template.h
-        val x0 = templateScaledX * template.w / templateW
-        val x1 =
-          ((templateScaledX + 1) * template.w / templateW) min template.w
-        if (y1 > y0 && x1 > x0) {
-          var (rSum, gSum, bSum) = (0, 0, 0)
-          (y0 until y1).foreach { templateY =>
-            (x0 until x1).foreach { templateX =>
-              val (r, g, b) = template(templateX, templateY)
-              rSum += r
-              gSum += g
-              bSum += b
-            }
-          }
-          val rMean = rSum / (y1 - y0) / (x1 - x0)
-          val gMean = gSum / (y1 - y0) / (x1 - x0)
-          val bMean = bSum / (y1 - y0) / (x1 - x0)
-          templateScaled(templateScaledX, templateScaledY) =
-            (rMean, gMean, bMean)
-        }
-        else
-          templateScaled(templateScaledX, templateScaledY) = (0, 0, 0)
-      }
-    }
-    templateScaled
-  }
-
   def drawTemplateMatch(
       _match:TemplateMatch, output:ColorImage, template:GrayImage,
       rgb:(Int,Int,Int)) {
@@ -311,38 +278,6 @@ object Ocr4Music {
           output(demoX, demoY) = rgb
       }
     }
-  }
-
-  def dedupe(points:List[TemplateMatch]) : List[TemplateMatch] = {
-    if (points.isEmpty)
-      points
-    else
-      points.head :: dedupe(
-        for (x <- points.tail if x.staffY != points.head.staffY) yield x)
-  }
-
-  def sumTemplate(input:GrayImage) : GrayImage = {
-    val sum = new GrayImage(input.w, input.h)
-
-    (0 until sum.h).foreach { y =>
-      (0 until sum.w).foreach { x =>
-        sum(x, y) = input(x, y)
-      }
-    }
-
-    (1 until sum.h).foreach { y =>
-      (0 until sum.w).foreach { x =>
-        sum(x, y) = sum(x, y) + sum(x, y - 1)
-      }
-    }
-
-    (0 until sum.h).foreach { y =>
-      (1 until sum.w).foreach { x =>
-        sum(x, y) = sum(x, y) + sum(x - 1, y)
-      }
-    }
-
-    sum
   }
 
   // returns area of overlap divided by total area of two points
@@ -390,89 +325,6 @@ object Ocr4Music {
           ifPointKept
         else
           ifPointKept ++ listNonOverlappingAlternatives(otherPoints)
-    }
-  }
-
-  def demoAlternatives(overlappingPointGroups:List[Set[TemplateMatch]],
-      input:GrayImage, caseName:String) {
-    val demo2 = input.toColorImage
-    overlappingPointGroups.foreach { group =>
-      val alternatives = listNonOverlappingAlternatives(group.toList)
-      var i = 0
-      alternatives.foreach { group2 =>
-        val color = i match {
-          case 0 => (255,0,0)
-          case 1 => (0,255,0)
-          case 2 => (0,0,255)
-          case _ => (255,255,255)
-        }
-
-        // for example: gray + red drawn lightly = reddish gray
-        def drawLightly(x:Int, y:Int) = {
-          val (r, g, b) = demo2(x, y)
-          demo2(x, y) = ((r + color._1) min 255,
-                         (g + color._2) min 255,
-                         (b + color._3) min 255)
-        }
-
-        group2.foreach { point =>
-          val (x0, x1) = (point.x - (point.w+1)/2, point.x + (point.w+1)/2)
-          val (y0, y1) = (point.y - (point.h+1)/2, point.y + (point.h+1)/2)
-          (x0 to x1).foreach { x =>
-            drawLightly(x, y0)
-            drawLightly(x, y1)
-          }
-          (y0 to y1).foreach { y =>
-            drawLightly(x0, y)
-            drawLightly(x1, y)
-          }
-        }
-
-        i += 1
-      }
-    }
-    demo2.saveTo(new File("demos/alternatives.%s.png".format(caseName)))
-  }
-
-  def demoBounds(baseImage:ColorImage, bounds:List[BoundingBox],
-      caseName:String) {
-    val demo = baseImage.copy
-    bounds.foreach { bound =>
-      val color = (255, 0, 0)
-      (bound.minX to bound.maxX).foreach { x =>
-        demo(x, bound.minY) = color
-        demo(x, bound.maxY) = color
-      }
-      (bound.minY to bound.maxY).foreach { y =>
-        demo(bound.minX, y) = color
-        demo(bound.maxX, y) = color
-      }
-    }
-    demo.saveTo(new File("demos/bounds.%s.png".format(caseName)))
-  }
-
-  def filterImage(input:GrayImage)(
-      filter:(GrayImage,Int,Int)=>Int) : GrayImage = {
-    val output = new GrayImage(input.w, input.h)
-    (0 until input.w).foreach { x =>
-      (0 until input.h).foreach { y =>
-        output(x, y) = filter(input, x, y)
-      }
-    }
-    output
-  }
-
-  def findLeftEdges(input:GrayImage) = {
-    filterImage(input) { (input, x, y) =>
-      if (input(x - 1, y) - input(x + 1, y) > 50) 255
-      else 0
-    }
-  }
-
-  def findRightEdges(input:GrayImage) = {
-    filterImage(input) { (input, x, y) =>
-      if (input(x - 1, y) - input(x + 1, y) < -50) 255
-      else 0
     }
   }
 
@@ -574,19 +426,6 @@ object Ocr4Music {
     bestAlternative
   }
 
-  def demoBeams(beams:List[Beam], image:GrayImage, caseName:String) {
-    val demo2 = image.toColorImage
-    val red = (255, 0, 0)
-    beams.foreach { beam =>
-      (beam.x0 to beam.x1).foreach { x =>
-        val progress = (x - beam.x0) / (beam.x1 - beam.x0).floatValue
-        val y = beam.y0 + ((beam.y1 - beam.y0) * progress).intValue
-        demo2(x, y) = red
-      }
-    }
-    demo2.saveTo(new File("demos/beamboxes.%s.png".format(caseName)))
-  }
-
   def targetYFor(x:Int, y:Int, staff:Staff, staffSeparationsMax:Float) = {
     // Equation for y-skewing:
     //   y = midlineYs(x) + staffY * staffSeparations(x)
@@ -652,15 +491,6 @@ object Ocr4Music {
     }
 
     demo.saveTo(new File("demos/segments.%s.png".format(staffName)))
-  }
-
-  def powerSet[T](elements:List[T]) : List[Set[T]] = {
-    elements match {
-      case Nil => List(Set[T]())
-      case first :: rest =>
-        val recursive = powerSet(rest)
-        recursive.map { _ + first } ++ recursive
-    }
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox],
