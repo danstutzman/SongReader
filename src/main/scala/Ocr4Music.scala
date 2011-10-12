@@ -989,15 +989,9 @@ object Ocr4Music {
         BoundingBox(0, x1 - x0, 0, y1 - y0), midlineYs, staffSeparations)
       val cropped = image.crop(x0, y0, w, h)
 
-      val erasedPath1 = new File("output/erased1/%s.jpeg".format(staffName))
+      val erasedPath = new File("output/erased/%s.jpeg".format(staffName))
       val justNotes =
-          readOrGenerate(erasedPath1, saveGrayImage, loadGrayImage) { () =>
-        EraseStaff.run(cropped, staffRelative, true, staffName)
-      }
-      
-      val erasedPath2 = new File("output/erased2/%s.jpeg".format(staffName))
-      val justNotes2 =
-          readOrGenerate(erasedPath2, saveGrayImage, loadGrayImage) { () =>
+          readOrGenerate(erasedPath, saveGrayImage, loadGrayImage) { () =>
         EraseStaff.run(cropped, staffRelative, false, staffName)
       }
 
@@ -1009,19 +1003,19 @@ object Ocr4Music {
       val noBeamsPath = new File("output/no_beams/%s.jpeg".format(staffName))
       val justNotesNoBeams =
           readOrGenerate(noBeamsPath, saveGrayImage, loadGrayImage) { () =>
-        EraseBeams.run(justNotes2, beams, staffRelative, staffName)
+        EraseBeams.run(justNotes, beams, staffRelative, staffName)
       }
 
       val vSlopeRangePath =
         new File("output/v_slope_range/%s.json".format(staffName))
       val vSlopeRange = readOrGenerate(vSlopeRangePath,
           saveFloatPair, loadFloatPair) { () =>
-        FindVSlopeRange.run(justNotes2, cropped, staffName)
+        FindVSlopeRange.run(justNotes, cropped, staffName)
       }
 
       val vLinesPath = new File("output/v_lines/%s.json".format(staffName))
       val vLines = readOrGenerate(vLinesPath, saveVLines, loadVLines) { () =>
-        FindVLines.run(justNotes2, cropped, vSlopeRange, staffName)
+        FindVLines.run(justNotes, cropped, vSlopeRange, staffName)
       }
 
       val transformPath = new File(

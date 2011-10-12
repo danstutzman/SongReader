@@ -5,11 +5,11 @@ object FindBeams {
   def findThickHorizontalLines(
       justNotes:GrayImage, staff:Staff, staffName:String) = {
     val topEdges = ImageFilter.edgeDetection(
-      justNotes, Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4))
+      justNotes, Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4))
     val topEdgesBlurred = ImageFilter.edgeDetection(
       topEdges, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(30)
     val bottomEdges = ImageFilter.edgeDetection(
-      justNotes, Array(-1, -2, -1, 0, 0, 0, 1, 2, 1, 4))
+      justNotes, Array(1, 2, 1, 0, 0, 0, -1, -2, -1, 4))
     val bottomEdgesBlurred = ImageFilter.edgeDetection(
       bottomEdges, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(30)
     //val blurred = edgeDetection(
