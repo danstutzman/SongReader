@@ -40,8 +40,8 @@ object FindBeams {
     val demo = image.toColorImage
     var beams:List[Beam] = Nil
     (-4 to 4).foreach { slopeTenths =>
-      val y0 = (0 - image.w * slopeTenths / 10) min 0
-      val y1 = (image.w + image.w * slopeTenths / 10) max (image.w - 1)
+      val y0 = (0 - (image.w * slopeTenths / 10)) min 0
+      val y1 = (image.h + (image.w * slopeTenths / 10)) max (image.h - 1)
       (y0 to y1).foreach { startingY =>
         var numBlacksInWindow = 0
         (0 until image.w).foreach { x =>
