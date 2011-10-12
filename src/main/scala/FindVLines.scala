@@ -1,3 +1,4 @@
+import java.io.File
 import java.lang.Math
 
 object FindVLines {
@@ -23,10 +24,10 @@ object FindVLines {
   }
 
   // now that you know where to expect lines, do a better job of finding them
-  def doVLineDetection(justNotes2:GrayImage, image:GrayImage,
-      inverseSlopeRange:(Float,Float), staffName:String) = {
+  def run(justNotes2:GrayImage, image:GrayImage,
+      inverseSlopeRange:(Float,Float), caseName:String) = {
     val vEdges = findVerticalLines(justNotes2).binarize(10)
-    //vEdges.saveTo(new File("demos/vedges.%s.png".format(staffName)))
+    //vEdges.saveTo(new File("demos/vedges.%s.png".format(caseName)))
 
     val justNotes2Blurred = ImageFilter.edgeDetection(
       justNotes2, Array(1, 1, 1, 1, 1, 1, 1, 1, 1, 9)).binarize(20)
@@ -82,13 +83,8 @@ object FindVLines {
         vlines = VLine(xIntercept, argmaxY0, argmaxY1) :: vlines
       }
     }
-    //demo3.saveTo(new File("demos/stems2.%s.png".format(staffName)))
+    //demo3.saveTo(new File("demos/stems2.%s.png".format(caseName)))
 
     vlines
-  }
-
-  def run(justNotes2:GrayImage, image:GrayImage, slopeRange:(Float,Float),
-      staffName:String) = {
-    doVLineDetection(justNotes2, image, slopeRange, staffName)
   }
 }
