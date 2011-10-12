@@ -204,8 +204,8 @@ object FindStaffs {
     // Smooth staffSeparations
     var smoothedStaffSeparations = new Array[Float](highlighted.w)
     (0 until staffSeparations.size).foreach { x =>
-      val x0 = (x - 20) max 0
-      val x1 = (x + 20) min (staffSeparations.size - 1)
+      val x0 = (x - 100) max 0
+      val x1 = (x + 100) min (staffSeparations.size - 1)
       var sum = 0
       var denom = 0
       (x0 to x1).foreach { x =>
