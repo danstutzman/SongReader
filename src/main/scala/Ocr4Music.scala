@@ -458,10 +458,10 @@ object Ocr4Music {
   }
 
   def demoVerticalSlices(input:GrayImage,
-      boxToChildBoxes:Map[BoundingBox,List[BoundingBox]], staffName:String) {
+      boxToChildBoxes:Map[BoundingBox,List[BoundingBox]], staffName:String) = {
     val demo = input.toColorImage
-    val outerColor = (255, 0, 0)
-    val innerColor = (128, 0, 0)
+    val outerColor = (0, 0, 255)
+    val innerColor = (0, 0, 128)
 
     def draw(x:Int, y:Int, color:(Int,Int,Int)) {
       val (r, g, b) = demo(x, y)
@@ -491,6 +491,7 @@ object Ocr4Music {
     }
 
     demo.saveTo(new File("demos/segments.%s.png".format(staffName)))
+    demo
   }
 
   def matchBoxesToAnnotations(boxes:List[BoundingBox],
@@ -756,7 +757,8 @@ object Ocr4Music {
           slicesPath, saveBoxesMap, loadBoxesMap) { () =>
         FindVerticalSlices.run(orthonormalImage, transform, vLines, staffName)
       }
-      demoVerticalSlices(orthonormalImage, boxToChildBoxes, staffName)
+      val verticalSlicesDemo =
+        demoVerticalSlices(orthonormalImage, boxToChildBoxes, staffName)
 
       val filledBoxesPath =
         new File("output/filled_boxes/%s.json".format(staffName))
@@ -789,7 +791,7 @@ object Ocr4Music {
         printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
           "\\)\\), \\(", ")),\n                ("))
   
-      val demo = orthonormalImage.toColorImage
+      val demo = verticalSlicesDemo.copy
       val templateResizer = new TemplateResizer()
       predictedNotes.foldLeft(Set[TemplateMatch]()) { _ ++ _ }.foreach { point=>
         val color =
