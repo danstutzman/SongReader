@@ -831,14 +831,18 @@ object Ocr4Music {
         val (_, point) = xAndPoint
         var maybeClosestMatch:Option[TemplateMatch] = None
         var minDistance = 40 // can't be further away than this
-        consideredNotes.foreach { _match =>
-          if (_match.staffY == point.staffY &&
-              _match.templateName == point.templateName) {
-            val distance = Math.abs(_match.x - point.x) +
-                           Math.abs(_match.y - point.y)
-            if (distance < minDistance) {
-              minDistance = distance
-              maybeClosestMatch = Some(_match)
+        if (point.x >= x0 && point.x <= x1 && point.y >= y0 && point.y <= y1) {
+          var (orthoX, orthoY) =
+            transform.transformXY(point.x - x0, point.y - y0)
+          consideredNotes.foreach { _match =>
+            if (_match.staffY == point.staffY &&
+                _match.templateName == point.templateName) {
+              val distance = Math.abs(_match.x - orthoX) +
+                             Math.abs(_match.y - orthoY)
+              if (distance < minDistance) {
+                minDistance = distance
+                maybeClosestMatch = Some(_match)
+              }
             }
           }
         }
