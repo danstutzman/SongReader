@@ -8,7 +8,7 @@ case class OrthonormalTransform (
   val yForStaffY:Map[Int,Int],
   val xForXIntercept:Array[Int]
 ) {
-  def transformXY = { (x:Int, y:Int) =>
+  def transformXY(x:Int, y:Int) = {
     (Ocr4Music.targetXFor(x, y, m0, m1, w) - bounds.minX,
      Ocr4Music.targetYFor(x, y, staff, staffSeparationsMax) - bounds.minY)
   }
