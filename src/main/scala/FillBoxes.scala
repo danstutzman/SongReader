@@ -91,7 +91,7 @@ object FillBoxes {
       inputGradientX:GrayImage, inputGradientY:GrayImage,
       templateGradientX:GrayImage, templateGradientY:GrayImage,
       input:GrayImage, template:GrayImage,
-      templates:Map[String,GrayImage], templateName:String, threshold:Int,
+      templates:Map[String,GrayImage], templateName:String,
       fixedStaffY:Int, transform:OrthonormalTransform, staffName:String) :
       Option[TemplateMatch] = {
     val template = templates(templateName)
@@ -112,17 +112,16 @@ object FillBoxes {
     val results = findImmovable(
       inputGradientX, inputGradientY, templateGradientX, templateGradientY,
       input, template, possiblePoints, staffName)
-    var maxResult = threshold
+    var maxResult = 0
     var argmaxNote:Option[TemplateMatch] = None
     (0 until results.size).foreach { i =>
       val (centerX, centerY, staffY) = possiblePoints(i)
       val result = results(i)
-      val note = TemplateMatch(centerX, centerY, template.w, template.h,
-          staffY, templateName)
 //if (templateName == "bass_clef") println(result)
       if (result > maxResult) {
         maxResult = result
-        argmaxNote = Some(note)
+        argmaxNote = Some(TemplateMatch(centerX, centerY,
+          template.w, template.h, staffY, templateName, result))
       }
     }
     argmaxNote
@@ -130,7 +129,7 @@ object FillBoxes {
 
   def findNotesInColumn(box:BoundingBox, orthonormalImage:GrayImage,
       transform:OrthonormalTransform,
-      templates:Map[String,GrayImage], templateName:String, threshold:Int,
+      templates:Map[String,GrayImage], templateName:String,
   finder:(GrayImage,GrayImage,List[(Int,Int,Int)],ColorImage,String)=>List[Int],
       donutDemo:ColorImage,
       staffName:String) : List[TemplateMatch] = {
@@ -147,9 +146,8 @@ object FillBoxes {
       (0 until results.size).foreach { i =>
         val (centerX, centerY, staffY) = possiblePoints(i)
         val result = results(i)
-        if (result >= threshold)
-          foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
-            staffY, templateName) :: foundNotes
+        foundNotes = TemplateMatch(centerX, centerY, template.w, template.h,
+          staffY, templateName, result) :: foundNotes
       }
     }
     foundNotes
@@ -424,30 +422,31 @@ object FillBoxes {
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateTrebleGradientX, templateTrebleGradientY,
           orthonormalImage, templates("treble_clef"),
-          templates, "treble_clef", 4000, gClefStaffY, transform, staffName
+          templates, "treble_clef", gClefStaffY, transform, staffName
           ).toSet ++
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           templateBassGradientX, templateBassGradientY,
           orthonormalImage, templates("bass_clef"),
-          templates, "bass_clef", 4000, fClefStaffY, transform, staffName
+          templates, "bass_clef", fClefStaffY, transform, staffName
           ).toSet ++
         findImmovableInColumn(parentBox, inputGradientX, inputGradientY,
           template44GradientX, template44GradientY,
           orthonormalImage, templates("44"),
-          templates, "44", 3000, middleStaffY, transform, staffName).toSet
+          templates, "44", middleStaffY, transform, staffName).toSet
       val childBoxes =
         if (immovables.size == 0) {
           boxToChildBoxes(parentBox).map { box =>
             val newFoundNotes:Set[TemplateMatch] =
               findNotesInColumn(box, orthonormalImage, transform, templates,
-                "white_head", 10, findWhiteHeads, donutDemo, staffName).toSet ++
+                "white_head", findWhiteHeads, donutDemo, staffName).toSet ++
               findNotesInColumn(box, orthonormalImage, transform, templates,
-                "black_head", 20, findBlackHeads, donutDemo, staffName).toSet
+                "black_head", findBlackHeads, donutDemo, staffName).toSet
             BoxOfTemplates(box, newFoundNotes, Nil)
           }
         } else Nil
       BoxOfTemplates(parentBox, immovables, childBoxes)
     }
+    println() // since line wasn't ended before
     //donutDemo.saveTo(new File("demos/donut_demo.%s.png".format(staffName)))
     boxesOfTemplates
   }

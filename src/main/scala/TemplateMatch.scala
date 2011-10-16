@@ -4,11 +4,12 @@ case class TemplateMatch (
   val w:Int,
   val h:Int,
   val staffY:Int,
-  val templateName:String
+  val templateName:String,
+  val score:Int
 ) {
   def toMap() : Map[String,Any] = {
     Map("x" -> x, "y" -> y, "w" -> w, "h" -> h, "staffY" -> staffY,
-      "templateName" -> templateName)
+      "templateName" -> templateName, "score" -> score)
   }
 }
 object TemplateMatch {
@@ -19,6 +20,7 @@ object TemplateMatch {
       map("w").asInstanceOf[Int],
       map("h").asInstanceOf[Int],
       map("staffY").asInstanceOf[Int],
-      map("templateName").asInstanceOf[String])
+      map("templateName").asInstanceOf[String],
+      map("score").asInstanceOf[Int])
   }
 }

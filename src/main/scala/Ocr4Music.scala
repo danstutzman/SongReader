@@ -779,7 +779,29 @@ object Ocr4Music {
              (accum2, childBox) => accum2 ++ childBox.templates
           }
       }
-      val predictedNotes = filledBoxes.map { box =>
+      val predictedNotes = filledBoxes.map { unfilteredBox =>
+        val box = BoxOfTemplates(unfilteredBox.box,
+          unfilteredBox.templates.filter { template =>
+            val threshold = template.templateName match {
+              case "treble_clef" => 4000
+              case "bass_clef"   => 4000
+              case "44"          => 3000
+            }
+            template.score >= threshold
+          },
+          unfilteredBox.childBoxes.map { unfilteredBox2 =>
+            BoxOfTemplates(unfilteredBox2.box,
+              unfilteredBox2.templates.filter { template =>
+                val threshold = template.templateName match {
+                  case "black_head" => 20
+                  case "white_head" => 10
+                }
+                template.score >= threshold
+              },
+              List[BoxOfTemplates]() // assume no recursion
+            )
+          }
+        )
         if (box.templates.size > 0)
           box.templates
         else
