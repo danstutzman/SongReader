@@ -308,6 +308,7 @@ object FindVerticalSlices {
 
     var boxToChildBoxes = Map[BoundingBox,List[BoundingBox]]()
     verticalSlices.foreach { parentBox =>
+      //boxToChildBoxes = boxToChildBoxes.updated(parentBox, List(parentBox))
       val vlineXs = vlines.map { vline =>
         transform.xForXIntercept(vline.xIntercept) }
       val furtherCuts = findEasyVerticalCuts(parentBox, input, 0, transform)
