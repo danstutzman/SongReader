@@ -1,0 +1,2 @@
+#!/bin/bash
+find output/case_studies/ -name "*.png" | xargs rm -v

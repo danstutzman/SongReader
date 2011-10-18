@@ -658,6 +658,118 @@ object Ocr4Music {
     maps.map { map => BoxOfTemplates.fromMap(map) }
   }
 
+  def saveCaseStudy(_match:TemplateMatch, orthonormalImage:GrayImage,
+      templateResizer:TemplateResizer, judgment:String, staffName:String) {
+
+    val dilatedOrthonormal =
+      new GrayImage(orthonormalImage.w, orthonormalImage.h)
+    val erodedOrthonormal =
+      new GrayImage(orthonormalImage.w, orthonormalImage.h)
+    (0 until orthonormalImage.w).foreach { x =>
+      (0 until orthonormalImage.h).foreach { y =>
+        var minV = orthonormalImage(x, y)
+        var maxV = orthonormalImage(x, y)
+        (-1 to 1).foreach { neighborX =>
+          (-1 to 1).foreach { neighborY =>
+            val v = orthonormalImage(x + neighborX, y + neighborY)
+            if (v > maxV) {
+              maxV = v
+            }
+            if (v < minV) {
+              minV = v
+            }
+          }
+        }
+        dilatedOrthonormal(x, y) = maxV
+        erodedOrthonormal(x, y) = minV
+      }
+    }
+
+    val input = new GrayImage(_match.w, _match.h)
+    val template = templateResizer(_match)
+    val blackInput = new GrayImage(_match.w, _match.h)
+    val blackTemplate = new GrayImage(_match.w, _match.h)
+    val erodedInput = new GrayImage(_match.w, _match.h)
+    val blackMatch = new ColorImage(_match.w, _match.h)
+    val blackMatch2 = new ColorImage(_match.w, _match.h)
+    val dilatedInput = new GrayImage(_match.w, _match.h)
+    val whiteMatch = new ColorImage(_match.w, _match.h)
+    val whiteMatch2 = new ColorImage(_match.w, _match.h)
+    val combinedMatch = new GrayImage(_match.w, _match.h)
+    val combinedMatch2 = new GrayImage(_match.w, _match.h)
+    var combinedMatch2Score = 0
+    (0 until input.w).foreach { x =>
+      (0 until input.h).foreach { y =>
+        val inputV = orthonormalImage(_match.x - _match.w/2 + x,
+                                      _match.y - _match.h/2 + y)
+        val dilatedV = dilatedOrthonormal(_match.x - _match.w/2 + x,
+                                          _match.y - _match.h/2 + y)
+        val erodedV = erodedOrthonormal(_match.x - _match.w/2 + x,
+                                        _match.y - _match.h/2 + y)
+        val templateV = template(x, y)
+        val inputIsBlack = inputV >= 200
+        val templateIsBlack = templateV >= 200
+        val dilatedIsBlack = dilatedV >= 200
+
+        val templateIsWhite = templateV <= 200
+        val inputIsWhite = inputV <= 200
+        val erodedIsWhite = erodedV <= 200
+
+        input(x, y) = inputV
+        blackInput(x, y) = (if (inputIsBlack) 255 else 0)
+        blackTemplate(x, y) = (if (templateIsBlack) 255 else 0)
+        dilatedInput(x, y) = (if (dilatedIsBlack) 255 else 0)
+        blackMatch(x, y) = (if (templateIsBlack && !inputIsBlack) 255 else 0,
+                            if (templateIsBlack && inputIsBlack) 255 else 0,
+                            if (!templateIsBlack && inputIsBlack) 255 else 0)
+        blackMatch2(x, y) = (if (templateIsBlack && !dilatedIsBlack) 255 else 0,
+                             if (templateIsBlack && dilatedIsBlack) 255 else 0,
+                             if (!templateIsBlack && dilatedIsBlack) 255 else 0)
+        erodedInput(x, y) = (if (!erodedIsWhite) 255 else 0)
+        whiteMatch(x, y) = (if (templateIsWhite && !inputIsWhite) 255 else 0,
+                             if (templateIsWhite && inputIsWhite) 255 else 0,
+                             if (!templateIsWhite && inputIsWhite) 255 else 0)
+        whiteMatch2(x, y) = (if (templateIsWhite && !erodedIsWhite) 255 else 0,
+                             if (templateIsWhite && erodedIsWhite) 255 else 0,
+                             if (!templateIsWhite && erodedIsWhite) 255 else 0)
+        combinedMatch(x, y) = if ((templateIsBlack && inputIsBlack) ||
+                                   templateIsWhite && inputIsWhite) 255 else 0
+        combinedMatch2(x, y) = if ((templateIsBlack && dilatedIsBlack) ||
+                                    templateIsWhite && erodedIsWhite) 255 else 0
+        combinedMatch2Score += (combinedMatch2(x, y) / 255)
+      }
+    }
+
+    val images:List[ColorImage] = List(
+      input.toColorImage,
+      template.toColorImage,
+      blackInput.toColorImage,
+      blackTemplate.toColorImage,
+      erodedInput.toColorImage,
+      blackMatch,
+      blackMatch2,
+      dilatedInput.toColorImage,
+      whiteMatch,
+      whiteMatch2,
+      combinedMatch.toColorImage,
+      combinedMatch2.toColorImage
+    )
+    val bigImage = new ColorImage(_match.w * images.size, _match.h)
+    images.zipWithIndex.foreach { pair =>
+      val (image, i) = pair
+      (0 until _match.w).foreach { x =>
+        (0 until _match.h).foreach { y =>
+          bigImage(i * _match.w + x, y) = image(x, y)
+        }
+      }
+    }
+    val score = combinedMatch2Score * 100 / (_match.w * _match.h)
+    bigImage.saveTo(new File(
+      "output/case_studies/%s/%02d.%s.%s.%03d.%03d.png".format(
+      _match.templateName,
+      score, judgment, staffName, _match.x, _match.y)))
+  }
+
   def processCase(caseName:String) : Performance = {
     var casePerformance = Performance(Set(), Set(), Set())
 
@@ -846,24 +958,26 @@ object Ocr4Music {
             }
           }
         }
-          
         maybeClosestMatch.foreach { _match =>
           val color = (255, 255, 0) // yellow means missed
           drawTemplateMatch(_match, demo, templateResizer(_match), color)
+          saveCaseStudy(_match, orthonormalImage, templateResizer, "missed",
+            staffName)
         }
       }
       predictedNotes.foreach { pointGroup =>
         pointGroup.foreach { point =>
-          val color =
-            if (performance.correctNotes.filter{ _._2 == point }.size > 0)
-              (0, 128, 0) // green means correct
-            else
-              (255, 0, 0) // red means spurious
-            drawTemplateMatch(point, demo, templateResizer(point), color)
-         }
+          val isCorrect =
+            (performance.correctNotes.filter{ _._2 == point }.size > 0)
+          val color = if (isCorrect) (0, 128, 0) else (255, 0, 0)
+          drawTemplateMatch(point, demo, templateResizer(point), color)
+          saveCaseStudy(point, orthonormalImage, templateResizer,
+            (if (isCorrect) "correct" else "spurious"), staffName)
+        }
       }
       demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
-  
+
+
       casePerformance = Performance(
         casePerformance.correctNotes ++ performance.correctNotes,
         casePerformance.spuriousNotes ++ performance.spuriousNotes,
