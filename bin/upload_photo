@@ -1,6 +1,10 @@
 #!/bin/bash -x
+
+HOST=localhost:3000
+#HOST=www.songreader.net
+
 BASE64=`cat ~/Desktop/Paula.jpeg | openssl base64`
 #BASE64=`cat ~/Desktop/test.png | openssl base64`
-echo $BASE64
-curl -v -H "Content-Type: application/xml; charset=utf-8" --data-ascii "<photo><original-filename>Paula.jpeg</original-filename><data type='binary' encoding='base64'>$BASE64</data><content-type>image/jpeg</content-type></photo>" http://localhost:3000/photos.xml
-#curl -v -H "Content-Type: application/xml; charset=utf-8" --data-ascii "<photo><original-filename>test.png</original-filename><data type='binary' encoding='base64'>$BASE64</data><content-type>image/png</content-type></photo>" http://localhost:3000/photos.xml
+
+curl -v -H "Content-Type: application/xml; charset=utf-8" --data-ascii "<photo><original-filename>Paula.jpeg</original-filename><data type='binary' encoding='base64'>$BASE64</data><content-type>image/jpeg</content-type></photo>" http://$HOST/photos.xml
+#curl -v -H "Content-Type: application/xml; charset=utf-8" --data-ascii "<photo><original-filename>test.png</original-filename><data type='binary' encoding='base64'>$BASE64</data><content-type>image/png</content-type></photo>" http://$HOST/photos.xml
