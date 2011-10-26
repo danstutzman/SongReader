@@ -2,3 +2,9 @@
 demos/*
 build/*
 output/*
+getmail/getmailrc
+getmail/gmail.log
+getmail/oldmail*
+getmail/cur/*
+getmail/new/*
+getmail/tmp/*

@@ -1,0 +1,26 @@
+[retriever]
+type = SimpleIMAPSSLRetriever
+server = imap.gmail.com
+username = EMAIL-ADDRESS-GOES-HERE
+password = PASSWORD-GOES-HERE
+mailboxes = ("[Gmail]/All Mail",)
+
+[destination]
+type = MultiDestination
+destinations = ('[maildir-destination]',)
+
+[maildir-destination]
+type = Maildir
+path = PATH-TO-SAVE-MAIL-GOES-HERE
+
+[options]
+# print messages about each action (verbose = 2)
+# Other options:
+# 0 prints only warnings and errors
+# 1 prints messages about retrieving and deleting messages only
+verbose = 2
+message_log = PATH-TO-SAVE-MAIL-GOES-HERE/gmail.log
+# preserves your mail after backup
+delete = false
+# just get new mails
+read_all = false
