@@ -8,3 +8,4 @@ getmail/oldmail*
 getmail/cur/*
 getmail/new/*
 getmail/tmp/*
+input/*.macmini.*
