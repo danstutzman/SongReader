@@ -6,6 +6,7 @@ import java.lang.Math
 import javax.imageio.ImageIO
 import javax.sound.midi.MetaMessage
 import javax.sound.midi.MidiEvent
+import javax.sound.midi.MidiMessage
 import javax.sound.midi.MidiSystem
 import javax.sound.midi.Sequence
 import javax.sound.midi.ShortMessage
@@ -885,61 +886,110 @@ object Ocr4Music {
     demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
   }
 
-  def writeToMIDI(predictedNotes:List[Set[TemplateMatch]], staffName:String) {
+  def writeToMidi(predictedNotes:List[Set[TemplateMatch]], staffName:String) {
     // create a new MIDI sequence with 24 ticks per beat
     val sequence = new Sequence(javax.sound.midi.Sequence.PPQ, 24)
     val track = sequence.createTrack()
+    var currentTime = 0L
+
+    def wait(numTicks:Int) {
+      currentTime += numTicks
+    }
+    def add(message:MidiMessage) {
+      track.add(new MidiEvent(message, currentTime))
+    }
 
     // turn on General MIDI sound set
     val sm = new SysexMessage()
     sm.setMessage(Array[Byte](0xF0.asInstanceOf[Byte], 0x7E, 0x7F,
                   0x09, 0x01, 0xF7.asInstanceOf[Byte]), 6)
-    track.add(new MidiEvent(sm, 0L))
+    add(sm)
 
     // set tempo
+    val microsecondsPerQuarter = (0.6 * 1000 * 1000).intValue
     val mt = new MetaMessage()
-    mt.setMessage(0x51, Array[Byte](0x02, 0x00, 0x00), 3)
-    track.add(new MidiEvent(mt, 0L))
+    mt.setMessage(0x51, Array[Byte](
+      (microsecondsPerQuarter >> 16).asInstanceOf[Byte],
+      (microsecondsPerQuarter >> 8 % 256).asInstanceOf[Byte],
+      (microsecondsPerQuarter % 256).asInstanceOf[Byte]), 3)
+    add(mt)
 
     // set track name
-    val trackName = "midifile track"
+    val trackName = staffName
     val mt2 = new MetaMessage()
     mt2.setMessage(0x03, trackName.getBytes(), trackName.length())
-    track.add(new MidiEvent(mt2, 0L))
+    add(mt2)
 
     // set omni on
     val mm = new ShortMessage()
-    mm.setMessage(0xB0, 0x7D, 0x00)
-    track.add(new MidiEvent(mm, 0L))
+    mm.setMessage(ShortMessage.CONTROL_CHANGE, 0x7D, 0x00)
+    add(mm)
 
     // set poly on
     val mm2 = new ShortMessage()
-    mm2.setMessage(0xB0, 0x7F, 0x00)
-    track.add(new MidiEvent(mm2, 0L))
+    mm2.setMessage(ShortMessage.CONTROL_CHANGE, 0x7F, 0x00)
+    add(mm2)
 
     // set instrument to piano
     val mm3 = new ShortMessage()
-    mm3.setMessage(0xC0, 0x00, 0x00)
-    val me = new MidiEvent(mm3, 0L)
-    track.add(me);
+    mm3.setMessage(ShortMessage.PROGRAM_CHANGE, 0x00, 0x00)
+    add(mm3)
 
-    // note on - middle C
-    val mm4 = new ShortMessage()
-    mm4.setMessage(0x90,0x3C,0x60)
-    val me2 = new MidiEvent(mm4, 1L)
-    track.add(me2)
+    val middleC = 60
+    val bAboveMiddleC = middleC + 11
+    predictedNotes.foreach { concurrentNotes =>
+      val durationInTicks = (List(0) ++ concurrentNotes.map {
+        _.templateName match {
+          case "white_head" => 48
+          case "black_head" => 24
+          case _ => 0
+        }
+      }).max
 
-    // note off - middle C - 120 ticks later
-    val mm5 = new ShortMessage();
-    mm5.setMessage(0x80,0x3C,0x40);
-    val me3 = new MidiEvent(mm5, 121L)
-    track.add(me3);
+      val noteNums = concurrentNotes.map { note =>
+        val halfStepsBelowB = note.staffY match {
+          case -8 => -13
+          case -7 => -12
+          case -6 => -10
+          case -5 =>  -8
+          case -4 =>  -6
+          case -3 =>  -5
+          case -2 =>  -3
+          case -1 =>  -1
+          case  0 =>   0
+          case  1 =>   2
+          case  2 =>   4
+          case  3 =>   6
+          case  4 =>   7
+          case  5 =>   9
+          case  6 =>  11
+          case  7 =>  12
+          case  8 =>  14
+          case _  => 0
+        }
+        bAboveMiddleC - halfStepsBelowB
+      }
 
-    // set end of track (meta event) 19 ticks later
+      if (durationInTicks > 0) {
+        noteNums.foreach { noteNum =>
+          val mm4 = new ShortMessage()
+          mm4.setMessage(ShortMessage.NOTE_ON, noteNum, 0x60)
+          add(mm4)
+        }
+        wait(durationInTicks)
+        noteNums.foreach { noteNum =>
+          val mm5 = new ShortMessage();
+          mm5.setMessage(ShortMessage.NOTE_OFF, noteNum, 0x40);
+          add(mm5)
+        }
+      }
+    }
+
+    // set end of track (meta event)
     val mt3 = new MetaMessage();
     mt3.setMessage(0x2F, Array[Byte](), 0);
-    val me4 = new MidiEvent(mt3, 140L)
-    track.add(me4);
+    wait(24)
+    add(mt3)
 
     val path = new File("output/midi/%s.mid".format(staffName))
     MidiSystem.write(sequence, 1, path)
@@ -1066,7 +1116,7 @@ object Ocr4Music {
       demoPredictedNotes(predictedNotes, consideredNotes, orthonormalImage,
         performance, staffAbsolute.bounds, transform,
         verticalSlicesDemo.copy, staffName)
-      writeToMIDI(predictedNotes, staffName)
+      writeToMidi(predictedNotes, staffName)
   
       casePerformance += performance
     } // next staff
