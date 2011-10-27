@@ -1,0 +1,2 @@
+#!/bin/bash
+../lame/lame-3.99/frontend/lame -b 8 output/wav/photo3a.wav output/mp3/photo3a.mp3
