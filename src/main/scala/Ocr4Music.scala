@@ -937,6 +937,8 @@ object Ocr4Music {
 
     val middleC = 60
     val bAboveMiddleC = middleC + 11
+    val dBelowMiddleC = middleC - 10
+    var isBassClef = false
     predictedNotes.foreach { concurrentNotes =>
       val durationInTicks = (List(0) ++ concurrentNotes.map {
         _.templateName match {
@@ -946,28 +948,60 @@ object Ocr4Music {
         }
       }).max
 
-      val noteNums = concurrentNotes.map { note =>
-        val halfStepsBelowB = note.staffY match {
-          case -8 => -13
-          case -7 => -12
-          case -6 => -10
-          case -5 =>  -8
-          case -4 =>  -6
-          case -3 =>  -5
-          case -2 =>  -3
-          case -1 =>  -1
-          case  0 =>   0
-          case  1 =>   2
-          case  2 =>   4
-          case  3 =>   6
-          case  4 =>   7
-          case  5 =>   9
-          case  6 =>  11
-          case  7 =>  12
-          case  8 =>  14
-          case _  => 0
+      concurrentNotes.foreach {
+        _.templateName match {
+          case "treble_clef" => isBassClef = false
+          case "bass_clef"   => isBassClef = true
+          case _             => ()
         }
-        bAboveMiddleC - halfStepsBelowB
+      }
+
+      val noteNums = concurrentNotes.map { note =>
+        if (!isBassClef) {
+          val halfStepsAboveB = note.staffY match {
+            case -8 =>  13
+            case -7 =>  12
+            case -6 =>  10
+            case -5 =>   8
+            case -4 =>   6
+            case -3 =>   5
+            case -2 =>   3
+            case -1 =>   1
+            case  0 =>   0
+            case  1 =>  -2
+            case  2 =>  -4
+            case  3 =>  -6
+            case  4 =>  -7
+            case  5 =>  -9
+            case  6 => -11
+            case  7 => -12
+            case  8 => -14
+            case _  => 0
+          }
+          bAboveMiddleC + halfStepsAboveB
+        } else { // if it is bass clef
+          val halfStepsAboveD = note.staffY match {
+            case -8 =>  14
+            case -7 =>  12
+            case -6 =>  10
+            case -5 =>   9
+            case -4 =>   7
+            case -3 =>   5
+            case -2 =>   3
+            case -1 =>   2
+            case  0 =>   0
+            case  1 =>  -2
+            case  2 =>  -3
+            case  3 =>  -5
+            case  4 =>  -6
+            case  5 =>  -8
+            case  6 =>  -9
+            case  7 => -11
+            case  8 => -13
+            case _  => 0
+          }
+          dBelowMiddleC + halfStepsAboveD
+        }
       }
 
       if (durationInTicks > 0) {
