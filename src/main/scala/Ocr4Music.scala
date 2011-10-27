@@ -46,6 +46,11 @@ case class Performance (
   def numMissing() = { missingNotes.size }
   def precision() = { numCorrect.floatValue / (numCorrect + numSpurious) }
   def recall() = { numCorrect.floatValue / (numCorrect + numMissing) }
+  def +(other:Performance) = { Performance(
+    correctNotes ++ other.correctNotes,
+    spuriousNotes ++ other.spuriousNotes,
+    missingNotes ++ other.missingNotes)
+  }
 }
 
 case class TemplateSpec (
@@ -770,6 +775,110 @@ object Ocr4Music {
       score, judgment, staffName, _match.x, _match.y)))
   }
 
+  def allTemplatesFromBoxes(boxes:List[BoxOfTemplates]) = {
+    boxes.foldLeft(Set[TemplateMatch]()) { (accum, box) =>
+      if (box.templates.size > 0)
+        accum ++ box.templates
+      else
+        accum ++ box.childBoxes.foldLeft(Set[TemplateMatch]()) {
+           (accum2, childBox) => accum2 ++ childBox.templates
+        }
+    }
+  }
+
+  def chooseBestNotes(boxes:List[BoxOfTemplates], orthonormalImage:GrayImage) :
+      List[Set[TemplateMatch]] ={
+    boxes.map { unfilteredBox =>
+      val box = BoxOfTemplates(unfilteredBox.box,
+        unfilteredBox.templates.filter { template =>
+          val threshold = template.templateName match {
+            case "treble_clef" => 4000
+            case "bass_clef"   => 4000
+            case "44"          => 3000
+          }
+          template.score >= threshold
+        },
+        unfilteredBox.childBoxes.map { unfilteredBox2 =>
+          BoxOfTemplates(unfilteredBox2.box,
+            unfilteredBox2.templates.filter { template =>
+              val threshold = template.templateName match {
+                case "black_head" => 20
+                case "white_head" => 10
+              }
+              template.score >= threshold
+            },
+            List[BoxOfTemplates]() // assume no recursion
+          )
+        }
+      )
+      if (box.templates.size > 0)
+        box.templates
+      else
+        box.childBoxes.foldLeft(Set[TemplateMatch]()) { (accum, childBox) =>
+          accum ++ chooseBestOverlappingSets(childBox.box, childBox.templates,
+            new TemplateResizer(), orthonormalImage)
+        }
+    }
+  }
+
+  def outputPerformance(performance:Performance, staffName:String) {
+    println("Staff %2s: precision: %.3f, recall: %.3f".format(
+      staffName, performance.precision, performance.recall))
+    printf("   correct: %s\n", performance.correctNotes.toString.replaceAll(
+        "\\)\\), \\(", ")),\n                ("))
+    if (performance.spuriousNotes.size > 0)
+      printf("  spurious: %s\n", performance.spuriousNotes.toString.
+        replaceAll("\\)\\), \\(", ")),\n                ("))
+    if (performance.missingNotes.size > 0)
+      printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
+        "\\)\\), \\(", ")),\n                ("))
+  }
+
+  def demoPredictedNotes(predictedNotes:List[Set[TemplateMatch]],
+      consideredNotes:Set[TemplateMatch], orthonormalImage:GrayImage,
+      performance:Performance, bounds:BoundingBox,
+      transform:OrthonormalTransform, demo:ColorImage, staffName:String) {
+    val templateResizer = new TemplateResizer()
+    performance.missingNotes.foreach { xAndPoint =>
+      val (_, point) = xAndPoint
+      var maybeClosestMatch:Option[TemplateMatch] = None
+      var minDistance = 40 // can't be further away than this
+      if (point.x >= bounds.minX && point.x <= bounds.maxX &&
+          point.y >= bounds.minY && point.y <= bounds.maxY) {
+        var (orthoX, orthoY) =
+          transform.transformXY(point.x - bounds.minX, point.y - bounds.minY)
+        consideredNotes.foreach { _match =>
+          if (_match.staffY == point.staffY &&
+              _match.templateName == point.templateName) {
+            val distance = Math.abs(_match.x - orthoX) +
+                           Math.abs(_match.y - orthoY)
+            if (distance < minDistance) {
+              minDistance = distance
+              maybeClosestMatch = Some(_match)
+            }
+          }
+        }
+      }
+      maybeClosestMatch.foreach { _match =>
+        val color = (255, 255, 0) // yellow means missed
+        drawTemplateMatch(_match, demo, templateResizer(_match), color)
+        saveCaseStudy(_match, orthonormalImage, templateResizer, "missed",
+          staffName)
+      }
+    }
+    predictedNotes.foreach { pointGroup =>
+      pointGroup.foreach { point =>
+        val isCorrect =
+          (performance.correctNotes.filter{ _._2 == point }.size > 0)
+        val color = if (isCorrect) (0, 128, 0) else (255, 0, 0)
+        drawTemplateMatch(point, demo, templateResizer(point), color)
+        saveCaseStudy(point, orthonormalImage, templateResizer,
+          (if (isCorrect) "correct" else "spurious"), staffName)
+      }
+    }
+    demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
+  }
+
   def processCase(caseName:String) : Performance = {
     var casePerformance = Performance(Set(), Set(), Set())
 
@@ -882,106 +991,17 @@ object Ocr4Music {
         FillBoxes.run(boxToChildBoxes, orthonormalImage, transform, staffName)
       }
 
-      val consideredNotes = filledBoxes.foldLeft(Set[TemplateMatch]()) {
-          (accum, box) =>
-        if (box.templates.size > 0)
-          accum ++ box.templates
-        else
-          accum ++ box.childBoxes.foldLeft(Set[TemplateMatch]()) {
-             (accum2, childBox) => accum2 ++ childBox.templates
-          }
-      }
-      val predictedNotes = filledBoxes.map { unfilteredBox =>
-        val box = BoxOfTemplates(unfilteredBox.box,
-          unfilteredBox.templates.filter { template =>
-            val threshold = template.templateName match {
-              case "treble_clef" => 4000
-              case "bass_clef"   => 4000
-              case "44"          => 3000
-            }
-            template.score >= threshold
-          },
-          unfilteredBox.childBoxes.map { unfilteredBox2 =>
-            BoxOfTemplates(unfilteredBox2.box,
-              unfilteredBox2.templates.filter { template =>
-                val threshold = template.templateName match {
-                  case "black_head" => 20
-                  case "white_head" => 10
-                }
-                template.score >= threshold
-              },
-              List[BoxOfTemplates]() // assume no recursion
-            )
-          }
-        )
-        if (box.templates.size > 0)
-          box.templates
-        else
-          box.childBoxes.foldLeft(Set[TemplateMatch]()) { (accum, childBox) =>
-            accum ++ chooseBestOverlappingSets(childBox.box, childBox.templates,
-              new TemplateResizer(), orthonormalImage)
-          }
-      }
+      val consideredNotes = allTemplatesFromBoxes(filledBoxes)
+      val predictedNotes = chooseBestNotes(filledBoxes, orthonormalImage)
   
-      println("  calcPerformance")
       val performance = calcPerformance(predictedNotes,
         annotationBox.foldLeft(List[Set[LabeledPoint]]()) { _ ++ _.pointGroups})
-      println("Staff %2s: precision: %.3f, recall: %.3f".format(
-        staffName, performance.precision, performance.recall))
-      printf("   correct: %s\n", performance.correctNotes.toString.replaceAll(
-          "\\)\\), \\(", ")),\n                ("))
-      if (performance.spuriousNotes.size > 0)
-        printf("  spurious: %s\n", performance.spuriousNotes.toString.
-          replaceAll("\\)\\), \\(", ")),\n                ("))
-      if (performance.missingNotes.size > 0)
-        printf("   missing: %s\n", performance.missingNotes.toString.replaceAll(
-          "\\)\\), \\(", ")),\n                ("))
+      outputPerformance(performance, staffName)
+      demoPredictedNotes(predictedNotes, consideredNotes, orthonormalImage,
+        performance, staffAbsolute.bounds, transform,
+        verticalSlicesDemo.copy, staffName)
   
-      val demo = verticalSlicesDemo.copy
-      val templateResizer = new TemplateResizer()
-      performance.missingNotes.foreach { xAndPoint =>
-        val (_, point) = xAndPoint
-        var maybeClosestMatch:Option[TemplateMatch] = None
-        var minDistance = 40 // can't be further away than this
-        if (point.x >= x0 && point.x <= x1 && point.y >= y0 && point.y <= y1) {
-          var (orthoX, orthoY) =
-            transform.transformXY(point.x - x0, point.y - y0)
-          consideredNotes.foreach { _match =>
-            if (_match.staffY == point.staffY &&
-                _match.templateName == point.templateName) {
-              val distance = Math.abs(_match.x - orthoX) +
-                             Math.abs(_match.y - orthoY)
-              if (distance < minDistance) {
-                minDistance = distance
-                maybeClosestMatch = Some(_match)
-              }
-            }
-          }
-        }
-        maybeClosestMatch.foreach { _match =>
-          val color = (255, 255, 0) // yellow means missed
-          drawTemplateMatch(_match, demo, templateResizer(_match), color)
-          saveCaseStudy(_match, orthonormalImage, templateResizer, "missed",
-            staffName)
-        }
-      }
-      predictedNotes.foreach { pointGroup =>
-        pointGroup.foreach { point =>
-          val isCorrect =
-            (performance.correctNotes.filter{ _._2 == point }.size > 0)
-          val color = if (isCorrect) (0, 128, 0) else (255, 0, 0)
-          drawTemplateMatch(point, demo, templateResizer(point), color)
-          saveCaseStudy(point, orthonormalImage, templateResizer,
-            (if (isCorrect) "correct" else "spurious"), staffName)
-        }
-      }
-      demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
-
-
-      casePerformance = Performance(
-        casePerformance.correctNotes ++ performance.correctNotes,
-        casePerformance.spuriousNotes ++ performance.spuriousNotes,
-        casePerformance.missingNotes ++ performance.missingNotes)
+      casePerformance += performance
       i += 1
     } // next staff
 
