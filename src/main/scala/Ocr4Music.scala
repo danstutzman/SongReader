@@ -926,8 +926,8 @@ object Ocr4Music {
       FindVSlopeRange.run(justNotes, image, staffs, caseName)
     }
 
-    var i = 0
-    staffs.foreach { staffAbsolute =>
+    staffs.zipWithIndex.foreach { staffAbsoluteAndI =>
+      val (staffAbsolute, i) = staffAbsoluteAndI
       val staffName = staffAbsolute.staffName
       val (x0, x1) = (staffAbsolute.bounds.minX, staffAbsolute.bounds.maxX)
       val (y0, y1) = (staffAbsolute.bounds.minY, staffAbsolute.bounds.maxY)
@@ -1002,7 +1002,6 @@ object Ocr4Music {
         verticalSlicesDemo.copy, staffName)
   
       casePerformance += performance
-      i += 1
     } // next staff
 
     casePerformance
