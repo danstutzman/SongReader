@@ -1,0 +1,7 @@
+#!/bin/bash
+# example: bin/midi2wav output/midi/photo3a.mid output/wav/photo3a.wav
+cd `dirname $0`/..
+if [ ! -e build/classes/Midi2WavRender.class ]; then
+  javac -cp lib/gervill.jar -d build/classes src/main/java/Midi2WavRender.java
+fi
+java -cp lib/gervill.jar:build/classes Midi2WavRender $@
