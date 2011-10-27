@@ -4,6 +4,12 @@ import java.awt.image.BufferedImage
 import java.io.File
 import java.lang.Math
 import javax.imageio.ImageIO
+import javax.sound.midi.MetaMessage
+import javax.sound.midi.MidiEvent
+import javax.sound.midi.MidiSystem
+import javax.sound.midi.Sequence
+import javax.sound.midi.ShortMessage
+import javax.sound.midi.SysexMessage
 import scala.collection.mutable.{Map => MutableMap}
 import scala.collection.mutable.PriorityQueue
 import scala.io.Source
@@ -879,6 +885,66 @@ object Ocr4Music {
     demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
   }
 
+  def writeToMIDI(predictedNotes:List[Set[TemplateMatch]], staffName:String) {
+    // create a new MIDI sequence with 24 ticks per beat
+    val sequence = new Sequence(javax.sound.midi.Sequence.PPQ, 24)
+    val track = sequence.createTrack()
+
+    // turn on General MIDI sound set
+    val sm = new SysexMessage()
+    sm.setMessage(Array[Byte](0xF0.asInstanceOf[Byte], 0x7E, 0x7F,
+                  0x09, 0x01, 0xF7.asInstanceOf[Byte]), 6)
+    track.add(new MidiEvent(sm, 0L))
+
+    // set tempo
+    val mt = new MetaMessage()
+    mt.setMessage(0x51, Array[Byte](0x02, 0x00, 0x00), 3)
+    track.add(new MidiEvent(mt, 0L))
+
+    // set track name
+    val trackName = "midifile track"
+    val mt2 = new MetaMessage()
+    mt2.setMessage(0x03, trackName.getBytes(), trackName.length())
+    track.add(new MidiEvent(mt2, 0L))
+
+    // set omni on
+    val mm = new ShortMessage()
+    mm.setMessage(0xB0, 0x7D, 0x00)
+    track.add(new MidiEvent(mm, 0L))
+
+    // set poly on
+    val mm2 = new ShortMessage()
+    mm2.setMessage(0xB0, 0x7F, 0x00)
+    track.add(new MidiEvent(mm2, 0L))
+
+    // set instrument to piano
+    val mm3 = new ShortMessage()
+    mm3.setMessage(0xC0, 0x00, 0x00)
+    val me = new MidiEvent(mm3, 0L)
+    track.add(me);
+
+    // note on - middle C
+    val mm4 = new ShortMessage()
+    mm4.setMessage(0x90,0x3C,0x60)
+    val me2 = new MidiEvent(mm4, 1L)
+    track.add(me2)
+
+    // note off - middle C - 120 ticks later
+    val mm5 = new ShortMessage();
+    mm5.setMessage(0x80,0x3C,0x40);
+    val me3 = new MidiEvent(mm5, 121L)
+    track.add(me3);
+
+    // set end of track (meta event) 19 ticks later
+    val mt3 = new MetaMessage();
+    mt3.setMessage(0x2F, Array[Byte](), 0);
+    val me4 = new MidiEvent(mt3, 140L)
+    track.add(me4);
+
+    val path = new File("output/midi/%s.mid".format(staffName))
+    MidiSystem.write(sequence, 1, path)
+  }
+
   def processCase(caseName:String) : Performance = {
     var casePerformance = Performance(Set(), Set(), Set())
 
@@ -1000,6 +1066,7 @@ object Ocr4Music {
       demoPredictedNotes(predictedNotes, consideredNotes, orthonormalImage,
         performance, staffAbsolute.bounds, transform,
         verticalSlicesDemo.copy, staffName)
+      writeToMIDI(predictedNotes, staffName)
   
       casePerformance += performance
     } // next staff
