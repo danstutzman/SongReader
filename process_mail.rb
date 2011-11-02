@@ -50,6 +50,9 @@ maildir.list(:new).each { |message|
 
       begin
         case_name = "#{message.unique_name}.#{i}"
+
+        # avoid "Unable to establish connection to compilation daemon" error
+        run_command("/Applications/scala-2.8.1/bin/fsc >/dev/null")
         run_command("bin/run Ocr4Music #{case_name}")
         run_command("bin/midi2wav output/midi/#{case_name}.mid " +
                     "output/wav/#{case_name}.wav")
