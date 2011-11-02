@@ -886,7 +886,7 @@ object Ocr4Music {
     demo.saveTo(new File("demos/notes.%s.png".format(staffName)))
   }
 
-  def writeToMidi(predictedNotes:List[Set[TemplateMatch]], staffName:String) {
+  def writeToMidi(predictedNotes:List[Set[TemplateMatch]], caseName:String) {
     // create a new MIDI sequence with 24 ticks per beat
     val sequence = new Sequence(javax.sound.midi.Sequence.PPQ, 24)
     val track = sequence.createTrack()
@@ -915,7 +915,7 @@ object Ocr4Music {
     add(mt)
 
     // set track name
-    val trackName = staffName
+    val trackName = caseName
     val mt2 = new MetaMessage()
     mt2.setMessage(0x03, trackName.getBytes(), trackName.length())
     add(mt2)
@@ -1025,7 +1025,7 @@ object Ocr4Music {
     wait(24)
     add(mt3)
 
-    val path = new File("output/midi/%s.mid".format(staffName))
+    val path = new File("output/midi/%s.mid".format(caseName))
     MidiSystem.write(sequence, 1, path)
   }
 
@@ -1076,6 +1076,7 @@ object Ocr4Music {
       FindVSlopeRange.run(justNotes, image, staffs, caseName)
     }
 
+    var allStaffsPredictedNotes = List[Set[TemplateMatch]]()
     staffs.zipWithIndex.foreach { staffAbsoluteAndI =>
       val (staffAbsolute, i) = staffAbsoluteAndI
       val staffName = staffAbsolute.staffName
@@ -1150,10 +1151,12 @@ object Ocr4Music {
       demoPredictedNotes(predictedNotes, consideredNotes, orthonormalImage,
         performance, staffAbsolute.bounds, transform,
         verticalSlicesDemo.copy, staffName)
-      writeToMidi(predictedNotes, staffName)
+      allStaffsPredictedNotes ++= predictedNotes
   
       casePerformance += performance
     } // next staff
+
+    writeToMidi(allStaffsPredictedNotes, caseName)
 
     casePerformance
   }
