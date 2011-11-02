@@ -377,13 +377,16 @@ object FillBoxes {
 
   def run(boxToChildBoxes:Map[BoundingBox,List[BoundingBox]],
       orthonormalImage:GrayImage, transform:OrthonormalTransform,
-      staffName:String) = {
+      staffName:String) : List[BoxOfTemplates] = {
     val allChildBoxes =
       boxToChildBoxes.values.foldLeft(List[BoundingBox]()){ _++_ }
     saveWidths(allChildBoxes,
       new File("output/widths/%s.txt".format(staffName)))
     val widths = allChildBoxes.map { box => box.maxX - box.minX + 1 }.toList
     val orderedWidths = widths.filter { _ > 4 }.sorted
+    if (orderedWidths.size == 0)
+      return List[BoxOfTemplates]()
+// EARLY EXIT
     val noteWidth = orderedWidths(orderedWidths.size * 3 / 4)
 
     val templates = Map(
