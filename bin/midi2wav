@@ -3,5 +3,11 @@
 cd `dirname $0`/..
 if [ ! -e build/classes/Midi2WavRender.class ]; then
   javac -cp lib/gervill.jar -d build/classes src/main/java/Midi2WavRender.java
+  ERROR=$?
+  if [ "$ERROR" != "0" ]; then
+    exit $ERROR
+  fi
 fi
-java -cp lib/gervill.jar:build/classes Midi2WavRender $@
+java -Djava.awt.headless=true -cp lib/gervill.jar:build/classes Midi2WavRender $@
+ERROR=$?
+exit $ERROR
