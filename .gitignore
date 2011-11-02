@@ -10,3 +10,4 @@ getmail/new/*
 getmail/tmp/*
 input/*.macmini.*
 email_password_for_imap
+email_password_for_smtp

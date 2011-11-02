@@ -1,3 +1,0 @@
-#!/bin/bash
-cd `dirname $0`/..
-/Applications/scala-2.8.1/bin/scala -cp lib/javamail-1.4.4/mail.jar bin/extract_attachments.scala
