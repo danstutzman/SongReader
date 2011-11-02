@@ -11,3 +11,4 @@ getmail/tmp/*
 input/*.macmini.*
 email_password_for_imap
 email_password_for_smtp
+getmail-4.22.1/getmailcore/*.pyc
