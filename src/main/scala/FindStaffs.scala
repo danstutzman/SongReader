@@ -228,7 +228,7 @@ object FindStaffs {
     val green = (0, 255, 0)
 
     var staffNum = 'a'.asInstanceOf[Int] - 1
-    var staffs = segments.map { segment =>
+    var staffs = segments.flatMap { segment =>
       val (midlineYs, staffSeparations) =
         findMidlineYs(segment, highlighted, demo, caseName)
 
@@ -262,24 +262,28 @@ object FindStaffs {
       }
       x1 += numGoodSoFar
 
-      val y0 = (Math.floor(midlineYs.filter { _ > -1 }.min -
-        staffSeparations.max * 8.0f).intValue) max 0
-      val y1 = (Math.ceil(midlineYs.filter { _ > -1 }.max +
-        staffSeparations.max * 8.0f).intValue) min (image.h - 1)
-      val resizedSegment = BoundingBox(x0, x1, y0, y1)
-
-      (x0 to x1).foreach { x =>
-        demo2(x, y0) = green
-        demo2(x, y1) = green
+      if (x1 <= x0 || midlineYs.count { _ > -1 } == 0) {
+        None
+      } else {
+        val y0 = (Math.floor(midlineYs.filter { _ > -1 }.min -
+          staffSeparations.max * 8.0f).intValue) max 0
+        val y1 = (Math.ceil(midlineYs.filter { _ > -1 }.max +
+          staffSeparations.max * 8.0f).intValue) min (image.h - 1)
+        val resizedSegment = BoundingBox(x0, x1, y0, y1)
+  
+        (x0 to x1).foreach { x =>
+          demo2(x, y0) = green
+          demo2(x, y1) = green
+        }
+        (y0 to y1).foreach { y =>
+          demo2(x0, y) = green
+          demo2(x1, y) = green
+        }
+  
+        staffNum += 1
+        val staffName = "%s%c".format(caseName, staffNum)
+        Some(Staff(staffName, resizedSegment, midlineYs, staffSeparations))
       }
-      (y0 to y1).foreach { y =>
-        demo2(x0, y) = green
-        demo2(x1, y) = green
-      }
-
-      staffNum += 1
-      val staffName = "%s%c".format(caseName, staffNum)
-      Staff(staffName, resizedSegment, midlineYs, staffSeparations)
     }
 
     demo.saveTo(new File("demos/hline.%s.png".format(caseName)))
