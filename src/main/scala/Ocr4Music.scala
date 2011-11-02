@@ -1175,11 +1175,13 @@ object Ocr4Music {
       println("Total:   precision: %.3f -- recall: %.3f".format(
         globalPerformance.precision, globalPerformance.recall))
 
-    } catch {
-      case e: Exception => e.printStackTrace()
-    } finally {
       println(Colors.ansiEscapeNormal)
+      System.exit(0)
+    } catch {
+      case e:Throwable =>
+        e.printStackTrace()
+        println(Colors.ansiEscapeNormal)
+        System.exit(1)
     }
-    System.exit(0)
   }
 }
