@@ -1,2 +1,9 @@
 #!/bin/bash
-../lame/lame-3.99/frontend/lame -b 8 output/wav/photo3a.wav output/mp3/photo3a.mp3
+CASE_NAME=$1
+if [ "$CASE_NAME" == "" ]; then
+  echo 1>&2 "Usage: $0 case-name"
+  exit
+fi
+../lame/lame-3.99/frontend/lame -b 8 output/wav/$CASE_NAME.wav output/mp3/$CASE_NAME.mp3
+ERROR=$?
+exit $ERROR 
