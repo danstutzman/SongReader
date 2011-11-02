@@ -4,6 +4,10 @@ require 'mail'
 require 'time'
 require './smtp_tls_patch.rb'
 require 'open3'
+require 'rest-client'
+
+#UPLOAD_TO='http://www.songreader.net'
+UPLOAD_TO='http://0.0.0.0:3000'
 
 Mail.defaults do
   delivery_method :smtp, {
@@ -58,25 +62,32 @@ maildir.list(:new).each { |message|
                     "output/wav/#{case_name}.wav")
         run_command("bin/wav2mp3 #{case_name}")
         run_command("rm output/wav/#{case_name}.wav")
+
+        puts "Uploading to #{UPLOAD_TO}..."
+        RestClient.post("#{UPLOAD_TO}/photos",
+          { 'photo[uploaded_picture]'.intern =>
+            File.new("input/#{case_name}.jpeg", 'rb'),
+            'photo[uploaded_mp3]'.intern =>
+            File.new("output/mp3/#{case_name}.mp3", 'rb')
+          }
+        )
+
       rescue Exception => e
-        if status.exitstatus != 0 # if failure
-          #puts 'Sending error email...'
-          #error_mail = Mail.new do
-          #  from 'error@songreader.net'
-          #  to 'dtstutz@gmail.com'
-          #  subject 'Error from Song Reader'
-          #  body output
-          #end
-          #error_mail.deliver!
-          puts 'Quitting because of error'
-          raise
+        #puts 'Sending error email...'
+        #error_mail = Mail.new do
+        #  from 'error@songreader.net'
+        #  to 'dtstutz@gmail.com'
+        #  subject 'Error from Song Reader'
+        #  body output
+        #end
+        #error_mail.deliver!
+        puts 'Quitting because of error'
+        raise
   # EARLY EXIT
-        end
       end
     else
       puts "Skipped attachment with mime type #{attachment.mime_type}"
     end
   }
-  break
-  email.process
+  message.process # move it from new/ to cur/ folder
 }
