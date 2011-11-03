@@ -5,6 +5,8 @@ require 'time'
 require './smtp_tls_patch.rb'
 require 'open3'
 require 'rest-client'
+require './net_http_digest_auth_patch.rb'
+require './rest_client_digest_auth_patch.rb'
 
 #UPLOAD_TO='http://www.songreader.net'
 UPLOAD_TO='http://0.0.0.0:3000'
@@ -64,8 +66,16 @@ maildir.list(:new).each { |message|
         run_command("rm output/wav/#{case_name}.wav")
 
         puts "Uploading to #{UPLOAD_TO}..."
-        RestClient.post("#{UPLOAD_TO}/photos",
-          { 'photo[uploaded_picture]'.intern =>
+        denied_response =
+          Net::HTTP.get_response(URI.parse("#{UPLOAD_TO}/admin/photos"))
+        RestClient::Request.execute(
+          :method => :post,
+          :url => "#{UPLOAD_TO}/admin/photos",
+          :user => 'admin',
+          :password => File.read('admin_digest_password').chomp,
+          :denied_response_for_server_nonce => denied_response,
+          :payload => {
+            'photo[uploaded_picture]'.intern =>
             File.new("input/#{case_name}.jpeg", 'rb'),
             'photo[uploaded_mp3]'.intern =>
             File.new("output/mp3/#{case_name}.mp3", 'rb')
