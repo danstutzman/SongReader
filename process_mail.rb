@@ -7,6 +7,7 @@ require 'open3'
 require 'rest-client'
 require './net_http_digest_auth_patch.rb'
 require './rest_client_digest_auth_patch.rb'
+require 'erb'
 
 #UPLOAD_TO='http://www.songreader.net'
 UPLOAD_TO='http://0.0.0.0:3000'
@@ -30,11 +31,11 @@ end
 class GotNonZeroExitCode < StandardError
 end
 
-def run_command(command)
+def run_command(command, outputs)
   puts command
-  output = ''
   stdout, stderr, status = Open3.capture3(command)
-  output = (stdout + stderr != '') ? stdout + stderr : 'No output'
+  outputs[:stdout] += "#{stdout}\n"
+  outputs[:stderr] += "#{stderr}\n"
   puts stdout
   puts stderr
   if status.exitstatus != 0
@@ -44,11 +45,9 @@ end
 
 create_dirs = false
 maildir = Maildir.new('getmail', create_dirs)
-maildir.list(:new).each { |message|
-  email = Mail.new(message.data)
-  puts email.from
-  email.attachments.each_with_index { |attachment, i|
 maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
+  photo_email = Mail.new(message.data)
+  photo_email.attachments.each_with_index { |attachment, i|
     if attachment.mime_type == 'image/jpeg'
       File.open("input/#{message.unique_name}.#{i}.jpeg", 'w') { |file|
         file.write(attachment.decoded)
@@ -57,17 +56,18 @@ maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
       File.open("input/#{message.unique_name}.#{i}.json", 'w') { |file|
         file.write("[]\n")
       }
+      outputs = { :stdout => '', :stderr => '' }
 
       begin
         case_name = "#{message.unique_name}.#{i}"
 
         # avoid "Unable to establish connection to compilation daemon" error
-        run_command("/Applications/scala-2.8.1/bin/fsc >/dev/null")
-        run_command("bin/run Ocr4Music #{case_name}")
+        run_command("/Applications/scala-2.8.1/bin/fsc >/dev/null", outputs)
+        run_command("bin/run Ocr4Music #{case_name}", outputs)
         run_command("bin/midi2wav output/midi/#{case_name}.mid " +
-                    "output/wav/#{case_name}.wav")
-        run_command("bin/wav2mp3 #{case_name}")
-        run_command("rm output/wav/#{case_name}.wav")
+                    "output/wav/#{case_name}.wav", outputs)
+        run_command("bin/wav2mp3 #{case_name}", outputs)
+        run_command("rm output/wav/#{case_name}.wav", outputs)
 
         puts "Uploading to #{UPLOAD_TO}..."
         denied_response =
@@ -86,15 +86,39 @@ maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
           }
         )
 
+        puts 'Sending reply email...'
+        mp3_filename = attachment.filename.gsub(/\.jpe?g$/i, '') + '.mp3'
+        reply_mail = Mail.new do
+          from 'Song Reader <beta@songreader.net>'
+          to photo_email.from
+          subject "Re: #{photo_email.subject}"
+          body ERB.new(File.read('reply_email_good.txt.erb')).result
+          add_file :filename => mp3_filename,
+            :content => File.read("output/mp3/#{case_name}.mp3")
+        end
+        reply_mail.deliver!
+
       rescue Exception => e
-        #puts 'Sending error email...'
-        #error_mail = Mail.new do
-        #  from 'error@songreader.net'
-        #  to 'dtstutz@gmail.com'
-        #  subject 'Error from Song Reader'
-        #  body output
-        #end
-        #error_mail.deliver!
+        puts 'Sending error email to dtstutz...'
+        error_mail1 = Mail.new do
+          from 'Song Reader <beta@songreader.net>'
+          to 'dtstutz@gmail.com'
+          subject 'Error from Song Reader'
+          body "___STDOUT\n" + outputs[:stdout] +
+               "\n___STDERR\n" + outputs[:stderr] +
+               "\n___Stack trace:\n" + e.to_s + "\n" + e.backtrace.join("\n")
+        end
+        error_mail1.deliver!
+
+        puts 'Sending error email to sender...'
+        error_mail2 = Mail.new do
+          from 'Song Reader <beta@songreader.net>'
+          to photo_email.from
+          subject "Re: #{photo_email.subject}"
+          body ERB.new(File.read('reply_email_bad.txt.erb')).result
+        end
+        error_mail2.deliver!
+
         puts 'Quitting because of error'
         raise
   # EARLY EXIT
