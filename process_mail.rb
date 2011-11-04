@@ -11,6 +11,9 @@ require './rest_client_digest_auth_patch.rb'
 #UPLOAD_TO='http://www.songreader.net'
 UPLOAD_TO='http://0.0.0.0:3000'
 
+#RUN_ONCE_FOR_TEST=false
+RUN_ONCE_FOR_TEST=true
+
 Mail.defaults do
   delivery_method :smtp, {
     :address              => 'smtp.gmail.com',
@@ -45,6 +48,7 @@ maildir.list(:new).each { |message|
   email = Mail.new(message.data)
   puts email.from
   email.attachments.each_with_index { |attachment, i|
+maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
     if attachment.mime_type == 'image/jpeg'
       File.open("input/#{message.unique_name}.#{i}.jpeg", 'w') { |file|
         file.write(attachment.decoded)
@@ -99,5 +103,6 @@ maildir.list(:new).each { |message|
       puts "Skipped attachment with mime type #{attachment.mime_type}"
     end
   }
+  break if RUN_ONCE_FOR_TEST
   message.process # move it from new/ to cur/ folder
 }
