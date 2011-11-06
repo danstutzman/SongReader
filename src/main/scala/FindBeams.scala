@@ -20,23 +20,25 @@ object FindBeams {
     val multiplier = 0.8f
     (0 until justNotes.h).foreach { y =>
       var minDistance = 9999
-      var closestStaff = staffs(0)
+      var closestStaff:Option[Staff] = None
       staffs.foreach { staff =>
         val distance = (Math.abs(staff.bounds.minY - y)) min
                        (Math.abs(staff.bounds.maxY - y))
         if (distance < minDistance) {
           minDistance = distance
-          closestStaff = staff
+          closestStaff = Some(staff)
         }
       }
 
-      val expectedBeamWidth =
-        Math.round(closestStaff.staffSeparations.max * multiplier).intValue - 2
-      (0 until justNotes.w).foreach { x =>
-        val r = topEdgesBlurred(x, y - expectedBeamWidth / 2)
-        val g = bottomEdgesBlurred(x, y + (expectedBeamWidth + 1) / 2)
-        //val b = blurred(x, y)
-        thickLines(x, y) = (r, g, 0)
+      closestStaff.foreach { closestStaff =>
+        val expectedBeamWidth = Math.round(closestStaff.staffSeparations.max *
+          multiplier).intValue - 2
+        (0 until justNotes.w).foreach { x =>
+          val r = topEdgesBlurred(x, y - expectedBeamWidth / 2)
+          val g = bottomEdgesBlurred(x, y + (expectedBeamWidth + 1) / 2)
+          //val b = blurred(x, y)
+          thickLines(x, y) = (r, g, 0)
+        }
       }
     }
     thickLines.saveTo(new File("demos/beamlike.%s.png".format(caseName)))
