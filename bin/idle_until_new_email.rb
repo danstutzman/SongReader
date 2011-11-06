@@ -3,8 +3,8 @@
 # adapted from http://paste.ly/5wrj
 
 SERVER = 'imap.gmail.com'
-USERNAME = ARGV[0] or raise "First arg: IMAP username"
-PW = ARGV[1] or raise "Second arg: IMAP password"
+USERNAME = 'beta@songreader.net'
+PW = `cat email_password_for_imap`.chomp
 
 require 'net/imap'
 require 'rubygems'
@@ -53,7 +53,7 @@ end
     Thread.new do
       @imap.await_done_confirmation
       @imap.disconnect
-      exit 1
+      exit 2
     end
   end
 end
@@ -66,3 +66,4 @@ Thread.new do
   @imap.await_done_confirmation
   @imap.disconnect
 end
+exit 0
