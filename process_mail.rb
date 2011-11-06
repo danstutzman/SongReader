@@ -9,11 +9,11 @@ require './net_http_digest_auth_patch.rb'
 require './rest_client_digest_auth_patch.rb'
 require 'erb'
 
-#UPLOAD_TO='http://www.songreader.net'
-UPLOAD_TO='http://0.0.0.0:3000'
+UPLOAD_TO='http://www.songreader.net'
+#UPLOAD_TO='http://0.0.0.0:3000'
 
-#RUN_ONCE_FOR_TEST=false
-RUN_ONCE_FOR_TEST=true
+RUN_ONCE_FOR_TEST=false
+#RUN_ONCE_FOR_TEST=true
 
 Mail.defaults do
   delivery_method :smtp, {
