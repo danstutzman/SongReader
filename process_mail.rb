@@ -62,7 +62,16 @@ maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
         case_name = "#{message.unique_name}.#{i}"
 
         # avoid "Unable to establish connection to compilation daemon" error
-        run_command("/Applications/scala-2.8.1/bin/fsc >/dev/null", outputs)
+        while true
+          begin
+            run_command("/Applications/scala-2.8.1/bin/fsc >/dev/null", outputs)
+          rescue GotNonZeroExitCode => e
+            raise unless (outputs[:stderr] || '').chomp ==
+               'Could not connect to compilation daemon.'
+          end
+          break # only loop if got the "could not connect message"
+        end
+        
         run_command("bin/run Ocr4Music #{case_name}", outputs)
         run_command("bin/midi2wav output/midi/#{case_name}.mid " +
                     "output/wav/#{case_name}.wav", outputs)
@@ -104,9 +113,9 @@ maildir.list(RUN_ONCE_FOR_TEST ? :cur : :new).each { |message|
           from 'Song Reader <beta@songreader.net>'
           to 'dtstutz@gmail.com'
           subject 'Error from Song Reader'
-          body "___STDOUT\n" + outputs[:stdout] +
-               "\n___STDERR\n" + outputs[:stderr] +
-               "\n___Stack trace:\n" + e.to_s + "\n" + e.backtrace.join("\n")
+          body "___STDOUT\n#{outputs[:stdout]}" +
+               "\n___STDERR\n#{outputs[:stderr]}" +
+               "\n___Stack trace:\n#{e}\n#{e.backtrace.join("\n")}"
         end
         error_mail1.deliver!
 
