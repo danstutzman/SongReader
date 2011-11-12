@@ -44,26 +44,42 @@ end
 @imap = Net::IMAP.new SERVER, ssl: true
 
 @imap.login USERNAME, PW
-@imap.select 'INBOX'
 
-# Add handler.
-@imap.add_response_handler do |resp|
-  if resp.kind_of?(Net::IMAP::UntaggedResponse) and resp.name == "EXISTS"
+non_done_handler = Proc.new { |resp|
+  if resp.kind_of?(Net::IMAP::UntaggedResponse) && resp.name == 'EXISTS'
+    puts "Okay, #{resp.data} messages to start with."
+    $num_messages = resp.data
+  end
+}
+
+# Add handler (before select, so we can catch EXISTS)
+@imap.add_response_handler(non_done_handler)
+@imap.select 'INBOX'
+@imap.remove_response_handler(non_done_handler)
+
+done_handler = Proc.new { |resp|
+  if resp.kind_of?(Net::IMAP::UntaggedResponse) && resp.name == 'EXISTS'
+    #puts "Mailbox now has #{resp.data} messages"
     @imap.say_done
-    Thread.new do
-      @imap.await_done_confirmation
-      @imap.disconnect
-      exit 2
+    if resp.data == $num_messages
+      #puts "(no new messages...)"
+      $num_messages == resp.data
+      Thread.new do
+        @imap.await_done_confirmation
+        @imap.idle
+      end
+    else
+      puts "(received some messages...)"
+      Thread.new do
+        @imap.await_done_confirmation
+        @imap.disconnect
+        exit 2
+      end
     end
   end
-end
+}
+@imap.add_response_handler(done_handler)
 
-@imap.idle
-sleep (30 * 60) - 10 # wait 30 minutes
-
-@imap.say_done
-Thread.new do
-  @imap.await_done_confirmation
-  @imap.disconnect
-end
+@imap.idle # called by EXISTS handler
+sleep # (indefinitely; should only be 29 min according to imap spec)
 exit 0
