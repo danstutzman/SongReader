@@ -1030,7 +1030,10 @@ object Ocr4Music {
   }
 
   def detectStaffs(image:GrayImage, caseName:String) {
+//val wavelen5 = 28
+(65 to 95 by 5).foreach { wavelen5 =>
     val demo = new GrayImage(image.w, image.h)
+    val demo2 = new ColorImage(image.w, image.h)
     (0 until image.w).foreach { x =>
     //(186 to 186).foreach { x =>
       print("%4d,".format(x))
@@ -1046,10 +1049,20 @@ object Ocr4Music {
       (0 until image.h).foreach { y =>
         val y0 = (y - size) max 0
         val y1 = (y + size) min (image.h - 1)
+/*
         val max = image(x, y) max image(x, y + 1) max image(x, y - 1
           ) max image(x, y + 2) max image(x, y - 2)
         val min = image(x, y) min image(x, y + 1) min image(x, y - 1
           ) min image(x, y + 2) min image(x, y - 2)
+        val isMin = (image(x, y) == min)
+*/
+        var max = 0
+        var min = 255
+        (-5 to 5).foreach { yDelta =>
+          val v = image(x, y + yDelta)
+          if (v > max) max = v
+          if (v < min) min = v
+        }
         val isMin = (image(x, y) == min)
 
         if (isMin) {
@@ -1059,9 +1072,74 @@ object Ocr4Music {
           demo(x, y) = 0
         }
       }
-    } // next x
-    demo.saveTo(new File("demos/erasenew.%s.png".format(caseName)))
 
+      val sin = new Array[Int](wavelen5)
+      val cos = new Array[Int](wavelen5)
+      var sumReal = 0
+      var sumImag = 0
+      (0 until wavelen5).foreach { i =>
+        sin(i) = (Math.sin(i.toDouble / (wavelen5 / 5.0) * (2 * Math.PI)
+          ) * 256).intValue
+        cos(i) = (Math.cos(i.toDouble / (wavelen5 / 5.0) * (2 * Math.PI)
+          ) * 256).intValue
+      }
+
+      val output = new Array[Int](image.h + wavelen5)
+      val outputY = new Array[Int](image.h + wavelen5)
+      val outputX = new Array[Int](image.h + wavelen5)
+      (0 until image.h).foreach { centerY =>
+        val y0 = centerY - wavelen5/2
+        val y1 = centerY + wavelen5/2
+        sumReal += sin((y0 + wavelen5) % wavelen5) * demo(x, y0) / 256
+        sumImag += cos((y0 + wavelen5) % wavelen5) * demo(x, y0) / 256
+        if (y1 >= 0) {
+          sumReal -= sin(y1 % wavelen5) * demo(x, y1) / 256
+          sumImag -= cos(y1 % wavelen5) * demo(x, y1) / 256
+        }
+//if (x == 186) {
+//  println((sin(y0), cos(y0), demo(x, y0)))
+//}
+        output(centerY) =
+          Math.sqrt(sumReal * sumReal + sumImag * sumImag).intValue
+        outputY(centerY) = sumReal
+        outputX(centerY) = sumImag
+      }
+      (0 until 60).foreach { y => output(y) = 0 }
+      (120 until image.h).foreach { y => output(y) = 0 }
+      (0 until image.h).foreach { y =>
+        demo2(x, y) = (0, demo(x, y), 0)
+      }
+      (0 until image.h).foreach { y =>
+        if (output(y) > 10) {
+//          demo(x, y) = output(i) / 8 /// (256 * wavelen5 * 2)
+          val atan2 = Math.atan2(outputY(y), outputX(y)) / (Math.PI * 2)
+//            wavelen5 / 5
+//          demo(x, y - deltaY.intValue) = 255
+          val newY = (Math.floor(y / (wavelen5 / 5.0)) *
+            (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
+            (atan2 * wavelen5/5).intValue
+          if (newY >= 0 && newY < image.h) {
+            demo2(x, newY) = ((output(y) / 20) min 255, demo(x, newY), 0)
+          }
+        }
+      }
+      
+
+/*        (0 until image.h - wavelen5).foreach { y =>
+          var sum = 0
+          (0 until wavelen5).foreach { i =>
+            sum += image(outerX, y + i) * sin(i)
+          }
+
+          rowFft(wavelen5, y) = (sum + Math.abs(sum)) / wavelen5
+        }*/
+
+    } // next x
+    //demo.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
+    demo2.saveTo(new File("demos/newfft.%s.%d.png".format(caseName, wavelen5)))
+} // next wavelen5
+
+/*
     val demo4 = new ColorImage(image.w, image.h)
     (0 until image.h).foreach { y =>
       (0 until image.w).foreach { x =>
@@ -1071,6 +1149,7 @@ object Ocr4Music {
       }
     }
     demo4.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
+*/
   }
 
   def quarterSize(image:GrayImage) = {
