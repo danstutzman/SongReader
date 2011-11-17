@@ -1031,9 +1031,9 @@ object Ocr4Music {
 
   def detectStaffs(image:GrayImage, caseName:String) {
 //val wavelen5 = 28
-(65 to 95 by 5).foreach { wavelen5 =>
     val demo = new GrayImage(image.w, image.h)
     val demo2 = new ColorImage(image.w, image.h)
+    val centerYs = new Array[Int](image.w)
     (0 until image.w).foreach { x =>
     //(186 to 186).foreach { x =>
       print("%4d,".format(x))
@@ -1073,6 +1073,12 @@ object Ocr4Music {
         }
       }
 
+var maxFFTOutput = 0
+var argmaxWavelen5 = 0
+var argmaxCenterY = 0
+var argmaxOutputY = 0
+var argmaxOutputX = 0
+(65 to 95 by 5).foreach { wavelen5 =>
       val sin = new Array[Int](wavelen5)
       val cos = new Array[Int](wavelen5)
       var sumReal = 0
@@ -1096,15 +1102,48 @@ object Ocr4Music {
           sumReal -= sin(y1 % wavelen5) * demo(x, y1) / 256
           sumImag -= cos(y1 % wavelen5) * demo(x, y1) / 256
         }
-//if (x == 186) {
-//  println((sin(y0), cos(y0), demo(x, y0)))
-//}
         output(centerY) =
           Math.sqrt(sumReal * sumReal + sumImag * sumImag).intValue
         outputY(centerY) = sumReal
         outputX(centerY) = sumImag
+
+        if (output(centerY) > maxFFTOutput) {
+          maxFFTOutput = output(centerY)
+          argmaxWavelen5 = wavelen5
+          argmaxCenterY = centerY
+          argmaxOutputX = outputX(centerY)
+          argmaxOutputY = outputY(centerY)
+        }
       }
-      (0 until 60).foreach { y => output(y) = 0 }
+} // next wavelen5
+
+      (0 until image.h).foreach { y =>
+//        demo2(x, y) = (0, demo(x, y), 0)
+      }
+
+      val wavelen5 = argmaxWavelen5
+      /*(0 until image.h).foreach { y =>
+        val atan2 = Math.atan2(argmaxOutputY, argmaxOutputX) / (Math.PI * 2)
+        val newY = (Math.floor(y / (wavelen5 / 5.0)) *
+          (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
+          (atan2 * wavelen5/5).intValue
+        if (newY >= 0 && newY < image.h) {
+          demo2(x, newY) = ((maxFFTOutput / 50) min 255, demo(x, newY), 0)
+        }
+      }*/
+      val atan2 = Math.atan2(argmaxOutputY, argmaxOutputX) / (Math.PI * 2)
+      val newY = (Math.floor(argmaxCenterY / (wavelen5 / 5.0)) *
+          (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
+          (atan2 * wavelen5/5).intValue
+      //(-2 to 2).foreach { staffY =>
+      (0 to 0).foreach { staffY =>
+        val newerY = newY + staffY * wavelen5 / 5
+//        demo2(x, newerY) = (255, newerY, 0)
+      }
+      //demo2(x, argmaxCenterY) = (255, 255, 0)
+      centerYs(x) = newY
+
+/*      (0 until 60).foreach { y => output(y) = 0 }
       (120 until image.h).foreach { y => output(y) = 0 }
       (0 until image.h).foreach { y =>
         demo2(x, y) = (0, demo(x, y), 0)
@@ -1122,7 +1161,7 @@ object Ocr4Music {
             demo2(x, newY) = ((output(y) / 20) min 255, demo(x, newY), 0)
           }
         }
-      }
+      }*/
       
 
 /*        (0 until image.h - wavelen5).foreach { y =>
@@ -1136,8 +1175,36 @@ object Ocr4Music {
 
     } // next x
     //demo.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
-    demo2.saveTo(new File("demos/newfft.%s.%d.png".format(caseName, wavelen5)))
-} // next wavelen5
+
+    var buckets = List[List[(Int,Int)]]()
+    (0 until image.w).foreach { x =>
+      val y = centerYs(x)
+      var foundBucket = false
+      buckets.foreach { bucket =>
+        val (lastX, lastY) = bucket.head
+        if (!foundBucket && x - lastX < 6 && Math.abs(y - lastY) < 3) {
+          foundBucket = true
+          buckets = ((x, centerYs(x)) :: bucket) ::
+            buckets.filter { _ != bucket }
+        }
+      }
+      if (!foundBucket) {
+        buckets = List((x, centerYs(x))) :: buckets
+      }
+    }
+
+    val random = new Random()
+    //val bestBucket = buckets.sortBy { -_.size }.head
+    //List(bestBucket).foreach { bucket =>
+    buckets.sortBy { -_.size }.foreach { bucket =>
+      val rgb = (random.nextInt(128) + 127,
+                 random.nextInt(128) + 127, random.nextInt(128) + 127)
+      bucket.foreach { xy =>
+        val (x, y) = xy
+        demo2(x, y) = rgb
+      }
+    }
+    demo2.saveTo(new File("demos/newfft.%s.png".format(caseName)))
 
 /*
     val demo4 = new ColorImage(image.w, image.h)
