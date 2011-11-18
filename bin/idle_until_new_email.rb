@@ -81,5 +81,5 @@ done_handler = Proc.new { |resp|
 @imap.add_response_handler(done_handler)
 
 @imap.idle # called by EXISTS handler
-sleep # (indefinitely; should only be 29 min according to imap spec)
+sleep 29 * 60 # sleep only 29 minutes according to IMAP spec
 exit 0
