@@ -1111,75 +1111,59 @@ object Ocr4Music {
       }
     }
 
-    case class Line(val x0:Int, val y0:Int, val x1:Int, val y1:Int) {}
+    case class PointBox(val points:List[(Int,Int)], box:BoundingBox) {}
 
-if (allPoints.size > 0) {
-    var lines = List[Line]()
-    val threshold = 10
-    var pointGroupsWithoutLine = List(allPoints)
-    var canKeepGoing = true
-    while (pointGroupsWithoutLine.size > 0 && canKeepGoing) {
-      val points = pointGroupsWithoutLine.head
-      pointGroupsWithoutLine = pointGroupsWithoutLine.tail
-
-      val (slope, intercept) = linearRegression(points)
-      val allPointsAreOnLine = !points.exists { xy =>
-        val (x, y) = xy
-        val predictedY = x * slope + intercept
-        Math.abs(predictedY - y) > 20
-      }
-
-      if (allPointsAreOnLine) {
-        val minX = points.map { _._1 }.min
-        val maxX = points.map { _._1 }.max
-        val line = Line(minX, (minX * slope + intercept).intValue,
-                    maxX, (maxX * slope + intercept).intValue)
-        lines = line :: lines
-      } else {
-        var maxMinDistance = -1
-        var argmaxSplitY = -1
-        val minY = points.map { _._2 }.min
-        val maxY = points.map { _._2 }.max
-        (minY until maxY).foreach { splitY =>
-          var minDistance = 9999
-          points.foreach { xy =>
-            val (x, y) = xy
-            val distance = Math.abs(splitY - y)
-            if (distance < minDistance) {
-              minDistance = distance
-            }
+    var boxes = List[PointBox]()
+    val thresholdX = 20
+    val thresholdY = 5
+    allPoints.foreach { xy =>
+      val (x, y) = xy
+      var enclosingBoxes = List[PointBox]()
+      boxes.foreach { box =>
+        if (x >= box.box.minX - thresholdX && x <= box.box.maxX + thresholdX &&
+            y >= box.box.minY - thresholdY && y <= box.box.maxY + thresholdY) {
+          val pointMatch = box.points.exists { xy2 =>
+            val (x2, y2) = xy2
+            Math.abs(x - x2) <= thresholdX && Math.abs(y - y2) <= thresholdY
           }
-          if (minDistance > maxMinDistance) {
-            maxMinDistance = minDistance
-            argmaxSplitY = splitY
+          if (pointMatch) {
+            enclosingBoxes = box :: enclosingBoxes
           }
         }
-        if (maxMinDistance >= 10) {
-          val (aboveLine, belowLine) = points.partition { _._2 < argmaxSplitY }
-          pointGroupsWithoutLine =
-            List(aboveLine, belowLine) ++ pointGroupsWithoutLine
-        } else {
-          println("Couldn't find splitting line")
-          canKeepGoing = false
-          pointGroupsWithoutLine = points :: pointGroupsWithoutLine
-        }
       }
+
+      val newX0 = enclosingBoxes.foldLeft(x) { _ min _.box.minX }
+      val newX1 = enclosingBoxes.foldLeft(x) { _ max _.box.maxX }
+      val newY0 = enclosingBoxes.foldLeft(y) { _ min _.box.minY }
+      val newY1 = enclosingBoxes.foldLeft(y) { _ max _.box.maxY }
+      val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
+      val newPoints = enclosingBoxes.foldLeft(List(xy)) { _ ++ _.points }
+      boxes = PointBox(newPoints, newBounds) ::
+        boxes.filter { !enclosingBoxes.contains(_) }
     }
+
+    // eliminate really small boxes
+/*    boxes = boxes.filter { box =>
+      (box.box.maxX - box.box.minX) >= thresholdX &&
+      (box.box.maxY - box.box.minY) >= thresholdY
+    }*/
 
     val demo5 = new ColorImage(image.w, image.h)
     val random = new Random()
+/*
+    case class Line(val x0:Int, val y0:Int, val x1:Int, val y1:Int) {}
     lines.foreach { line =>
       (line.x0 to line.x1).foreach { x =>
         val progress = (x - line.x0) / (line.x1 - line.x0).floatValue
         val y = (line.y0 + progress * (line.y1 - line.y0)).intValue
         demo5(x, y) = (255, 255, 255)
       }
-    }
-    pointGroupsWithoutLine.foreach { points =>
+    }*/
+    boxes.foreach { box =>
       val r = random.nextInt(192) + 63
       val g = random.nextInt(192) + 63
       val b = random.nextInt(192) + 63
-      points.foreach { xy =>
+      box.points.foreach { xy =>
         val (x, y) = xy
         (x-0 to x+0).foreach { neighborX =>
           (y-0 to y+0).foreach { neighborY =>
@@ -1192,7 +1176,6 @@ if (allPoints.size > 0) {
       }
     }
     demo5.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
-} // if any points exist
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
