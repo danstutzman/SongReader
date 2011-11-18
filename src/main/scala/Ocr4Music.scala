@@ -1082,8 +1082,10 @@ object Ocr4Music {
     demo3.scaleValueToMax255.saveTo(new File(
       "demos/bestfft.%s.png".format(caseName)))
 
+    case class Point(val x:Int, val y:Int, val wavelen5:Int) {}
+
     val demo4 = demo.scaleValueToMax255
-    var allPoints = List[(Int,Int)]()
+    var allPoints = List[Point]()
     (0 until image.w).foreach { x =>
       var numBlacks = 0
       var vBeforeBlacks = 0
@@ -1099,7 +1101,7 @@ object Ocr4Music {
               vBeforeBlacks >= 130 && v >= 130) {
             if (numLinks >= 4) {
               val centerY = (staffBegin + y) / 2
-              allPoints = (x, centerY) :: allPoints
+              allPoints = Point(x, centerY, y - staffBegin) :: allPoints
             }
           } else {
             numLinks = 0
@@ -1111,20 +1113,21 @@ object Ocr4Music {
       }
     }
 
-    case class PointBox(val points:List[(Int,Int)], box:BoundingBox) {}
+    case class PointBox(val points:List[Point], box:BoundingBox) {}
 
     var boxes = List[PointBox]()
     val thresholdX = 20
     val thresholdY = 5
-    allPoints.foreach { xy =>
-      val (x, y) = xy
+    allPoints.foreach { point =>
       var enclosingBoxes = List[PointBox]()
       boxes.foreach { box =>
-        if (x >= box.box.minX - thresholdX && x <= box.box.maxX + thresholdX &&
-            y >= box.box.minY - thresholdY && y <= box.box.maxY + thresholdY) {
-          val pointMatch = box.points.exists { xy2 =>
-            val (x2, y2) = xy2
-            Math.abs(x - x2) <= thresholdX && Math.abs(y - y2) <= thresholdY
+        if (point.x >= box.box.minX - thresholdX &&
+            point.x <= box.box.maxX + thresholdX &&
+            point.y >= box.box.minY - thresholdY &&
+            point.y <= box.box.maxY + thresholdY) {
+          val pointMatch = box.points.exists { point2 =>
+            Math.abs(point.x - point2.x) <= thresholdX &&
+            Math.abs(point.y - point2.y) <= thresholdY
           }
           if (pointMatch) {
             enclosingBoxes = box :: enclosingBoxes
@@ -1132,12 +1135,12 @@ object Ocr4Music {
         }
       }
 
-      val newX0 = enclosingBoxes.foldLeft(x) { _ min _.box.minX }
-      val newX1 = enclosingBoxes.foldLeft(x) { _ max _.box.maxX }
-      val newY0 = enclosingBoxes.foldLeft(y) { _ min _.box.minY }
-      val newY1 = enclosingBoxes.foldLeft(y) { _ max _.box.maxY }
+      val newX0 = enclosingBoxes.foldLeft(point.x) { _ min _.box.minX }
+      val newX1 = enclosingBoxes.foldLeft(point.x) { _ max _.box.maxX }
+      val newY0 = enclosingBoxes.foldLeft(point.y) { _ min _.box.minY }
+      val newY1 = enclosingBoxes.foldLeft(point.y) { _ max _.box.maxY }
       val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
-      val newPoints = enclosingBoxes.foldLeft(List(xy)) { _ ++ _.points }
+      val newPoints = enclosingBoxes.foldLeft(List(point)) { _ ++ _.points }
       boxes = PointBox(newPoints, newBounds) ::
         boxes.filter { !enclosingBoxes.contains(_) }
     }
@@ -1163,10 +1166,10 @@ object Ocr4Music {
       val r = random.nextInt(192) + 63
       val g = random.nextInt(192) + 63
       val b = random.nextInt(192) + 63
-      box.points.foreach { xy =>
-        val (x, y) = xy
-        (x-0 to x+0).foreach { neighborX =>
-          (y-0 to y+0).foreach { neighborY =>
+      box.points.foreach { point =>
+        (point.x-0 to point.x+0).foreach { neighborX =>
+          (point.y-point.wavelen5/2 to point.y+point.wavelen5/2).foreach {
+              neighborY =>
             if (neighborX >= 0 && neighborX < demo5.w &&
                 neighborY >= 0 && neighborY < demo5.h) {
               demo5(neighborX, neighborY) = (r, g, b)
