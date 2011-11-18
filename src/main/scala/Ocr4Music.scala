@@ -1032,8 +1032,8 @@ object Ocr4Music {
   def detectStaffs(image:GrayImage, caseName:String) {
 //val wavelen5 = 28
     val demo = new GrayImage(image.w, image.h)
-    val demo2 = new ColorImage(image.w, image.h)
-    val centerYs = new Array[Int](image.w)
+    val demo3 = new GrayImage(image.w, image.h)
+    val crossSection = new GrayImage(41, image.h)
     (0 until image.w).foreach { x =>
     //(186 to 186).foreach { x =>
       print("%4d,".format(x))
@@ -1058,7 +1058,7 @@ object Ocr4Music {
 */
         var max = 0
         var min = 255
-        (-5 to 5).foreach { yDelta =>
+        (-1 to 1).foreach { yDelta =>
           val v = image(x, y + yDelta)
           if (v > max) max = v
           if (v < min) min = v
@@ -1073,150 +1073,146 @@ object Ocr4Music {
         }
       }
 
-var maxFFTOutput = 0
-var argmaxWavelen5 = 0
-var argmaxCenterY = 0
-var argmaxOutputY = 0
-var argmaxOutputX = 0
-(65 to 95 by 5).foreach { wavelen5 =>
-      val sin = new Array[Int](wavelen5)
-      val cos = new Array[Int](wavelen5)
-      var sumReal = 0
-      var sumImag = 0
-      (0 until wavelen5).foreach { i =>
-        sin(i) = (Math.sin(i.toDouble / (wavelen5 / 5.0) * (2 * Math.PI)
-          ) * 256).intValue
-        cos(i) = (Math.cos(i.toDouble / (wavelen5 / 5.0) * (2 * Math.PI)
-          ) * 256).intValue
-      }
-
-      val output = new Array[Int](image.h + wavelen5)
-      val outputY = new Array[Int](image.h + wavelen5)
-      val outputX = new Array[Int](image.h + wavelen5)
-      (0 until image.h).foreach { centerY =>
-        val y0 = centerY - wavelen5/2
-        val y1 = centerY + wavelen5/2
-        sumReal += sin((y0 + wavelen5) % wavelen5) * demo(x, y0) / 256
-        sumImag += cos((y0 + wavelen5) % wavelen5) * demo(x, y0) / 256
-        if (y1 >= 0) {
-          sumReal -= sin(y1 % wavelen5) * demo(x, y1) / 256
-          sumImag -= cos(y1 % wavelen5) * demo(x, y1) / 256
-        }
-        output(centerY) =
-          Math.sqrt(sumReal * sumReal + sumImag * sumImag).intValue
-        outputY(centerY) = sumReal
-        outputX(centerY) = sumImag
-
-        if (output(centerY) > maxFFTOutput) {
-          maxFFTOutput = output(centerY)
-          argmaxWavelen5 = wavelen5
-          argmaxCenterY = centerY
-          argmaxOutputX = outputX(centerY)
-          argmaxOutputY = outputY(centerY)
-        }
-      }
-} // next wavelen5
-
+      // color the background blue so it stands out more
       (0 until image.h).foreach { y =>
-//        demo2(x, y) = (0, demo(x, y), 0)
+        if (demo(x, y) == 0)
+          demo(x, y) = -100
       }
-
-      val wavelen5 = argmaxWavelen5
-      /*(0 until image.h).foreach { y =>
-        val atan2 = Math.atan2(argmaxOutputY, argmaxOutputX) / (Math.PI * 2)
-        val newY = (Math.floor(y / (wavelen5 / 5.0)) *
-          (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
-          (atan2 * wavelen5/5).intValue
-        if (newY >= 0 && newY < image.h) {
-          demo2(x, newY) = ((maxFFTOutput / 50) min 255, demo(x, newY), 0)
-        }
-      }*/
-      val atan2 = Math.atan2(argmaxOutputY, argmaxOutputX) / (Math.PI * 2)
-      val newY = (Math.floor(argmaxCenterY / (wavelen5 / 5.0)) *
-          (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
-          (atan2 * wavelen5/5).intValue
-      //(-2 to 2).foreach { staffY =>
-      (0 to 0).foreach { staffY =>
-        val newerY = newY + staffY * wavelen5 / 5
-//        demo2(x, newerY) = (255, newerY, 0)
-      }
-      //demo2(x, argmaxCenterY) = (255, 255, 0)
-      centerYs(x) = newY
-
-/*      (0 until 60).foreach { y => output(y) = 0 }
-      (120 until image.h).foreach { y => output(y) = 0 }
-      (0 until image.h).foreach { y =>
-        demo2(x, y) = (0, demo(x, y), 0)
-      }
-      (0 until image.h).foreach { y =>
-        if (output(y) > 10) {
-//          demo(x, y) = output(i) / 8 /// (256 * wavelen5 * 2)
-          val atan2 = Math.atan2(outputY(y), outputX(y)) / (Math.PI * 2)
-//            wavelen5 / 5
-//          demo(x, y - deltaY.intValue) = 255
-          val newY = (Math.floor(y / (wavelen5 / 5.0)) *
-            (wavelen5 / 5.0) + (wavelen5 / 10.0)).intValue +
-            (atan2 * wavelen5/5).intValue
-          if (newY >= 0 && newY < image.h) {
-            demo2(x, newY) = ((output(y) / 20) min 255, demo(x, newY), 0)
-          }
-        }
-      }*/
-      
-
-/*        (0 until image.h - wavelen5).foreach { y =>
-          var sum = 0
-          (0 until wavelen5).foreach { i =>
-            sum += image(outerX, y + i) * sin(i)
-          }
-
-          rowFft(wavelen5, y) = (sum + Math.abs(sum)) / wavelen5
-        }*/
-
     } // next x
-    //demo.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
+    demo3.scaleValueToMax255.saveTo(new File(
+      "demos/bestfft.%s.png".format(caseName)))
 
-    var buckets = List[List[(Int,Int)]]()
+    val demo4 = demo.scaleValueToMax255
+    var allPoints = List[(Int,Int)]()
     (0 until image.w).foreach { x =>
-      val y = centerYs(x)
-      var foundBucket = false
-      buckets.foreach { bucket =>
-        val (lastX, lastY) = bucket.head
-        if (!foundBucket && x - lastX < 6 && Math.abs(y - lastY) < 3) {
-          foundBucket = true
-          buckets = ((x, centerYs(x)) :: bucket) ::
-            buckets.filter { _ != bucket }
+      var numBlacks = 0
+      var vBeforeBlacks = 0
+      var numLinks = 0
+      var staffBegin = 0
+      (0 until image.h).foreach { y =>
+        val v = demo(x, y)
+        if (v <= 0) { // less than so it can detect blue (under zero) too
+          numBlacks += 1
+        } else {
+          numLinks += 1
+          if ((numBlacks >= 2 && numBlacks <= 6) &&
+              vBeforeBlacks >= 130 && v >= 130) {
+            if (numLinks >= 4) {
+              val centerY = (staffBegin + y) / 2
+              allPoints = (x, centerY) :: allPoints
+            }
+          } else {
+            numLinks = 0
+            staffBegin = y
+          }
+          vBeforeBlacks = v
+          numBlacks = 0
         }
       }
-      if (!foundBucket) {
-        buckets = List((x, centerYs(x))) :: buckets
-      }
     }
 
-    val random = new Random()
-    //val bestBucket = buckets.sortBy { -_.size }.head
-    //List(bestBucket).foreach { bucket =>
-    buckets.sortBy { -_.size }.foreach { bucket =>
-      val rgb = (random.nextInt(128) + 127,
-                 random.nextInt(128) + 127, random.nextInt(128) + 127)
-      bucket.foreach { xy =>
+    case class Line(val x0:Int, val y0:Int, val x1:Int, val y1:Int) {}
+
+if (allPoints.size > 0) {
+    var lines = List[Line]()
+    val threshold = 10
+    var pointGroupsWithoutLine = List(allPoints)
+    var canKeepGoing = true
+    while (pointGroupsWithoutLine.size > 0 && canKeepGoing) {
+      val points = pointGroupsWithoutLine.head
+      pointGroupsWithoutLine = pointGroupsWithoutLine.tail
+
+      val (slope, intercept) = linearRegression(points)
+      val allPointsAreOnLine = !points.exists { xy =>
         val (x, y) = xy
-        demo2(x, y) = rgb
+        val predictedY = x * slope + intercept
+        Math.abs(predictedY - y) > 20
       }
-    }
-    demo2.saveTo(new File("demos/newfft.%s.png".format(caseName)))
 
-/*
-    val demo4 = new ColorImage(image.w, image.h)
-    (0 until image.h).foreach { y =>
-      (0 until image.w).foreach { x =>
-        val v = image(x, y)
-        val r = demo(x, y)
-        demo4(x, y) = ((v + r) min 255, v, v)
+      if (allPointsAreOnLine) {
+        val minX = points.map { _._1 }.min
+        val maxX = points.map { _._1 }.max
+        val line = Line(minX, (minX * slope + intercept).intValue,
+                    maxX, (maxX * slope + intercept).intValue)
+        lines = line :: lines
+      } else {
+        var maxMinDistance = -1
+        var argmaxSplitY = -1
+        val minY = points.map { _._2 }.min
+        val maxY = points.map { _._2 }.max
+        (minY until maxY).foreach { splitY =>
+          var minDistance = 9999
+          points.foreach { xy =>
+            val (x, y) = xy
+            val distance = Math.abs(splitY - y)
+            if (distance < minDistance) {
+              minDistance = distance
+            }
+          }
+          if (minDistance > maxMinDistance) {
+            maxMinDistance = minDistance
+            argmaxSplitY = splitY
+          }
+        }
+        if (maxMinDistance >= 10) {
+          val (aboveLine, belowLine) = points.partition { _._2 < argmaxSplitY }
+          pointGroupsWithoutLine =
+            List(aboveLine, belowLine) ++ pointGroupsWithoutLine
+        } else {
+          println("Couldn't find splitting line")
+          canKeepGoing = false
+          pointGroupsWithoutLine = points :: pointGroupsWithoutLine
+        }
       }
     }
-    demo4.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
-*/
+
+    val demo5 = new ColorImage(image.w, image.h)
+    val random = new Random()
+    lines.foreach { line =>
+      (line.x0 to line.x1).foreach { x =>
+        val progress = (x - line.x0) / (line.x1 - line.x0).floatValue
+        val y = (line.y0 + progress * (line.y1 - line.y0)).intValue
+        demo5(x, y) = (255, 255, 255)
+      }
+    }
+    pointGroupsWithoutLine.foreach { points =>
+      val r = random.nextInt(192) + 63
+      val g = random.nextInt(192) + 63
+      val b = random.nextInt(192) + 63
+      points.foreach { xy =>
+        val (x, y) = xy
+        (x-0 to x+0).foreach { neighborX =>
+          (y-0 to y+0).foreach { neighborY =>
+            if (neighborX >= 0 && neighborX < demo5.w &&
+                neighborY >= 0 && neighborY < demo5.h) {
+              demo5(neighborX, neighborY) = (r, g, b)
+            }
+          }
+        }
+      }
+    }
+    demo5.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
+} // if any points exist
+
+    // returns (slope, intercept)
+    def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
+      val n = points.size
+      var sumX = 0
+      var sumY = 0
+      var sumXY = 0
+      var sumXX = 0
+      points.foreach { xy =>
+        val (x, y) = xy
+        sumX += x
+        sumY += y
+        sumXY += x * y
+        sumXX += x * x
+      }
+      val slope = (n * sumXY - sumX * sumY) /
+                  (n * sumXX - sumX * sumX).floatValue
+      val intercept = (sumY - slope * sumX) / n.floatValue
+      (slope, intercept)
+    }
   }
 
   def quarterSize(image:GrayImage) = {
@@ -1262,11 +1258,24 @@ var argmaxOutputX = 0
     val image = ColorImage.readFromFile(imagePath).toGrayImage
     val annotationPath = "input/%s.json".format(caseName)
     val annotationString = scala.io.Source.fromFile(annotationPath).mkString
-//    val annotationBoxes = loadAnnotationsJson(annotationString)
-
-//    detectStaffs(quarterSize(quarterSize(image)), caseName)
-//    detectStaffs(quarterSize(image), caseName)
-    detectStaffs(image, caseName)
+    //val annotationBoxes = loadAnnotationsJson(annotationString)
+    val imageShrunken = caseName match {
+      case "2" => quarterSize(quarterSize(image))
+      case "4" => quarterSize(image)
+      case "1320610762.M373157P72050Q0R91a6ef26faeb752b.macmini.0" => image
+      case "1320611573.M358927P73155Q0Raf96d58b25a32902.macmini.0" => image
+      case "1320613796.M254332P75976Q0R61fcb171586b3dba.macmini.0" =>
+        quarterSize(quarterSize(image))
+      case "1320618283.M681674P81510Q0R96e43bc997510706.macmini.0" =>
+        quarterSize(quarterSize(image))
+      case "1321227085.M56099P82785Q0R6b4534ebfa16e985.macmini.0" =>
+        quarterSize(image)
+      case "photo1" => quarterSize(image)
+      case "photo2" => quarterSize(image)
+      case "photo3" => quarterSize(image)
+      case _ => image
+    }
+    detectStaffs(imageShrunken, caseName)
 /*
     val midlinesPath = new File("output/midlines/%s.png".format(caseName))
     val midlines = readOrGenerate(midlinesPath, saveColorImage, loadColorImage){
