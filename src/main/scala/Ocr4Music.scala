@@ -1066,7 +1066,7 @@ object Ocr4Music {
         val isMin = (image(x, y) == min)
 
         if (isMin) {
-          val v = (max - min) * 20
+          val v = max - min
           demo(x, y) = v
         } else {
           demo(x, y) = 0
@@ -1082,103 +1082,165 @@ object Ocr4Music {
     demo3.scaleValueToMax255.saveTo(new File(
       "demos/bestfft.%s.png".format(caseName)))
 
-    case class Point(val x:Int, val y:Int, val wavelen5:Int) {}
-
-    val demo4 = demo.scaleValueToMax255
-    var allPoints = List[Point]()
-    (0 until image.w).foreach { x =>
-      var numBlacks = 0
-      var vBeforeBlacks = 0
-      var numLinks = 0
-      var staffBegin = 0
-      (0 until image.h).foreach { y =>
-        val v = demo(x, y)
-        if (v <= 0) { // less than so it can detect blue (under zero) too
-          numBlacks += 1
-        } else {
-          numLinks += 1
-          if ((numBlacks >= 2 && numBlacks <= 6) &&
-              vBeforeBlacks >= 130 && v >= 130) {
-            if (numLinks >= 4) {
-              val centerY = (staffBegin + y) / 2
-              allPoints = Point(x, centerY, y - staffBegin) :: allPoints
-            }
-          } else {
-            numLinks = 0
-            staffBegin = y
-          }
-          vBeforeBlacks = v
-          numBlacks = 0
-        }
-      }
-    }
-
-    case class PointBox(val points:List[Point], box:BoundingBox) {}
-
-    var boxes = List[PointBox]()
     val thresholdX = 20
     val thresholdY = 5
-    allPoints.foreach { point =>
-      var enclosingBoxes = List[PointBox]()
-      boxes.foreach { box =>
-        if (point.x >= box.box.minX - thresholdX &&
-            point.x <= box.box.maxX + thresholdX &&
-            point.y >= box.box.minY - thresholdY &&
-            point.y <= box.box.maxY + thresholdY) {
-          val pointMatch = box.points.exists { point2 =>
-            Math.abs(point.x - point2.x) <= thresholdX &&
-            Math.abs(point.y - point2.y) <= thresholdY
-          }
-          if (pointMatch) {
-            enclosingBoxes = box :: enclosingBoxes
+
+    case class Point(val x:Int, val y:Int, val wavelen5:Int) {}
+
+    case class Group(val points:Set[Point], box:BoundingBox) {}
+
+    def gatherPoints(threshold:Int, stackHeight:Int) : List[Point] = {
+      var points = List[Point]()
+      (0 until image.w).foreach { x =>
+        var numBlacks = 0
+        var vBeforeBlacks = 0
+        var numLinks = 0
+        var staffBegin = 0
+        (0 until image.h).foreach { y =>
+          val v = demo(x, y)
+          if (v <= 0) { // less than so it can detect blue (under zero) too
+            numBlacks += 1
+          } else {
+            numLinks += 1
+            if ((numBlacks >= 2 && numBlacks <= 6) &&
+                vBeforeBlacks >= threshold && v >= threshold) {
+              if (numLinks >= stackHeight) {
+                val centerY = (staffBegin + y) / 2
+                points = Point(x, centerY, y - staffBegin) :: points
+              }
+            } else {
+              numLinks = 0
+              staffBegin = y
+            }
+            vBeforeBlacks = v
+            numBlacks = 0
           }
         }
       }
-
-      val newX0 = enclosingBoxes.foldLeft(point.x) { _ min _.box.minX }
-      val newX1 = enclosingBoxes.foldLeft(point.x) { _ max _.box.maxX }
-      val newY0 = enclosingBoxes.foldLeft(point.y) { _ min _.box.minY }
-      val newY1 = enclosingBoxes.foldLeft(point.y) { _ max _.box.maxY }
-      val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
-      val newPoints = enclosingBoxes.foldLeft(List(point)) { _ ++ _.points }
-      boxes = PointBox(newPoints, newBounds) ::
-        boxes.filter { !enclosingBoxes.contains(_) }
+      points
     }
 
-    // eliminate really small boxes
-/*    boxes = boxes.filter { box =>
-      (box.box.maxX - box.box.minX) >= thresholdX &&
-      (box.box.maxY - box.box.minY) >= thresholdY
-    }*/
-
-    val demo5 = new ColorImage(image.w, image.h)
-    val random = new Random()
-/*
-    case class Line(val x0:Int, val y0:Int, val x1:Int, val y1:Int) {}
-    lines.foreach { line =>
-      (line.x0 to line.x1).foreach { x =>
-        val progress = (x - line.x0) / (line.x1 - line.x0).floatValue
-        val y = (line.y0 + progress * (line.y1 - line.y0)).intValue
-        demo5(x, y) = (255, 255, 255)
+    def expandExistingGroup(
+        originalGroups:List[Group], allPoints:List[Point]) = {
+      var expandedGroups = originalGroups.toArray
+      allPoints.foreach { point =>
+        var minMinDistance = 999999
+        var argminGroupNum:Option[Int] = None
+        originalGroups.zipWithIndex.foreach { groupAndGroupNum =>
+          val (group, groupNum) = groupAndGroupNum
+          if (point.x >= group.box.minX - thresholdX &&
+              point.x <= group.box.maxX + thresholdX &&
+              point.y >= group.box.minY - thresholdY &&
+              point.y <= group.box.maxY + thresholdY) {
+            var minDistance = 999999
+            group.points.foreach { point2 =>
+              val deltaX = Math.abs(point.x - point2.x)
+              val deltaY = Math.abs(point.y - point2.y) 
+              val distance = deltaX + deltaY
+              if (distance < minDistance &&
+                  deltaX <= thresholdX && deltaY <= thresholdY) {
+                minDistance = distance
+              }
+            }
+            if (minDistance < minMinDistance) {
+              minMinDistance = minDistance
+              argminGroupNum = Some(groupNum)
+            }
+          }
+        }
+        argminGroupNum.foreach { groupNum =>
+          val group = expandedGroups(groupNum)
+          val newX0 = point.x min group.box.minX
+          val newX1 = point.x max group.box.maxX
+          val newY0 = point.y min group.box.minY
+          val newY1 = point.y max group.box.maxY
+          val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
+          expandedGroups(groupNum) = Group(group.points + point, newBounds)
+        }
       }
-    }*/
-    boxes.foreach { box =>
-      val r = random.nextInt(192) + 63
-      val g = random.nextInt(192) + 63
-      val b = random.nextInt(192) + 63
-      box.points.foreach { point =>
-        (point.x-0 to point.x+0).foreach { neighborX =>
-          (point.y-point.wavelen5/2 to point.y+point.wavelen5/2).foreach {
-              neighborY =>
-            if (neighborX >= 0 && neighborX < demo5.w &&
-                neighborY >= 0 && neighborY < demo5.h) {
-              demo5(neighborX, neighborY) = (r, g, b)
+      expandedGroups.toList
+    }
+
+    def expandGroupsFromPoints(
+        originalGroups:List[Group], allPoints:List[Point]) = {
+      var groups = originalGroups
+      allPoints.foreach { point =>
+        var nearbyGroups = List[Group]()
+        groups.foreach { group =>
+          if (point.x >= group.box.minX - thresholdX &&
+              point.x <= group.box.maxX + thresholdX &&
+              point.y >= group.box.minY - thresholdY &&
+              point.y <= group.box.maxY + thresholdY) {
+            val pointMatch = group.points.exists { point2 =>
+              Math.abs(point.x - point2.x) <= thresholdX &&
+              Math.abs(point.y - point2.y) <= thresholdY
+            }
+            if (pointMatch) {
+              nearbyGroups = group :: nearbyGroups
+            }
+          }
+        }
+  
+        val newX0 = nearbyGroups.foldLeft(point.x) { _ min _.box.minX }
+        val newX1 = nearbyGroups.foldLeft(point.x) { _ max _.box.maxX }
+        val newY0 = nearbyGroups.foldLeft(point.y) { _ min _.box.minY }
+        val newY1 = nearbyGroups.foldLeft(point.y) { _ max _.box.maxY }
+        val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
+        val newPoints = nearbyGroups.foldLeft(List(point)) { _ ++ _.points }
+        groups = Group(newPoints.toSet, newBounds) ::
+          groups.filter { !nearbyGroups.contains(_) }
+      }
+
+      groups.flatMap { group =>
+        val matchingOriginalGroups = originalGroups.filter { originalGroup =>
+          originalGroup.points.intersect(group.points).size > 0
+        }
+        if (matchingOriginalGroups.size == 0) {
+          List(group) // keep new group
+        } else if (matchingOriginalGroups.size == 1) {
+          List(group) // keep larger group
+        } else { // matches multiple original groups
+          expandExistingGroup(matchingOriginalGroups, group.points.toList)
+        }
+      }.filter { _.points.size > 5 }
+    }
+
+    def drawGroups(groups:List[Group], threshold:Int, stackHeight:Int) {
+      println(("threshold", threshold, "stackHeight", stackHeight))
+      val demo5 = new ColorImage(image.w, image.h)
+      val random = new Random()
+      groups.foreach { group =>
+        val r = random.nextInt(192) + 63
+        val g = random.nextInt(192) + 63
+        val b = random.nextInt(192) + 63
+        group.points.foreach { point =>
+          (point.x-0 to point.x+0).foreach { neighborX =>
+            //(point.y-point.wavelen5/2 to point.y+point.wavelen5/2).foreach {
+            (point.y-0 to point.y+0).foreach {
+                neighborY =>
+              if (neighborX >= 0 && neighborX < demo5.w &&
+                  neighborY >= 0 && neighborY < demo5.h) {
+                demo5(neighborX, neighborY) = (r, g, b)
+              }
             }
           }
         }
       }
+      demo5.saveTo(new File(
+        "demos/newstaff.%s.%d.%d.png".format(caseName, threshold, stackHeight)))
     }
-    demo5.saveTo(new File("demos/newstaff.%s.png".format(caseName)))
+
+    var groups = List[Group]()
+    (7 to 2 by -1).foreach { threshold =>
+      (4 to 1 by -1).foreach { stackHeight =>
+        val allPoints = gatherPoints(threshold, stackHeight)
+        if (stackHeight == 4)
+          groups = expandGroupsFromPoints(groups, allPoints)
+        else
+          groups = expandExistingGroup(groups, allPoints)
+        drawGroups(groups, threshold, stackHeight)
+      }
+    }
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
