@@ -1085,7 +1085,7 @@ object Ocr4Music {
     val thresholdX = 20
     val thresholdY = 5
 
-    case class Point(val x:Int, val y:Int,
+    case class Point(val x:Int, val centerY:Int,
       val wavelen5:Int, threshold:Int, stackHeight:Int) {}
 
     case class Group(val points:List[Point], box:BoundingBox) {}
@@ -1132,12 +1132,12 @@ object Ocr4Music {
           val (group, groupNum) = groupAndGroupNum
           if (point.x >= group.box.minX - thresholdX &&
               point.x <= group.box.maxX + thresholdX &&
-              point.y >= group.box.minY - thresholdY &&
-              point.y <= group.box.maxY + thresholdY) {
+              point.centerY >= group.box.minY - thresholdY &&
+              point.centerY <= group.box.maxY + thresholdY) {
             var minDistance = 999999
             group.points.foreach { point2 =>
               val deltaX = Math.abs(point.x - point2.x)
-              val deltaY = Math.abs(point.y - point2.y) 
+              val deltaY = Math.abs(point.centerY - point2.centerY) 
               val distance = deltaX + deltaY
               if (distance < minDistance &&
                   deltaX <= thresholdX && deltaY <= thresholdY) {
@@ -1155,8 +1155,8 @@ object Ocr4Music {
             val group = expandedGroups(groupNum)
             val newX0 = point.x min group.box.minX
             val newX1 = point.x max group.box.maxX
-            val newY0 = point.y min group.box.minY
-            val newY1 = point.y max group.box.maxY
+            val newY0 = point.centerY min group.box.minY
+            val newY1 = point.centerY max group.box.maxY
             val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
             expandedGroups(groupNum) = Group(point :: group.points, newBounds)
           }
@@ -1173,11 +1173,11 @@ object Ocr4Music {
         groups.foreach { group =>
           if (point.x >= group.box.minX - thresholdX &&
               point.x <= group.box.maxX + thresholdX &&
-              point.y >= group.box.minY - thresholdY &&
-              point.y <= group.box.maxY + thresholdY) {
+              point.centerY >= group.box.minY - thresholdY &&
+              point.centerY <= group.box.maxY + thresholdY) {
             val pointMatch = group.points.exists { point2 =>
               Math.abs(point.x - point2.x) <= thresholdX &&
-              Math.abs(point.y - point2.y) <= thresholdY
+              Math.abs(point.centerY - point2.centerY) <= thresholdY
             }
             if (pointMatch) {
               nearbyGroups = group :: nearbyGroups
@@ -1187,8 +1187,8 @@ object Ocr4Music {
   
         val newX0 = nearbyGroups.foldLeft(point.x) { _ min _.box.minX }
         val newX1 = nearbyGroups.foldLeft(point.x) { _ max _.box.maxX }
-        val newY0 = nearbyGroups.foldLeft(point.y) { _ min _.box.minY }
-        val newY1 = nearbyGroups.foldLeft(point.y) { _ max _.box.maxY }
+        val newY0 = nearbyGroups.foldLeft(point.centerY) { _ min _.box.minY }
+        val newY1 = nearbyGroups.foldLeft(point.centerY) { _ max _.box.maxY }
         val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
         val newPoints = nearbyGroups.foldLeft(List(point)) { _ ++ _.points }
         groups = Group(newPoints, newBounds) ::
@@ -1219,7 +1219,7 @@ object Ocr4Music {
         group.points.foreach { point =>
           (point.x-0 to point.x+0).foreach { neighborX =>
             //(point.y-point.wavelen5/2 to point.y+point.wavelen5/2).foreach {
-            (point.y-0 to point.y+0).foreach {
+            (point.centerY-0 to point.centerY+0).foreach {
                 neighborY =>
               if (neighborX >= 0 && neighborX < demo5.w &&
                   neighborY >= 0 && neighborY < demo5.h) {
@@ -1263,8 +1263,8 @@ object Ocr4Music {
           }
         }
         argmaxPoints.foreach { point =>
-          (point.y - point.wavelen5/2 to
-           point.y + point.wavelen5/2).foreach { y =>
+          (point.centerY - point.wavelen5/2 to
+           point.centerY + point.wavelen5/2).foreach { y =>
             if (y >= 0 && y < demo5.h) {
               demo5(point.x, y) = (255, 255, 255)
             }
