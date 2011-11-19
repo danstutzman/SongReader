@@ -1085,8 +1085,8 @@ object Ocr4Music {
     val thresholdX = 20
     val thresholdY = 5
 
-    case class Point(val x:Int, val centerY:Int,
-      val wavelen5:Int, threshold:Int, stackHeight:Int) {}
+    case class Point(val x:Int, val centerY:Int, val ys:List[Int],
+      val ySpan:Int, threshold:Int, stackHeight:Int) {}
 
     case class Group(val points:List[Point], box:BoundingBox) {}
 
@@ -1095,26 +1095,33 @@ object Ocr4Music {
       (0 until image.w).foreach { x =>
         var numBlacks = 0
         var vBeforeBlacks = 0
+        var yBeforeBlacks = 0
         var numLinks = 0
+        var ys = List[Int]()
         var staffBegin = 0
         (0 until image.h).foreach { y =>
           val v = demo(x, y)
           if (v <= 0) { // less than so it can detect blue (under zero) too
             numBlacks += 1
           } else {
-            numLinks += 1
             if ((numBlacks >= 2 && numBlacks <= 6) &&
                 vBeforeBlacks >= threshold && v >= threshold) {
+              numLinks += 1
+              if (ys.size == 0)
+                ys = List(yBeforeBlacks)
+              ys = y :: ys
               if (numLinks >= stackHeight) {
                 val centerY = (staffBegin + y) / 2
-                points = Point(x, centerY, y - staffBegin,
+                points = Point(x, centerY, ys, y - staffBegin,
                   threshold, stackHeight) :: points
               }
             } else {
               numLinks = 0
+              ys = List[Int]()
               staffBegin = y
             }
             vBeforeBlacks = v
+            yBeforeBlacks = y
             numBlacks = 0
           }
         }
@@ -1243,7 +1250,10 @@ object Ocr4Music {
       }
     }
     val demo5 = drawGroups(groups, 2, 1)
+//    demo5.saveTo(new File(
+//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
+    val demo6 = image.toColorImage
     groups.foreach { group =>
       (group.box.minX to group.box.maxX).foreach { x =>
         val column = group.points.filter { point => point.x == x }
@@ -1263,16 +1273,20 @@ object Ocr4Music {
           }
         }
         argmaxPoints.foreach { point =>
-          (point.centerY - point.wavelen5/2 to
-           point.centerY + point.wavelen5/2).foreach { y =>
+          /*(point.centerY - point.ySpan/2 to
+           point.centerY + point.ySpan/2).foreach { y =>
             if (y >= 0 && y < demo5.h) {
               demo5(point.x, y) = (255, 255, 255)
             }
+          }*/
+          point.ys.foreach { y =>
+            val (r, g, b) = demo6(point.x, y)
+            demo6(point.x, y) = (255, g, b)
           }
         }
       }
     }
-    demo5.saveTo(new File(
+    demo6.saveTo(new File(
       "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
     // returns (slope, intercept)
