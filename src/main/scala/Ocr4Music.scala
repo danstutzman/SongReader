@@ -1085,7 +1085,8 @@ object Ocr4Music {
     val thresholdX = 20
     val thresholdY = 5
 
-    case class Point(val x:Int, val y:Int, val wavelen5:Int) {}
+    case class Point(val x:Int, val y:Int,
+      val wavelen5:Int, threshold:Int, stackHeight:Int) {}
 
     case class Group(val points:List[Point], box:BoundingBox) {}
 
@@ -1106,7 +1107,8 @@ object Ocr4Music {
                 vBeforeBlacks >= threshold && v >= threshold) {
               if (numLinks >= stackHeight) {
                 val centerY = (staffBegin + y) / 2
-                points = Point(x, centerY, y - staffBegin) :: points
+                points = Point(x, centerY, y - staffBegin,
+                  threshold, stackHeight) :: points
               }
             } else {
               numLinks = 0
@@ -1207,7 +1209,7 @@ object Ocr4Music {
       }.filter { _.points.size > 5 }
     }
 
-    def drawGroups(groups:List[Group], threshold:Int, stackHeight:Int) {
+    def drawGroups(groups:List[Group], threshold:Int, stackHeight:Int) = {
       val demo5 = new ColorImage(image.w, image.h)
       val random = new Random()
       groups.foreach { group =>
@@ -1227,8 +1229,7 @@ object Ocr4Music {
           }
         }
       }
-      demo5.saveTo(new File(
-        "demos/newstaff.%s.%d.%d.png".format(caseName, threshold, stackHeight)))
+      demo5
     }
 
     var groups = List[Group]()
@@ -1241,7 +1242,38 @@ object Ocr4Music {
           groups = expandExistingGroup(groups, allPoints)
       }
     }
-    drawGroups(groups, 2, 1)
+    val demo5 = drawGroups(groups, 2, 1)
+
+    groups.foreach { group =>
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        var maxThreshold = 0
+        var maxStackHeight = 0
+        var argmaxPoints = List[Point]()
+        column.foreach { point =>
+          if (point.threshold > maxThreshold ||
+             (point.threshold == maxThreshold &&
+              point.stackHeight > maxStackHeight)) {
+            maxThreshold = point.threshold
+            maxStackHeight = point.stackHeight
+            argmaxPoints = List(point)
+          } else if (point.threshold == maxThreshold &&
+                     point.stackHeight == maxStackHeight) {
+            argmaxPoints = point :: argmaxPoints
+          }
+        }
+        argmaxPoints.foreach { point =>
+          (point.y - point.wavelen5/2 to
+           point.y + point.wavelen5/2).foreach { y =>
+            if (y >= 0 && y < demo5.h) {
+              demo5(point.x, y) = (255, 255, 255)
+            }
+          }
+        }
+      }
+    }
+    demo5.saveTo(new File(
+      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
