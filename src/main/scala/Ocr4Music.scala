@@ -1087,7 +1087,7 @@ object Ocr4Music {
 
     case class Point(val x:Int, val y:Int, val wavelen5:Int) {}
 
-    case class Group(val points:Set[Point], box:BoundingBox) {}
+    case class Group(val points:List[Point], box:BoundingBox) {}
 
     def gatherPoints(threshold:Int, stackHeight:Int) : List[Point] = {
       var points = List[Point]()
@@ -1148,14 +1148,16 @@ object Ocr4Music {
             }
           }
         }
-        argminGroupNum.foreach { groupNum =>
-          val group = expandedGroups(groupNum)
-          val newX0 = point.x min group.box.minX
-          val newX1 = point.x max group.box.maxX
-          val newY0 = point.y min group.box.minY
-          val newY1 = point.y max group.box.maxY
-          val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
-          expandedGroups(groupNum) = Group(group.points + point, newBounds)
+        if (minMinDistance > 0) {
+          argminGroupNum.foreach { groupNum =>
+            val group = expandedGroups(groupNum)
+            val newX0 = point.x min group.box.minX
+            val newX1 = point.x max group.box.maxX
+            val newY0 = point.y min group.box.minY
+            val newY1 = point.y max group.box.maxY
+            val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
+            expandedGroups(groupNum) = Group(point :: group.points, newBounds)
+          }
         }
       }
       expandedGroups.toList
@@ -1187,7 +1189,7 @@ object Ocr4Music {
         val newY1 = nearbyGroups.foldLeft(point.y) { _ max _.box.maxY }
         val newBounds = BoundingBox(newX0, newX1, newY0, newY1)
         val newPoints = nearbyGroups.foldLeft(List(point)) { _ ++ _.points }
-        groups = Group(newPoints.toSet, newBounds) ::
+        groups = Group(newPoints, newBounds) ::
           groups.filter { !nearbyGroups.contains(_) }
       }
 
@@ -1206,7 +1208,6 @@ object Ocr4Music {
     }
 
     def drawGroups(groups:List[Group], threshold:Int, stackHeight:Int) {
-      println(("threshold", threshold, "stackHeight", stackHeight))
       val demo5 = new ColorImage(image.w, image.h)
       val random = new Random()
       groups.foreach { group =>
@@ -1238,9 +1239,9 @@ object Ocr4Music {
           groups = expandGroupsFromPoints(groups, allPoints)
         else
           groups = expandExistingGroup(groups, allPoints)
-        drawGroups(groups, threshold, stackHeight)
       }
     }
+    drawGroups(groups, 2, 1)
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
