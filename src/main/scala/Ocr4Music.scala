@@ -1261,6 +1261,9 @@ object Ocr4Music {
         var maxStackHeight = 0
         var argmaxPoints = List[Point]()
         column.foreach { point =>
+          //if (point.stackHeight > maxStackHeight ||
+          //   (point.stackHeight == maxStackHeight &&
+          //    point.threshold > maxThreshold)) {
           if (point.threshold > maxThreshold ||
              (point.threshold == maxThreshold &&
               point.stackHeight > maxStackHeight)) {
@@ -1273,12 +1276,6 @@ object Ocr4Music {
           }
         }
         argmaxPoints.foreach { point =>
-          /*(point.centerY - point.ySpan/2 to
-           point.centerY + point.ySpan/2).foreach { y =>
-            if (y >= 0 && y < demo5.h) {
-              demo5(point.x, y) = (255, 255, 255)
-            }
-          }*/
           point.ys.foreach { y =>
             val (r, g, b) = demo6(point.x, y)
             demo6(point.x, y) = (255, g, b)
@@ -1286,8 +1283,188 @@ object Ocr4Music {
         }
       }
     }
+//    demo6.saveTo(new File(
+//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+
+/*
+    class HLine(var points:List[(Int,Int)]) {}
+
+    val joinX = 3
+    val joinY = 0
+//    val demo6 = image.toColorImage
+    val window = 10
+    groups.foreach { group =>
+      var oldHLines = List[HLine]()
+      var currentHLines = List[HLine]()
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(List[Int]()) { _ ++ _.ys }
+        ys.foreach { y =>
+          val hline = currentHLines.find { hline =>
+            x - hline.points.head._1 <= joinX &&
+            Math.abs(y - hline.points.head._2) <= joinY
+          }
+          hline match {
+            case Some(hline) =>
+              hline.points = (x, y) :: hline.points
+            case None =>
+              currentHLines = new HLine(List((x, y))) :: currentHLines
+          }
+        }
+        val (replaceCurrentHLines, addToOldHLines) = currentHLines.partition {
+          x - _.points.head._1 <= joinX
+        }
+        currentHLines = replaceCurrentHLines
+        oldHLines ++= addToOldHLines
+      }
+      var allHlines = (currentHLines ++ oldHLines).sortBy { -_.points.size }
+
+      val longest = allHlines.head
+      var hlineToIndex = Map[HLine,Int](longest -> 0)
+      var unassigned = allHlines.filter { _ != longest }
+      var assignedButNotNeighbors = List(longest)
+      var assignedAndNeighbors = List[HLine]()
+      while (assignedButNotNeighbors.size > 0) {
+        val hline1 = assignedButNotNeighbors.head
+        assignedButNotNeighbors = assignedButNotNeighbors.tail
+        val min1 = hline1.points.map { _._1 }.min
+        val max1 = hline1.points.map { _._1 }.max
+        val y1 = hline1.points.map { _._2 }.max
+        val index1 = hlineToIndex(hline1)
+        unassigned.foreach { hline2 =>
+          val min2 = hline2.points.map { _._1 }.min
+          val max2 = hline2.points.map { _._1 }.max
+          val y2 = hline2.points.map { _._2 }.max
+          if (min1 <= max2 && max1 >= min2) {
+            if (y1 - y2 >= 4 && y1 - y2 <= 6) {
+              hlineToIndex = hlineToIndex.updated(hline2, index1 + 1)
+              unassigned = unassigned.filter { _ != hline2 }
+              assignedButNotNeighbors = assignedButNotNeighbors ++ List(hline2)
+            } else if (y2 - y1 >= 4 && y2 - y1 <= 6) {
+              hlineToIndex = hlineToIndex.updated(hline2, index1 - 1)
+              unassigned = unassigned.filter { _ != hline2 }
+              assignedButNotNeighbors = assignedButNotNeighbors ++ List(hline2)
+            }
+          }
+        }
+      }
+
+      allHlines.foreach { hline =>
+        val rgb = hlineToIndex.get(hline) match {
+          case Some(i) => if (i % 2 == 0) (255, 0, 0) else (0, 255, 0)
+          case None => (0, 0, 255)
+        }
+        hline.points.foreach { xy =>
+          val (x, y) = xy
+          demo6(x, y) = rgb
+        }
+      }*/
+
+    val window = 10
+    groups.foreach { group =>
+      val xToYs = new Array[Set[Int]](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
+        xToYs(x) = ys
+      }
+      val realMinY = xToYs.map { ys =>
+        if (ys == null || ys.isEmpty) 99999 else ys.min
+      }.min
+      val realMaxY = xToYs.map { ys =>
+        if (ys == null || ys.isEmpty) 0 else ys.max
+      }.max
+
+      if (group.box.minX < 88 && group.box.maxX > 88 &&
+          realMaxY > 78 && realMinY < 78) {
+        (-120 to 0).foreach { adjustment =>
+          val yToScore = new Array[Int](realMaxY + window + 1)
+          (78 to 190).foreach { x =>
+            xToYs(x).foreach { y =>
+              val adjustmentY = (x - 78) * adjustment / 120
+              if (y - adjustmentY < 101) {
+                yToScore(y - adjustmentY) += 1
+                //yToScore(y - adjustmentY + 1) += 1
+              }
+            }
+          }
+/*        if (yToScore.foldLeft(0) { _ + _ } > 0) {
+            (0 until yToScore.size).foreach { y =>
+              val v = yToScore(y) * 2
+              demo6(78 + adjustment, y) = (v, v, 0)
+            }
+          }*/
+        }
+      }
+    }
+
+/*
+    groups.foreach { group =>
+      val xToYs = new Array[List[Int]](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(List[Int]()) { _ ++ _.ys }
+        xToYs(x) = ys
+      }
+      val realMaxY = xToYs.map { ys =>
+        if (ys == null || ys.isEmpty) 0 else ys.max
+      }.max
+
+      val slopes = new Array[Int](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX - window).foreach { x0 =>
+        val x1 = x0 + window
+        var maxSumTop5 = 0
+        var argmaxSlope = 0
+        (2 to 2).foreach { slope =>
+        //(-window to window).foreach { slope =>
+          val yToScore = new Array[Int](realMaxY + window + 1)
+          (0 until window).foreach { deltaX =>
+            val x = x0 + deltaX
+            xToYs(x).foreach { y =>
+              val adjustedY = y - (slope * deltaX / window).intValue
+              if (adjustedY >= 0) {
+                yToScore(adjustedY) += 1
+                yToScore(adjustedY + 1) += 1
+              }
+            }
+          }
+          val sumTop5 = yToScore.sorted.takeRight(5).sum
+          if (sumTop5 > maxSumTop5) {
+            maxSumTop5 = sumTop5
+            argmaxSlope = slope
+            (0 until realMaxY).foreach { y =>
+              val v = (yToScore(y) * 5) min 255
+              if (demo6(x0, y)._1 < v) {
+                demo6(x0, y) = (v, v, 0)
+              }
+            }
+          }
+        }
+        slopes(x0) = argmaxSlope
+      }
+    }
+*/
+/*
+      (group.box.minX to group.box.maxX - window).foreach { x0 =>
+        val neighborSlopes = (x0 until x0 + window).map { i => slopes(i) }
+        val sumSlopes = neighborSlopes.foldLeft(0) { _ + _ }
+        val meanSlope = sumSlopes / neighborSlopes.size
+        val variance = neighborSlopes.map { slope =>
+          (slope - meanSlope) * (slope - meanSlope)
+        }.foldLeft(0) { _ + _ } / neighborSlopes.size.toFloat
+        if (variance <= 2.0f) {
+          (-10 to slopes(x0)).foreach { y =>
+            demo6(x0 + window/2, realMaxY - 10 + y) = (255, 255, 0)
+          }
+        }
+      }
+*/
     demo6.saveTo(new File(
       "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+
+//println(groups.map { _.points.filter { _.x == 83 }.sortBy { point =>
+//  (point.threshold, point.stackHeight)
+//}})
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
