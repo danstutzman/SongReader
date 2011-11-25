@@ -1074,10 +1074,10 @@ object Ocr4Music {
       }
 
       // color the background blue so it stands out more
-      (0 until image.h).foreach { y =>
-        if (demo(x, y) == 0)
-          demo(x, y) = -100
-      }
+//      (0 until image.h).foreach { y =>
+//        if (demo(x, y) == 0)
+//          demo(x, y) = -100
+//      }
     } // next x
     demo3.scaleValueToMax255.saveTo(new File(
       "demos/bestfft.%s.png".format(caseName)))
@@ -1278,7 +1278,7 @@ object Ocr4Music {
         argmaxPoints.foreach { point =>
           point.ys.foreach { y =>
             val (r, g, b) = demo6(point.x, y)
-            demo6(point.x, y) = (255, g, b)
+//            demo6(point.x, y) = (255, g, b)
           }
         }
       }
@@ -1360,7 +1360,7 @@ object Ocr4Music {
         }
       }*/
 
-    val window = 10
+/*    val window = 10
     groups.foreach { group =>
       val xToYs = new Array[Set[Int]](group.box.maxX + 1)
       (group.box.minX to group.box.maxX).foreach { x =>
@@ -1388,15 +1388,15 @@ object Ocr4Music {
               }
             }
           }
-/*        if (yToScore.foldLeft(0) { _ + _ } > 0) {
+        if (yToScore.foldLeft(0) { _ + _ } > 0) {
             (0 until yToScore.size).foreach { y =>
               val v = yToScore(y) * 2
               demo6(78 + adjustment, y) = (v, v, 0)
             }
-          }*/
+          }
         }
       }
-    }
+    }*/
 
 /*
     groups.foreach { group =>
@@ -1459,12 +1459,46 @@ object Ocr4Music {
         }
       }
 */
-    demo6.saveTo(new File(
-      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+//    demo6.saveTo(new File(
+//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
 //println(groups.map { _.points.filter { _.x == 83 }.sortBy { point =>
 //  (point.threshold, point.stackHeight)
 //}})
+
+    val staffStrength = new GrayImage(image.w, image.h)
+    val bestWavelen5 = new GrayImage(image.w, image.h)
+    groups.foreach { group =>
+      val xToYs = new Array[Set[Int]](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
+        xToYs(x) = ys
+      }
+
+      (15 to 28).foreach { wavelen5 =>
+        (group.box.minX until group.box.maxX).foreach { x =>
+          val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
+          val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+  
+          (minY to maxY).foreach { startY =>
+            val insidePoints = List(1, 3, 5, 7, 9).map { i =>
+              demo(x + 0, startY + Math.floor(wavelen5 * i/10.0f).intValue) max
+              demo(x + 0, startY + Math.ceil(wavelen5 * i/10.0f).intValue)
+            }.toArray
+            val meanInside = insidePoints.min
+  
+            val oldV = staffStrength(x, startY)
+            if (meanInside > oldV) {
+              staffStrength(x, startY) = meanInside
+              bestWavelen5(x, startY) = wavelen5
+            }
+          }
+        }
+      }
+    }
+    staffStrength.scaleValueToMax255.saveTo(new File(
+      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
