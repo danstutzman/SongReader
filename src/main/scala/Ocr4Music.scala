@@ -1497,12 +1497,27 @@ object Ocr4Music {
 
     val demo7 = staffStrength.scaleValueToMax255.toColorImage
 //    val xToBestY = new Array[Option[Int]]()
+    val random = new Random()
     groups.foreach { group =>
       val xToYs = new Array[Set[Int]](group.box.maxX + 1)
       (group.box.minX to group.box.maxX).foreach { x =>
         val column = group.points.filter { point => point.x == x }
         val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
         xToYs(x) = ys
+      }
+
+      val rgb = (random.nextInt(16) + 15,
+                 random.nextInt(16) + 15,
+                 random.nextInt(16) + 15)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
+        val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+        (minY to maxY).foreach { y =>
+          val rgbOld = demo7(x, y)
+          demo7(x, y) = ((rgbOld._1 + rgb._1) min 255,
+                         (rgbOld._2 + rgb._2) min 255,
+                         (rgbOld._3 + rgb._3) min 255)
+        }
       }
 
       val xToVYPairs = new Array[Array[(Int,Int)]](group.box.maxX + 1)
