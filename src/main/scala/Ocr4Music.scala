@@ -1510,7 +1510,7 @@ object Ocr4Music {
         val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
         val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
 
-        if (maxY - minY > 3) {
+        if (maxY - minY > 4) {
           var vyPairs = new Array[(Int,Int)](maxY - minY + 1)
           (minY to maxY).foreach { y =>
             vyPairs(y - minY) = (staffStrength(x, y), y)
@@ -1529,22 +1529,21 @@ object Ocr4Music {
             val (max1V, max1Y) = vyPairs(vyPairs.size - 1)
             val (max2V, max2Y) = vyPairs(vyPairs.size - 2)
             val (max3V, max3Y) = vyPairs(vyPairs.size - 3)
-            val bestY =
-              // if the 3 brightest are adjacent, pick the middle one
-              if (max3V >= threshold &&
-                  (max1Y max max2Y max max3Y) -
+            val (max4V, max4Y) = vyPairs(vyPairs.size - 4)
+            val (maxV, bestY, nextBestV) =
+              // if the 3 brightest are adjacent, average them and take middle
+              if ((max1Y max max2Y max max3Y) -
                   (max1Y min max2Y min max3Y) == 2)
-                Some((max1Y min max2Y min max3Y) + 1)
-              // if the 2 brightest are adjacent, pick the top one
-              else if (max2V >= threshold &&
-                  (max1Y max max2Y) - (max1Y min max2Y) == 1)
-                Some(max1Y min max2Y)
+                ((max1V + max2V + max3V) / 3,
+                 (max1Y min max2Y min max3Y) + 1,
+                 max4V)
+              // if the 2 brightest are adjacent, average them and take lower
+              else if ((max1Y max max2Y) - (max1Y min max2Y) == 1)
+                ((max1V + max2V) / 2, max1Y min max2Y, max3V)
               // otherwise pick the brightest
-              else if (max1V >= threshold)
-                Some(max1Y)
               else
-                None
-            bestY.foreach { bestY =>
+                (max1V, max1Y, max2V)
+            if (maxV - nextBestV >= threshold) {
               val howClose = 10
 
               // now look at its neighbors to see if they form a line
