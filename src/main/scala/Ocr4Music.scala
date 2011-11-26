@@ -1247,8 +1247,8 @@ object Ocr4Music {
       }
     }
     val demo5 = drawGroups(groups, 2, 1)
-//    demo5.saveTo(new File(
-//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+    demo5.saveTo(new File(
+      "demos/newstaff1.%s.%d.%d.png".format(caseName, 2, 1)))
 
     val demo6 = image.toColorImage
     groups.foreach { group =>
@@ -1463,32 +1463,75 @@ object Ocr4Music {
 //  (point.threshold, point.stackHeight)
 //}})
 
-    val staffStrength = new GrayImage(image.w, image.h)
-    val bestWavelen5 = new GrayImage(image.w, image.h)
-    groups.foreach { group =>
-      val xToYs = new Array[Set[Int]](group.box.maxX + 1)
+    var groupNumToXToYs = new Array[Array[Set[Int]]](groups.size)
+    (0 until groups.size).foreach { groupNum =>
+       val group = groups(groupNum)
+       val xToYs = new Array[Set[Int]](group.box.maxX + 1)
       (group.box.minX to group.box.maxX).foreach { x =>
         val column = group.points.filter { point => point.x == x }
         val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
         xToYs(x) = ys
       }
+      groupNumToXToYs = groupNumToXToYs.updated(groupNum, xToYs)
+    }
 
+    // 999999 means uninitialized
+    val groupNumToXToMinY = (0 until groups.size).toArray.map { groupNum =>
+      (0 until image.w).map { x => 999999 }.toArray
+    }
+    // -1 means uninitialized
+    val groupNumToXToMaxY = (0 until groups.size).toArray.map { groupNum =>
+      (0 until image.w).map { x => -1 }.toArray
+    }
+
+    (0 until image.w).foreach { x =>
+      var groupNumToYs = new Array[Set[Int]](groups.size)
+      groups.zipWithIndex.foreach { groupAndGroupNum =>
+        val (group, groupNum) = groupAndGroupNum
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
+        groupNumToYs(groupNum) = ys
+      }
+
+      (0 until image.h).foreach { y =>
+        var minDistance = 999999
+        var argmaxGroupNum:Option[Int] = None
+        (0 until groups.size).foreach { groupNum =>
+          groupNumToYs(groupNum).foreach { y2 =>
+            val distance = Math.abs(y2 - y)
+            if (distance < minDistance) {
+              minDistance = distance
+              argmaxGroupNum = Some(groupNum)
+            }
+          }
+        }
+        argmaxGroupNum.foreach { groupNum =>
+          groupNumToXToMinY(groupNum)(x) = groupNumToXToMinY(groupNum)(x) min y
+          groupNumToXToMaxY(groupNum)(x) = groupNumToXToMaxY(groupNum)(x) max y
+        }
+      }
+    }
+
+    val staffStrength = new GrayImage(image.w, image.h)
+    val bestWavelen5 = new GrayImage(image.w, image.h)
+    groups.zipWithIndex.foreach { groupAndGroupNum =>
+      val (group, groupNum) = groupAndGroupNum
       (15 to 28).foreach { wavelen5 =>
         (group.box.minX until group.box.maxX).foreach { x =>
-          val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
-          val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+          val minY = groupNumToXToMinY(groupNum)(x)
+          val maxY = groupNumToXToMaxY(groupNum)(x)
   
-          (minY to maxY).foreach { startY =>
-            val insidePoints = List(1, 3, 5, 7, 9).map { i =>
-              demo(x + 0, startY + Math.floor(wavelen5 * i/10.0f).intValue) max
-              demo(x + 0, startY + Math.ceil(wavelen5 * i/10.0f).intValue)
+          (minY to maxY).foreach { centerY =>
+            val insidePoints = List(-4, -2, 0, 2, 4).map { i =>
+              demo(x, centerY + Math.floor(wavelen5 * i/10.0f).intValue) max
+              demo(x, centerY + Math.floor(wavelen5 * i/10.0f).intValue + 1)
             }.toArray
             val meanInside = insidePoints.min
   
-            val oldV = staffStrength(x, startY)
+            val oldV = staffStrength(x, centerY)
             if (meanInside > oldV) {
-              staffStrength(x, startY) = meanInside
-              bestWavelen5(x, startY) = wavelen5
+              staffStrength(x, centerY) = meanInside
+              bestWavelen5(x, centerY) = wavelen5
             }
           }
         }
@@ -1498,20 +1541,14 @@ object Ocr4Music {
     val demo7 = staffStrength.scaleValueToMax255.toColorImage
 //    val xToBestY = new Array[Option[Int]]()
     val random = new Random()
-    groups.foreach { group =>
-      val xToYs = new Array[Set[Int]](group.box.maxX + 1)
-      (group.box.minX to group.box.maxX).foreach { x =>
-        val column = group.points.filter { point => point.x == x }
-        val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
-        xToYs(x) = ys
-      }
-
+    groups.zipWithIndex.foreach { groupAndGroupNum =>
+      val (group, groupNum) = groupAndGroupNum
       val rgb = (random.nextInt(16) + 15,
                  random.nextInt(16) + 15,
                  random.nextInt(16) + 15)
       (group.box.minX to group.box.maxX).foreach { x =>
-        val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
-        val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+        val minY = groupNumToXToMinY(groupNum)(x)
+        val maxY = groupNumToXToMaxY(groupNum)(x)
         (minY to maxY).foreach { y =>
           val rgbOld = demo7(x, y)
           demo7(x, y) = ((rgbOld._1 + rgb._1) min 255,
@@ -1522,8 +1559,8 @@ object Ocr4Music {
 
       val xToVYPairs = new Array[Array[(Int,Int)]](group.box.maxX + 1)
       (group.box.minX to group.box.maxX).foreach { x =>
-        val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
-        val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+        val minY = groupNumToXToMinY(groupNum)(x)
+        val maxY = groupNumToXToMaxY(groupNum)(x)
 
         if (maxY - minY > 4) {
           var vyPairs = new Array[(Int,Int)](maxY - minY + 1)
