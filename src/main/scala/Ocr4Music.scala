@@ -1538,8 +1538,21 @@ object Ocr4Music {
       }
     }
 
+    val howClose = 10 // number of neighbors to the left and right to consider
+    def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
+      val leftPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeLeftPoints = leftPoints.slice(0, x
+        ).filter { _._2 != 0 }.takeRight(howClose).toList
+      val rightPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
+        ).filter { _._2 != 0 }.take(howClose).toList
+      (closeLeftPoints, closeRightPoints)
+    }
+
     val demo7 = staffStrength.scaleValueToMax255.toColorImage
-//    val xToBestY = new Array[Option[Int]]()
+    val groupNumToXToBestY = new Array[Array[Int]](groups.size)
     val random = new Random()
     groups.zipWithIndex.foreach { groupAndGroupNum =>
       val (group, groupNum) = groupAndGroupNum
@@ -1596,48 +1609,40 @@ object Ocr4Music {
               else
                 (max1V, max1Y, max2V)
             if (maxV - nextBestV >= threshold) {
-              val howClose = 10
-
               // now look at its neighbors to see if they form a line
-              val leftPoints =
-                xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
-              val closeLeftPoints = leftPoints.slice(0, x
-                ).filter { _._2 != 0 }.takeRight(howClose).toList
-              val rightPoints =
-                xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
-              val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
-                ).filter { _._2 != 0 }.take(howClose).toList
+              val (leftPoints, rightPoints) = getNeighborPoints(xToBestY, x)
               val errorYOverX =
-                  if (closeLeftPoints.size + closeRightPoints.size > 1) {
-                val (slope, intercept) = linearRegression(
-                  closeLeftPoints ++ closeRightPoints)
-                val predictedY = slope * x + intercept
-                val errorY = Math.abs(predictedY - bestY)
-                val minXDistance = 
-                  if (closeLeftPoints.size > 0 && closeRightPoints.size > 0) {
-                    Math.abs(closeLeftPoints(closeLeftPoints.size - 1)._1 - x
-                    ) min Math.abs(closeRightPoints(0)._1 - x)
-                  } else if (closeLeftPoints.size > 0) {
-                    Math.abs(closeLeftPoints(closeLeftPoints.size - 1)._1 - x)
-                  } else if (closeRightPoints.size > 0) {
-                    Math.abs(closeRightPoints(0)._1 - x)
-                  } else 999999
+                if (leftPoints.size + rightPoints.size > 1) {
+                  val (slope, intercept) =
+                    linearRegression(leftPoints ++ rightPoints)
+                  val predictedY = slope * x + intercept
+                  val errorY = Math.abs(predictedY - bestY)
+                  val minXDistance = 
+                    if (leftPoints.size > 0 && rightPoints.size > 0) {
+                      Math.abs(leftPoints(leftPoints.size - 1)._1 - x) min
+                        Math.abs(rightPoints(0)._1 - x)
+                    } else if (leftPoints.size > 0) {
+                      Math.abs(leftPoints(leftPoints.size - 1)._1 - x)
+                    } else if (rightPoints.size > 0) {
+                      Math.abs(rightPoints(0)._1 - x)
+                    } else 999999
 //println((errorY / minXDistance, errorY, minXDistance,
-//  closeLeftPoints, closeRightPoints, x, bestY))
-                errorY / minXDistance
-              } else { 0.0 }
+//  leftPoints, rightPoints, x, bestY))
+                  errorY / minXDistance
+                } else {
+                  0.0
+                }
               if (errorYOverX < 0.5) {
                 xToBestY(x) = bestY
                 demo7(x, bestY) = (0, 255, 0)
               }
-            }
-          }
-        }
+            } // end if meets threshold
+          } // end if has point in x
+        } // next x
         threshold -= 1
-      }
-    }
-    demo7.scaleValueToMax255.saveTo(new File(
-      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+      } // next threshold
+      groupNumToXToBestY(groupNum) = xToBestY
+    } // next group
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
@@ -1658,6 +1663,37 @@ object Ocr4Music {
       val intercept = (sumY - slope * sumX) / n.floatValue
       (slope, intercept)
     }
+
+    // now fill in the gaps
+    val groupNumToFullXToBestY = new Array[Array[Int]](groups.size)
+    val requiredDensity = 0.3f
+    groups.zipWithIndex.foreach { groupAndGroupNum =>
+      val (group, groupNum) = groupAndGroupNum
+      val xToBestY = groupNumToXToBestY(groupNum)
+      val fullXToBestY = new Array[Int](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        if (xToBestY(x) == 0) {
+          val (leftPoints, rightPoints) = getNeighborPoints(xToBestY, x)
+          if (leftPoints.size > 0 && rightPoints.size > 0) {
+            val leftmostX = leftPoints(0)._1
+            val rightmostX = rightPoints(rightPoints.size - 1)._1
+            if (leftPoints.size >= (x - leftmostX) * requiredDensity &&
+                rightPoints.size >= (rightmostX - x) * requiredDensity) {
+              val (slope, intercept) =
+                linearRegression(leftPoints ++ rightPoints)
+              val predictedY = Math.round(slope * x + intercept).intValue
+              fullXToBestY(x) = predictedY
+              demo7(x, predictedY) = (0, 0, 255)
+            }
+          }
+        } else {
+          fullXToBestY(x) = xToBestY(x)
+        }
+      }
+      groupNumToFullXToBestY(groupNum) = fullXToBestY
+    }
+    demo7.scaleValueToMax255.saveTo(new File(
+      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
   }
 
   def quarterSize(image:GrayImage) = {
