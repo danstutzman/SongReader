@@ -1029,35 +1029,14 @@ object Ocr4Music {
     MidiSystem.write(sequence, 1, path)
   }
 
-  def detectStaffs(image:GrayImage, caseName:String) {
-//val wavelen5 = 28
-    val demo = new GrayImage(image.w, image.h)
-    val crossSection = new GrayImage(41, image.h)
+  def highlightMinimums(image:GrayImage) : GrayImage = {
+    val out = new GrayImage(image.w, image.h)
+    val size = 1
     (0 until image.w).foreach { x =>
-    //(186 to 186).foreach { x =>
-      print("%4d,".format(x))
-
-      val columnOriginal = new Array[Int](image.h)
       (0 until image.h).foreach { y =>
-        columnOriginal(y) = image(x, y)
-//        demo((columnOriginal(y) - 0) max 0, y) = (255, 0, 0)
-      }
-
-      // highlight staff lines
-      val size = 1
-      (0 until image.h).foreach { y =>
-        val y0 = (y - size) max 0
-        val y1 = (y + size) min (image.h - 1)
-/*
-        val max = image(x, y) max image(x, y + 1) max image(x, y - 1
-          ) max image(x, y + 2) max image(x, y - 2)
-        val min = image(x, y) min image(x, y + 1) min image(x, y - 1
-          ) min image(x, y + 2) min image(x, y - 2)
-        val isMin = (image(x, y) == min)
-*/
         var max = 0
         var min = 255
-        (-1 to 1).foreach { yDelta =>
+        (-size to size).foreach { yDelta =>
           val v = image(x, y + yDelta)
           if (v > max) max = v
           if (v < min) min = v
@@ -1066,19 +1045,17 @@ object Ocr4Music {
 
         if (isMin) {
           val v = max - min
-          demo(x, y) = v
+          out(x, y) = v
         } else {
-          demo(x, y) = 0
+          out(x, y) = 0
         }
       }
+    }
+    out
+  }
 
-      // color the background blue so it stands out more
-//      (0 until image.h).foreach { y =>
-//        if (demo(x, y) == 0)
-//          demo(x, y) = -100
-//      }
-    } // next x
-
+  def detectStaffs(image:GrayImage, caseName:String) : Array[Array[Int]] = {
+    val demo = highlightMinimums(image)
     val thresholdX = 20
     val thresholdY = 5
 
@@ -1667,6 +1644,9 @@ object Ocr4Music {
     // now fill in the gaps
     val groupNumToFullXToBestY = new Array[Array[Int]](groups.size)
     val requiredDensity = 0.3f
+    val groupNumToRealMinX = new Array[Int](groups.size)
+    (0 until groups.size).foreach { i => groupNumToRealMinX(i) = 999999 }
+    val groupNumToRealMaxX = new Array[Int](groups.size)
     groups.zipWithIndex.foreach { groupAndGroupNum =>
       val (group, groupNum) = groupAndGroupNum
       val xToBestY = groupNumToXToBestY(groupNum)
@@ -1683,6 +1663,8 @@ object Ocr4Music {
                 linearRegression(leftPoints ++ rightPoints)
               val predictedY = Math.round(slope * x + intercept).intValue
               fullXToBestY(x) = predictedY
+              groupNumToRealMinX(groupNum) = groupNumToRealMinX(groupNum) min x
+              groupNumToRealMaxX(groupNum) = groupNumToRealMaxX(groupNum) max x
               demo7(x, predictedY) = (0, 0, 255)
             }
           }
@@ -1694,6 +1676,18 @@ object Ocr4Music {
     }
     demo7.scaleValueToMax255.saveTo(new File(
       "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+
+    // filter out groups that aren't dense or long enough
+    val numPointsNeeded = 20
+    val newGroupNumToFullXToBestY = (0 until groups.size).flatMap { groupNum =>
+      if (groupNumToRealMaxX(groupNum) - groupNumToRealMinX(groupNum) >=
+          numPointsNeeded) {
+        Some(groupNumToFullXToBestY(groupNum))
+      } else {
+        None
+      }
+    }.toArray
+    newGroupNumToFullXToBestY
   }
 
   def quarterSize(image:GrayImage) = {
@@ -1740,7 +1734,7 @@ object Ocr4Music {
     val annotationPath = "input/%s.json".format(caseName)
     val annotationString = scala.io.Source.fromFile(annotationPath).mkString
     //val annotationBoxes = loadAnnotationsJson(annotationString)
-    val imageShrunken = caseName match {
+/*    val imageShrunken = caseName match {
       case "2" => quarterSize(quarterSize(image))
       case "4" => quarterSize(image)
       case "1320610762.M373157P72050Q0R91a6ef26faeb752b.macmini.0" => image
@@ -1755,8 +1749,35 @@ object Ocr4Music {
       case "photo2" => quarterSize(image)
       case "photo3" => quarterSize(image)
       case _ => image
+    }*/
+
+    def drawStaffs(xToYArrays:Array[Array[Int]], multiplier:Int,
+        rgb:(Int,Int,Int), out:ColorImage) {
+      xToYArrays.foreach { xToY =>
+        (0 until xToY.size).foreach { x =>
+          val y = xToY(x)
+          if (y != 0) {
+            out(x * multiplier, y * multiplier) = rgb
+          }
+        }
+      }
     }
-    detectStaffs(imageShrunken, caseName)
+
+    val demo = new ColorImage(image.w, image.h)
+    val image16 = quarterSize(quarterSize(image))
+    val image4 = quarterSize(image)
+    val staffs16 = detectStaffs(image16, caseName)
+    val staffs4 = detectStaffs(image4, caseName)
+    val staffs1 =
+      if (image.w + image.h < 1500)
+        detectStaffs(image, caseName)
+      else
+        Array[Array[Int]]()
+    drawStaffs(staffs16, 4, (255, 0, 0), demo)
+    drawStaffs(staffs4, 2, (0, 255, 0), demo)
+    drawStaffs(staffs1, 1, (0, 0, 255), demo)
+    demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
+    
 /*
     val midlinesPath = new File("output/midlines/%s.png".format(caseName))
     val midlines = readOrGenerate(midlinesPath, saveColorImage, loadColorImage){
