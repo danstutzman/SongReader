@@ -1032,7 +1032,6 @@ object Ocr4Music {
   def detectStaffs(image:GrayImage, caseName:String) {
 //val wavelen5 = 28
     val demo = new GrayImage(image.w, image.h)
-    val demo3 = new GrayImage(image.w, image.h)
     val crossSection = new GrayImage(41, image.h)
     (0 until image.w).foreach { x =>
     //(186 to 186).foreach { x =>
@@ -1079,8 +1078,6 @@ object Ocr4Music {
 //          demo(x, y) = -100
 //      }
     } // next x
-    demo3.scaleValueToMax255.saveTo(new File(
-      "demos/bestfft.%s.png".format(caseName)))
 
     val thresholdX = 20
     val thresholdY = 5
@@ -1497,83 +1494,99 @@ object Ocr4Music {
         }
       }
     }
-//    staffStrength.scaleValueToMax255.saveTo(new File(
-//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
-    /*val demo7 = staffStrength.scaleValueToMax255.toColorImage
-    val random = new Random()
-    groups.zipWithIndex.foreach { groupAndI =>
-      val (group, i) = groupAndI
+    val demo7 = staffStrength.scaleValueToMax255.toColorImage
+//    val xToBestY = new Array[Option[Int]]()
+    groups.foreach { group =>
+      val xToYs = new Array[Set[Int]](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val column = group.points.filter { point => point.x == x }
+        val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
+        xToYs(x) = ys
+      }
 
-      val groupColor = (random.nextInt(192) + 63,
-                        random.nextInt(192) + 63,
-                        random.nextInt(192) + 63)
-      (0 until image.w by 100).foreach { bigX =>
-        val xToYs = new Array[Set[Int]](group.box.maxX + 1)
-        (group.box.minX to group.box.maxX).foreach { x =>
-          val column = group.points.filter { point => point.x == x }
-          val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
-          xToYs(x) = ys
+      val xToVYPairs = new Array[Array[(Int,Int)]](group.box.maxX + 1)
+      (group.box.minX to group.box.maxX).foreach { x =>
+        val minY = (xToYs(x).foldLeft(9999) { _ min _ } - 20) max 0
+        val maxY = (xToYs(x).foldLeft(0) { _ max _ } + 20) min (demo.h - 1)
+
+        if (maxY - minY > 3) {
+          var vyPairs = new Array[(Int,Int)](maxY - minY + 1)
+          (minY to maxY).foreach { y =>
+            vyPairs(y - minY) = (staffStrength(x, y), y)
+          }
+          Sorting.quickSort(vyPairs)
+          xToVYPairs(x) = vyPairs
         }
-  
-        val width  = group.box.maxX - group.box.minX + 1
-        val height = group.box.maxY - group.box.minY + 1
-        val hough = new GrayImage(201, height * 3)
-        ((group.box.minX max bigX) to
-            (group.box.maxX min bigX + 100)).foreach { imageX =>
-          val minY = xToYs(imageX).foldLeft(9999) { _ min _ } max 0
-          val maxY = xToYs(imageX).foldLeft(0) { _ max _ } min (demo.h - 1)
-          val threshold =
-            if (maxY >= minY)
-              (minY to maxY).map { y => staffStrength(imageX, y) }.max
-            else 99999
-          (minY to maxY).foreach { imageY =>
-            if (staffStrength(imageX, imageY) >= threshold) {
-              (-100 to 100).foreach { slopeInt =>
-                val slope = slopeInt / 200.0f
-                val xIntercept = Math.round(imageX * slope).intValue + imageY
-                val houghY = xIntercept - group.box.minY + height
-                if (houghY >= 0 && houghY < hough.h) {
-                  hough(slopeInt + 100, houghY) =
-                    hough(slopeInt + 100, houghY) + 1
-                }
+      }
+
+      val xToBestY = new Array[Int](group.box.maxX + 1)
+      var threshold = staffStrength.data.max
+      while (threshold > 0) {
+        (group.box.minX to group.box.maxX).foreach { x =>
+          val vyPairs = xToVYPairs(x)
+          if (vyPairs != null && xToBestY(x) == 0) {
+            val (max1V, max1Y) = vyPairs(vyPairs.size - 1)
+            val (max2V, max2Y) = vyPairs(vyPairs.size - 2)
+            val (max3V, max3Y) = vyPairs(vyPairs.size - 3)
+            val bestY =
+              // if the 3 brightest are adjacent, pick the middle one
+              if (max3V >= threshold &&
+                  (max1Y max max2Y max max3Y) -
+                  (max1Y min max2Y min max3Y) == 2)
+                Some((max1Y min max2Y min max3Y) + 1)
+              // if the 2 brightest are adjacent, pick the top one
+              else if (max2V >= threshold &&
+                  (max1Y max max2Y) - (max1Y min max2Y) == 1)
+                Some(max1Y min max2Y)
+              // otherwise pick the brightest
+              else if (max1V >= threshold)
+                Some(max1Y)
+              else
+                None
+            bestY.foreach { bestY =>
+              val howClose = 10
+
+              // now look at its neighbors to see if they form a line
+              val leftPoints =
+                xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+              val closeLeftPoints = leftPoints.slice(0, x
+                ).filter { _._2 != 0 }.takeRight(howClose).toList
+              val rightPoints =
+                xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+              val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
+                ).filter { _._2 != 0 }.take(howClose).toList
+              val errorYOverX =
+                  if (closeLeftPoints.size + closeRightPoints.size > 1) {
+                val (slope, intercept) = linearRegression(
+                  closeLeftPoints ++ closeRightPoints)
+                val predictedY = slope * x + intercept
+                val errorY = Math.abs(predictedY - bestY)
+                val minXDistance = 
+                  if (closeLeftPoints.size > 0 && closeRightPoints.size > 0) {
+                    Math.abs(closeLeftPoints(closeLeftPoints.size - 1)._1 - x
+                    ) min Math.abs(closeRightPoints(0)._1 - x)
+                  } else if (closeLeftPoints.size > 0) {
+                    Math.abs(closeLeftPoints(closeLeftPoints.size - 1)._1 - x)
+                  } else if (closeRightPoints.size > 0) {
+                    Math.abs(closeRightPoints(0)._1 - x)
+                  } else 999999
+//println((errorY / minXDistance, errorY, minXDistance,
+//  closeLeftPoints, closeRightPoints, x, bestY))
+                errorY / minXDistance
+              } else { 0.0 }
+              if (errorYOverX < 0.5) {
+                xToBestY(x) = bestY
+                demo7(x, bestY) = (0, 255, 0)
               }
             }
           }
         }
-  
-        var maxV = 0
-        var argmaxHoughX = 0
-        var argmaxHoughY = 0
-        (0 until hough.h).foreach { houghY =>
-          (0 until hough.w).foreach { houghX =>
-            val v = hough(houghX, houghY)
-            if (v > maxV) {
-              maxV = v
-              argmaxHoughX = houghX
-              argmaxHoughY = houghY
-            }
-          }
-        }
-  
-        if (maxV > 0) {
-          ((group.box.minX max bigX) to
-              (group.box.maxX min bigX + 100)).foreach { imageX =>
-            val y = Math.round(imageX * -(argmaxHoughX - 100) / 200.f
-              ).intValue + argmaxHoughY + group.box.minY - height
-            if (y >= group.box.minY && y < group.box.maxY && imageX % 3 == 0) {
-              demo7(imageX, y) = groupColor
-            }
-          }
-        }
+        threshold -= 1
       }
-  //      hough.scaleValueToMax255.saveTo(new File(
-//        "demos/newstaff.%s.%03d.png".format(caseName, i)))
     }
-    demo7.saveTo(new File(
-      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))*/
-
-    
+    demo7.scaleValueToMax255.saveTo(new File(
+      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
