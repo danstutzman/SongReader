@@ -1497,8 +1497,83 @@ object Ocr4Music {
         }
       }
     }
-    staffStrength.scaleValueToMax255.saveTo(new File(
-      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+//    staffStrength.scaleValueToMax255.saveTo(new File(
+//      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
+
+    /*val demo7 = staffStrength.scaleValueToMax255.toColorImage
+    val random = new Random()
+    groups.zipWithIndex.foreach { groupAndI =>
+      val (group, i) = groupAndI
+
+      val groupColor = (random.nextInt(192) + 63,
+                        random.nextInt(192) + 63,
+                        random.nextInt(192) + 63)
+      (0 until image.w by 100).foreach { bigX =>
+        val xToYs = new Array[Set[Int]](group.box.maxX + 1)
+        (group.box.minX to group.box.maxX).foreach { x =>
+          val column = group.points.filter { point => point.x == x }
+          val ys = column.foldLeft(Set[Int]()) { _ ++ _.ys }
+          xToYs(x) = ys
+        }
+  
+        val width  = group.box.maxX - group.box.minX + 1
+        val height = group.box.maxY - group.box.minY + 1
+        val hough = new GrayImage(201, height * 3)
+        ((group.box.minX max bigX) to
+            (group.box.maxX min bigX + 100)).foreach { imageX =>
+          val minY = xToYs(imageX).foldLeft(9999) { _ min _ } max 0
+          val maxY = xToYs(imageX).foldLeft(0) { _ max _ } min (demo.h - 1)
+          val threshold =
+            if (maxY >= minY)
+              (minY to maxY).map { y => staffStrength(imageX, y) }.max
+            else 99999
+          (minY to maxY).foreach { imageY =>
+            if (staffStrength(imageX, imageY) >= threshold) {
+              (-100 to 100).foreach { slopeInt =>
+                val slope = slopeInt / 200.0f
+                val xIntercept = Math.round(imageX * slope).intValue + imageY
+                val houghY = xIntercept - group.box.minY + height
+                if (houghY >= 0 && houghY < hough.h) {
+                  hough(slopeInt + 100, houghY) =
+                    hough(slopeInt + 100, houghY) + 1
+                }
+              }
+            }
+          }
+        }
+  
+        var maxV = 0
+        var argmaxHoughX = 0
+        var argmaxHoughY = 0
+        (0 until hough.h).foreach { houghY =>
+          (0 until hough.w).foreach { houghX =>
+            val v = hough(houghX, houghY)
+            if (v > maxV) {
+              maxV = v
+              argmaxHoughX = houghX
+              argmaxHoughY = houghY
+            }
+          }
+        }
+  
+        if (maxV > 0) {
+          ((group.box.minX max bigX) to
+              (group.box.maxX min bigX + 100)).foreach { imageX =>
+            val y = Math.round(imageX * -(argmaxHoughX - 100) / 200.f
+              ).intValue + argmaxHoughY + group.box.minY - height
+            if (y >= group.box.minY && y < group.box.maxY && imageX % 3 == 0) {
+              demo7(imageX, y) = groupColor
+            }
+          }
+        }
+      }
+  //      hough.scaleValueToMax255.saveTo(new File(
+//        "demos/newstaff.%s.%03d.png".format(caseName, i)))
+    }
+    demo7.saveTo(new File(
+      "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))*/
+
+    
 
     // returns (slope, intercept)
     def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
