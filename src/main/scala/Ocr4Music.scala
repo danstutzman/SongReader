@@ -1054,7 +1054,8 @@ object Ocr4Music {
     out
   }
 
-  def detectStaffs(image:GrayImage, caseName:String) : Array[Array[Int]] = {
+  def detectStaffs(image:GrayImage, caseName:String) :
+      (Array[Array[Int]], Array[Array[Int]]) = {
     val demo = highlightMinimums(image)
     val thresholdX = 20
     val thresholdY = 5
@@ -1530,6 +1531,7 @@ object Ocr4Music {
 
     val demo7 = staffStrength.scaleValueToMax255.toColorImage
     val groupNumToXToBestY = new Array[Array[Int]](groups.size)
+    val groupNumToXToBestWavelen5 = new Array[Array[Int]](groups.size)
     val random = new Random()
     groups.zipWithIndex.foreach { groupAndGroupNum =>
       val (group, groupNum) = groupAndGroupNum
@@ -1563,6 +1565,7 @@ object Ocr4Music {
       }
 
       val xToBestY = new Array[Int](group.box.maxX + 1)
+      val xToBestWavelen5 = new Array[Int](group.box.maxX + 1)
       var threshold = staffStrength.data.max
       while (threshold > 0) {
         (group.box.minX to group.box.maxX).foreach { x =>
@@ -1611,6 +1614,7 @@ object Ocr4Music {
                 }
               if (errorYOverX < 0.5) {
                 xToBestY(x) = bestY
+                xToBestWavelen5(x) = bestWavelen5(x, bestY)
                 demo7(x, bestY) = (0, 255, 0)
               }
             } // end if meets threshold
@@ -1619,29 +1623,12 @@ object Ocr4Music {
         threshold -= 1
       } // next threshold
       groupNumToXToBestY(groupNum) = xToBestY
+      groupNumToXToBestWavelen5(groupNum) = xToBestWavelen5
     } // next group
 
-    // returns (slope, intercept)
-    def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
-      val n = points.size
-      var sumX = 0
-      var sumY = 0
-      var sumXY = 0
-      var sumXX = 0
-      points.foreach { xy =>
-        val (x, y) = xy
-        sumX += x
-        sumY += y
-        sumXY += x * y
-        sumXX += x * x
-      }
-      val slope = (n * sumXY - sumX * sumY) /
-                  (n * sumXX - sumX * sumX).floatValue
-      val intercept = (sumY - slope * sumX) / n.floatValue
-      (slope, intercept)
-    }
 
     // now fill in the gaps
+/*
     val groupNumToFullXToBestY = new Array[Array[Int]](groups.size)
     val requiredDensity = 0.3f
     val groupNumToRealMinX = new Array[Int](groups.size)
@@ -1673,21 +1660,40 @@ object Ocr4Music {
         }
       }
       groupNumToFullXToBestY(groupNum) = fullXToBestY
-    }
+    }*/
     demo7.scaleValueToMax255.saveTo(new File(
       "demos/newstaff.%s.%d.%d.png".format(caseName, 2, 1)))
 
-    // filter out groups that aren't dense or long enough
-    val numPointsNeeded = 20
-    val newGroupNumToFullXToBestY = (0 until groups.size).flatMap { groupNum =>
-      if (groupNumToRealMaxX(groupNum) - groupNumToRealMinX(groupNum) >=
-          numPointsNeeded) {
-        Some(groupNumToFullXToBestY(groupNum))
-      } else {
-        None
-      }
+    val denseGroupNums = (0 until groups.size).filter { groupNum =>
+      val requiredDensity = 0.1f
+      val numPoints = groupNumToXToBestY(groupNum).filter { _ != 0 }.size
+      //println((numPoints, image.w, numPoints / image.w.toFloat))
+      numPoints / image.w.toFloat >= requiredDensity
     }.toArray
-    newGroupNumToFullXToBestY
+
+    //(groupNumToXToBestY, groupNumToXToBestWavelen5)
+    (denseGroupNums.map { groupNum => groupNumToXToBestY(groupNum) },
+     denseGroupNums.map { groupNum => groupNumToXToBestWavelen5(groupNum) })
+  }
+
+  // returns (slope, intercept)
+  def linearRegression(points:List[(Int,Int)]) : (Float, Float) = {
+    val n = points.size
+    var sumX = 0
+    var sumY = 0
+    var sumXY = 0
+    var sumXX = 0
+    points.foreach { xy =>
+      val (x, y) = xy
+      sumX += x
+      sumY += y
+      sumXY += x * y
+      sumXX += x * x
+    }
+    val slope = (n * sumXY - sumX * sumY) /
+                (n * sumXX - sumX * sumX).floatValue
+    val intercept = (sumY - slope * sumX) / n.floatValue
+    (slope, intercept)
   }
 
   def quarterSize(image:GrayImage) = {
@@ -1724,6 +1730,211 @@ object Ocr4Music {
       }
     }
     output
+  }
+
+  def classifyGoodOrBad(staffs16:Array[Array[Int]], image:GrayImage,
+      demo:ColorImage) {
+    val howClose = 2 // number of neighbors to the left and right to consider
+    def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
+      val leftPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeLeftPoints = leftPoints.slice(0, x
+        ).filter { _._2 != 0 }.takeRight(howClose).toList
+      val rightPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
+        ).filter { _._2 != 0 }.take(howClose).toList
+      (closeLeftPoints, closeRightPoints)
+    }
+
+    val wavelen5 = 57
+    val random = new Random()
+    staffs16.foreach { xToY =>
+      (0 until xToY.size * 4).foreach { x =>
+        val xDiv4 = x / 4
+        val yDiv4 = xToY(xDiv4)
+        val centerY = yDiv4 * 4 + 2
+/*        if (yDiv4 > 0) {
+          var blackVs = List[Int]()
+          var whiteVs = List[Int]()
+          List(-4, -2, 0, 2, 4).foreach { staffY =>
+            val y = centerY + Math.round(wavelen5 * staffY / 10).intValue
+            blackVs = image(x, y) :: blackVs
+          }
+          List(-5, -3, -1, 1, 3, 5).foreach { staffY =>
+            val y = centerY + Math.round(wavelen5 * staffY / 10).intValue
+            whiteVs = image(x, y) :: whiteVs
+          }
+          val meanWhite = whiteVs.sum / whiteVs.size.toFloat
+          val varianceWhite = whiteVs.map { v =>
+            Math.pow(meanWhite - v, 2) }.sum / whiteVs.size.toFloat
+          val stdDevWhite = Math.sqrt(varianceWhite)
+          //(-wavelen5/2 to wavelen5/2).foreach { y =>
+          //val v = (meanWhite + random.nextGaussian() * stdDevWhite).intValue
+          //demo(x, centerY + y) = (v, v, v)
+          //}
+          if (stdDevWhite >= 10) {
+            (-wavelen5/2 to wavelen5/2).foreach { y =>
+              demo(x, centerY + y) = (255, 0, 0)
+            }
+          }
+        } // end if */
+//        if (yDiv4 == 0) { // do we need to interpolate?
+          val (leftPoints, rightPoints) = getNeighborPoints(xToY, xDiv4)
+          if (leftPoints.size > 0 && rightPoints.size > 0) {
+            var meanWhiteVs = List[Float]()
+            var stdDevWhiteVs = List[Float]()
+            var meanBlackVs = List[Float]()
+            var stdDevBlackVs = List[Float]()
+            (leftPoints ++ rightPoints).foreach { xyDiv4 =>
+              var blackVs = List[Int]()
+              var whiteVs = List[Int]()
+              val (x2, centerY2) = (xyDiv4._1 * 4 + 2, xyDiv4._2 * 4 + 2)
+              List(-4, -2, 0, 2, 4).foreach { staffY =>
+                val y2 = centerY2 + Math.round(wavelen5 * staffY / 10).intValue
+                var minV = 999999
+                ((y2 - 2 max 0) to (y2 + 2 min image.h - 1)).foreach { y3 =>
+                  val v = image(x2, y3)
+                  if (v < minV)
+                    minV = v
+                }
+                blackVs = minV :: blackVs
+              }
+              List(-5, -3, -1, 1, 3, 5).foreach { staffY =>
+                val y2 = centerY2 + Math.round(wavelen5 * staffY / 10).intValue
+                whiteVs = image(x2, y2) :: whiteVs
+              }
+              val meanWhite = whiteVs.sum / whiteVs.size.toFloat
+              val varianceWhite = whiteVs.map { v =>
+                Math.pow(meanWhite - v, 2) }.sum / whiteVs.size.toFloat
+              val stdDevWhite = Math.sqrt(varianceWhite).toFloat
+              val meanBlack = blackVs.sum / blackVs.size.toFloat
+              val varianceBlack = blackVs.map { v =>
+                Math.pow(meanBlack - v, 2) }.sum / blackVs.size.toFloat
+              val stdDevBlack = Math.sqrt(varianceBlack).toFloat
+              if (stdDevWhite < 10) {
+                meanWhiteVs = meanWhite :: meanWhiteVs
+                stdDevWhiteVs = stdDevWhite :: stdDevWhiteVs
+                meanBlackVs = meanBlack :: meanBlackVs
+                stdDevBlackVs = stdDevBlack :: stdDevBlackVs
+              }
+            }
+            if (meanWhiteVs.size > 0) {
+              val meanWhite = meanWhiteVs.sum / meanWhiteVs.size.toFloat
+              val stdDevWhite = stdDevWhiteVs.sum / stdDevWhiteVs.size.toFloat
+              val meanBlack = meanBlackVs.sum / meanBlackVs.size.toFloat
+              val stdDevBlack = stdDevBlackVs.sum / stdDevBlackVs.size.toFloat
+
+              val (slope, intercept) =
+                linearRegression(leftPoints ++ rightPoints)
+              val predictedYDiv4 =
+                Math.round(slope * xDiv4 + intercept).intValue
+              (-wavelen5/2 to wavelen5/2).foreach { yNeighbor =>
+                val staffYOver2 = yNeighbor * 5.0f / wavelen5
+                val closenessToLine =
+                  Math.abs(staffYOver2 - Math.round(staffYOver2))
+                val darkestExpectedV =
+                  if (closenessToLine > 0.25) meanWhite - stdDevWhite * 3
+                  else meanBlack - stdDevBlack * 2
+                val y = predictedYDiv4 * 4 + 2 + yNeighbor
+                if (image(x, y) < darkestExpectedV) {
+                  demo(x, y) = (255, 0, 0)
+                }
+              }
+            } // end if
+          } // end if
+//        } // end if
+      } // next x
+    } // next staff
+  }
+
+  def improveStaffs(staffs:Array[Array[Int]], wavelen5s:Array[Array[Int]],
+      image:GrayImage, demo:ColorImage) = {
+    val howClose = 10 // number of neighbors to the left and right to consider
+    def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
+      val leftPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeLeftPoints = leftPoints.slice(0, x
+        ).filter { _._2 != 0 }.takeRight(howClose).toList
+      val rightPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
+        ).filter { _._2 != 0 }.take(howClose).toList
+      (closeLeftPoints, closeRightPoints)
+    }
+
+    staffs.zipWithIndex.map { staffAndStaffNum =>
+      val (xToY, staffNum) = staffAndStaffNum
+      val xToWavelen5 = wavelen5s(staffNum)
+
+      var minSumDifference = 999999.0f
+      var argmaxLeftWavelen5 = 0
+      var argmaxRightWavelen5 = 0
+      (15 to 130).foreach { leftWavelen5 =>
+        (15 to 130).foreach { rightWavelen5 =>
+          var sumDifference = 0.0f
+          (0 until xToWavelen5.size).foreach { x =>
+            val actualWavelen5 = xToWavelen5(x)
+            if (actualWavelen5 != 0) {
+              val progress = x / xToWavelen5.size.toFloat
+              val predictedWavelen5 =
+                leftWavelen5 + (rightWavelen5 - leftWavelen5) * progress
+              sumDifference += Math.abs(predictedWavelen5 - actualWavelen5)
+            }
+          }
+          if (sumDifference < minSumDifference) {
+            minSumDifference = sumDifference
+            argmaxLeftWavelen5 = leftWavelen5
+            argmaxRightWavelen5 = rightWavelen5
+          }
+        }
+      }
+
+      (0 until xToY.size).toArray.map { x =>
+        //demo(x, xToWavelen5(x)) = (0, 0, 255)
+        //demo(x + 1, xToWavelen5(x)) = (0, 0, 255)
+        val (leftPoints, rightPoints) = getNeighborPoints(xToY, x)
+        if (leftPoints.size > 0 || rightPoints.size > 0) {
+          val (slope, intercept) =
+            linearRegression(leftPoints ++ rightPoints)
+          val predictedCenterY = Math.round(slope * x + intercept).intValue
+          val progress = x / xToY.size.toFloat
+          val predictedWavelen5 = Math.round(argmaxLeftWavelen5 +
+            (argmaxRightWavelen5 - argmaxLeftWavelen5) * progress).intValue
+          //demo(x, predictedWavelen5) = (0, 0, 255)
+
+          var minMaxV = 999999
+          var argmaxCenterY = 0.0f
+          var argmaxWavelen5 = 0.0f
+          (predictedWavelen5 - 5 to predictedWavelen5 + 5).foreach { wavelen5 =>
+            var centerY = predictedCenterY + -5.0f
+            while (centerY < predictedCenterY + 5.0f) {
+              val insidePoints = List(-4, -2, 0, 2, 4).map { i =>
+                image(x, Math.floor(centerY + wavelen5 * i/10.0f).intValue) min
+                image(x, Math.floor(centerY + wavelen5 * i/10.0f).intValue + 1)
+              }.toArray
+              val maxV = insidePoints.max
+              if (maxV < minMaxV) {
+                minMaxV = maxV
+                argmaxCenterY = centerY
+                argmaxWavelen5 = wavelen5
+              }
+  
+              centerY += 0.2f
+            }
+          }
+
+          List(-4, -2, 0, 2, 4).foreach { i =>
+            demo(x, Math.round(argmaxCenterY + argmaxWavelen5 * i/10.0f
+              ).intValue) = (255, 255, 0)
+          }
+
+           0 //Math.round(argmaxCenterY).intValue
+        } else {
+          0
+        }
+      }
+    }
   }
 
   def processCase(caseName:String) : Performance = {
@@ -1763,19 +1974,45 @@ object Ocr4Music {
       }
     }
 
-    val demo = new ColorImage(image.w, image.h)
+    def multiplyStaffs(staffs:Array[Array[Int]], multiplier:Int) = {
+      staffs.map { oldXToY =>
+        val newXToY = new Array[Int](oldXToY.size * (multiplier + 1))
+        oldXToY.zipWithIndex.foreach { yx =>
+          val (oldY, oldX) = yx
+          if (oldY != 0) {
+            newXToY(oldX * multiplier + (multiplier / 2)) =
+              oldY * multiplier + (multiplier / 2)
+          }
+        }
+        newXToY
+      }
+    }
+
+    def detectStaffsAndMultiply(
+        imageShruken:GrayImage, caseName:String, multiplier:Int) = {
+      val (staffs, wavelen5s) = detectStaffs(imageShruken, caseName)
+      val newStaffs = multiplyStaffs(staffs, multiplier)
+      val newWavelen5s = multiplyStaffs(wavelen5s, multiplier)
+      (newStaffs, newWavelen5s)
+    }
+
+    val demo = image.toColorImage
     val image16 = quarterSize(quarterSize(image))
-    val image4 = quarterSize(image)
-    val staffs16 = detectStaffs(image16, caseName)
-    val staffs4 = detectStaffs(image4, caseName)
-    val staffs1 =
-      if (image.w + image.h < 1500)
-        detectStaffs(image, caseName)
-      else
-        Array[Array[Int]]()
-    drawStaffs(staffs16, 4, (255, 0, 0), demo)
-    drawStaffs(staffs4, 2, (0, 255, 0), demo)
-    drawStaffs(staffs1, 1, (0, 0, 255), demo)
+//    val image4 = quarterSize(image)
+    val (staffs16, wavelen5s16) = detectStaffsAndMultiply(image16, caseName, 4)
+//  val staffs4 = detectStaffs(image4, caseName)
+//    val staffs1 =
+//      if (image.w + image.h < 1500)
+//        detectStaffs(image, caseName)
+//      else
+//        Array[Array[Int]]()
+//    drawStaffs(staffs16, 4, (255, 0, 0), demo)
+//    drawStaffs(staffs4, 2, (0, 255, 0), demo)
+//    drawStaffs(staffs1, 1, (0, 0, 255), demo)
+//    classifyGoodOrBad(staffs16, image, demo)
+    drawStaffs(staffs16, 1, (255, 0, 0), demo)
+    val staffsNew = improveStaffs(staffs16, wavelen5s16, image, demo)
+    drawStaffs(staffsNew, 1, (0, 255, 0), demo)
     demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
     
 /*
