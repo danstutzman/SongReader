@@ -1968,13 +1968,12 @@ object Ocr4Music {
       case _ => image
     }*/
 
-    def drawStaffs(staffs:List[Staff], multiplier:Int,
-        rgb:(Int,Int,Int), out:ColorImage) {
+    def drawStaffs(staffs:List[Staff], rgb:(Int,Int,Int), out:ColorImage) {
       staffs.foreach { staff =>
         (0 until staff.midlineYs.size).foreach { x =>
           val y = staff.midlineYs(x)
           if (y != 0) {
-            out(x * multiplier, y * multiplier) = rgb
+            out(x, y) = rgb
           }
         }
       }
@@ -2020,9 +2019,9 @@ object Ocr4Music {
       else
         List[Staff]()
     val allStaffs = staffs16 ++ staffs4 ++ staffs1
-    drawStaffs(allStaffs, 1, (255, 0, 0), demo)
+    drawStaffs(allStaffs, (255, 0, 0), demo)
     val allStaffsNew = improveStaffs(allStaffs, image, demo)
-    drawStaffs(allStaffsNew, 1, (0, 255, 0), demo)
+    drawStaffs(allStaffsNew, (0, 255, 0), demo)
     demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
     
 /*
