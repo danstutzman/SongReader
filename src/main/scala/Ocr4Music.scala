@@ -1675,7 +1675,7 @@ object Ocr4Music {
         "staff%d".format(groupNum),
         BoundingBox(0, image.w, 0, image.h),
         groupNumToXToBestY(groupNum),
-        groupNumToXToBestWavelen5(groupNum).map { _.toFloat }
+        groupNumToXToBestWavelen5(groupNum).map { _ / 5.0f }
       )
     }.toList
   }
@@ -1868,7 +1868,7 @@ object Ocr4Music {
 
     staffs.map { staff =>
       val xToY = staff.midlineYs
-      val xToWavelen5 = staff.staffSeparations
+      val xToWavelen5 = staff.staffSeparations.map { _ * 5.0f }
 
       var minSumDifference = 999999.0f
       var argmaxLeftWavelen5 = 0
@@ -1935,7 +1935,7 @@ object Ocr4Music {
           }
 
           newXToYs(x) = Math.round(argmaxCenterY).intValue
-          newXToWavelen5s(x) = argmaxWavelen5
+          newXToWavelen5s(x) = argmaxWavelen5 / 5.0f
         }
         // otherwise, leave the values at 0
       } // next x
@@ -1989,12 +1989,12 @@ object Ocr4Music {
               oldY * multiplier + (multiplier / 2)
           }
         }
-        val newWavelen5s =
+        val newStaffSeparations =
           new Array[Float](staff.staffSeparations.size * (multiplier + 1))
         staff.staffSeparations.zipWithIndex.foreach { yx =>
           val (oldY, oldX) = yx
           if (oldY != 0) {
-            newWavelen5s(oldX * multiplier + (multiplier / 2)) =
+            newStaffSeparations(oldX * multiplier + (multiplier / 2)) =
               oldY * multiplier
           }
         }
@@ -2004,7 +2004,7 @@ object Ocr4Music {
           staff.bounds.minY * multiplier,
           (staff.bounds.maxY + 1) * multiplier
         )
-        Staff(staff.staffName, newBounds, newXToY, newWavelen5s)
+        Staff(staff.staffName, newBounds, newXToY, newStaffSeparations)
       }
     }
 
