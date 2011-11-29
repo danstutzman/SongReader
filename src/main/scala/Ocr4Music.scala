@@ -2011,21 +2011,18 @@ object Ocr4Music {
 
     val demo = image.toColorImage
     val image16 = quarterSize(quarterSize(image))
-//    val image4 = quarterSize(image)
+    val image4 = quarterSize(image)
     val staffs16 = multiplyStaffs(detectStaffs(image16, caseName), 4)
-//  val staffs4 = detectStaffs(image4, caseName)
-//    val staffs1 =
-//      if (image.w + image.h < 1500)
-//        detectStaffs(image, caseName)
-//      else
-//        Array[Array[Int]]()
-//    drawStaffs(staffs16, 4, (255, 0, 0), demo)
-//    drawStaffs(staffs4, 2, (0, 255, 0), demo)
-//    drawStaffs(staffs1, 1, (0, 0, 255), demo)
-//    classifyGoodOrBad(staffs16, image, demo)
-    drawStaffs(staffs16, 1, (255, 0, 0), demo)
-    val staffsNew = improveStaffs(staffs16, image, demo)
-    drawStaffs(staffsNew, 1, (0, 255, 0), demo)
+    val staffs4 = multiplyStaffs(detectStaffs(image4, caseName), 2)
+    val staffs1 =
+      if (image.w + image.h < 1500)
+        detectStaffs(image, caseName)
+      else
+        List[Staff]()
+    val allStaffs = staffs16 ++ staffs4 ++ staffs1
+    drawStaffs(allStaffs, 1, (255, 0, 0), demo)
+    val allStaffsNew = improveStaffs(allStaffs, image, demo)
+    drawStaffs(allStaffsNew, 1, (0, 255, 0), demo)
     demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
     
 /*
