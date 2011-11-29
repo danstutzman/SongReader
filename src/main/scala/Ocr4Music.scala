@@ -1054,8 +1054,7 @@ object Ocr4Music {
     out
   }
 
-  def detectStaffs(image:GrayImage, caseName:String) :
-      (Array[Array[Int]], Array[Array[Int]]) = {
+  def detectStaffs(image:GrayImage, caseName:String) : List[Staff] = {
     val demo = highlightMinimums(image)
     val thresholdX = 20
     val thresholdY = 5
@@ -1671,9 +1670,14 @@ object Ocr4Music {
       numPoints / image.w.toFloat >= requiredDensity
     }.toArray
 
-    //(groupNumToXToBestY, groupNumToXToBestWavelen5)
-    (denseGroupNums.map { groupNum => groupNumToXToBestY(groupNum) },
-     denseGroupNums.map { groupNum => groupNumToXToBestWavelen5(groupNum) })
+    denseGroupNums.map { groupNum =>
+      Staff(
+        "staff%d".format(groupNum),
+        BoundingBox(0, image.w, 0, image.h),
+        groupNumToXToBestY(groupNum),
+        groupNumToXToBestWavelen5(groupNum).map { _.toFloat }
+      )
+    }.toList
   }
 
   // returns (slope, intercept)
@@ -1848,8 +1852,7 @@ object Ocr4Music {
     } // next staff
   }
 
-  def improveStaffs(staffs:Array[Array[Int]], wavelen5s:Array[Array[Int]],
-      image:GrayImage, demo:ColorImage) = {
+  def improveStaffs(staffs:List[Staff], image:GrayImage, demo:ColorImage) = {
     val howClose = 10 // number of neighbors to the left and right to consider
     def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
       val leftPoints =
@@ -1863,9 +1866,9 @@ object Ocr4Music {
       (closeLeftPoints, closeRightPoints)
     }
 
-    staffs.zipWithIndex.map { staffAndStaffNum =>
-      val (xToY, staffNum) = staffAndStaffNum
-      val xToWavelen5 = wavelen5s(staffNum)
+    staffs.map { staff =>
+      val xToY = staff.midlineYs
+      val xToWavelen5 = staff.staffSeparations
 
       var minSumDifference = 999999.0f
       var argmaxLeftWavelen5 = 0
@@ -1890,7 +1893,9 @@ object Ocr4Music {
         }
       }
 
-      (0 until xToY.size).toArray.map { x =>
+      val newXToYs = new Array[Int](xToY.size)
+      val newXToWavelen5s = new Array[Float](xToWavelen5.size)
+      (0 until xToY.size).foreach { x =>
         //demo(x, xToWavelen5(x)) = (0, 0, 255)
         //demo(x + 1, xToWavelen5(x)) = (0, 0, 255)
         val (leftPoints, rightPoints) = getNeighborPoints(xToY, x)
@@ -1929,12 +1934,13 @@ object Ocr4Music {
               ).intValue) = (255, 255, 0)
           }
 
-           0 //Math.round(argmaxCenterY).intValue
-        } else {
-          0
+          newXToYs(x) = Math.round(argmaxCenterY).intValue
+          newXToWavelen5s(x) = argmaxWavelen5
         }
-      }
-    }
+        // otherwise, leave the values at 0
+      } // next x
+      Staff(staff.staffName, staff.bounds, newXToYs, newXToWavelen5s)
+    } // next staff
   }
 
   def processCase(caseName:String) : Performance = {
@@ -1962,11 +1968,11 @@ object Ocr4Music {
       case _ => image
     }*/
 
-    def drawStaffs(xToYArrays:Array[Array[Int]], multiplier:Int,
+    def drawStaffs(staffs:List[Staff], multiplier:Int,
         rgb:(Int,Int,Int), out:ColorImage) {
-      xToYArrays.foreach { xToY =>
-        (0 until xToY.size).foreach { x =>
-          val y = xToY(x)
+      staffs.foreach { staff =>
+        (0 until staff.midlineYs.size).foreach { x =>
+          val y = staff.midlineYs(x)
           if (y != 0) {
             out(x * multiplier, y * multiplier) = rgb
           }
@@ -1974,32 +1980,39 @@ object Ocr4Music {
       }
     }
 
-    def multiplyStaffs(staffs:Array[Array[Int]], multiplier:Int) = {
-      staffs.map { oldXToY =>
-        val newXToY = new Array[Int](oldXToY.size * (multiplier + 1))
-        oldXToY.zipWithIndex.foreach { yx =>
+    def multiplyStaffs(staffs:List[Staff], multiplier:Int) : List[Staff] = {
+      staffs.map { staff =>
+        val newXToY = new Array[Int](staff.midlineYs.size * (multiplier + 1))
+        staff.midlineYs.zipWithIndex.foreach { yx =>
           val (oldY, oldX) = yx
           if (oldY != 0) {
             newXToY(oldX * multiplier + (multiplier / 2)) =
               oldY * multiplier + (multiplier / 2)
           }
         }
-        newXToY
+        val newWavelen5s =
+          new Array[Float](staff.staffSeparations.size * (multiplier + 1))
+        staff.staffSeparations.zipWithIndex.foreach { yx =>
+          val (oldY, oldX) = yx
+          if (oldY != 0) {
+            newWavelen5s(oldX * multiplier + (multiplier / 2)) =
+              oldY * multiplier
+          }
+        }
+        val newBounds = BoundingBox(
+          staff.bounds.minX * multiplier,
+          (staff.bounds.maxX + 1) * multiplier,
+          staff.bounds.minY * multiplier,
+          (staff.bounds.maxY + 1) * multiplier
+        )
+        Staff(staff.staffName, newBounds, newXToY, newWavelen5s)
       }
-    }
-
-    def detectStaffsAndMultiply(
-        imageShruken:GrayImage, caseName:String, multiplier:Int) = {
-      val (staffs, wavelen5s) = detectStaffs(imageShruken, caseName)
-      val newStaffs = multiplyStaffs(staffs, multiplier)
-      val newWavelen5s = multiplyStaffs(wavelen5s, multiplier)
-      (newStaffs, newWavelen5s)
     }
 
     val demo = image.toColorImage
     val image16 = quarterSize(quarterSize(image))
 //    val image4 = quarterSize(image)
-    val (staffs16, wavelen5s16) = detectStaffsAndMultiply(image16, caseName, 4)
+    val staffs16 = multiplyStaffs(detectStaffs(image16, caseName), 4)
 //  val staffs4 = detectStaffs(image4, caseName)
 //    val staffs1 =
 //      if (image.w + image.h < 1500)
@@ -2011,7 +2024,7 @@ object Ocr4Music {
 //    drawStaffs(staffs1, 1, (0, 0, 255), demo)
 //    classifyGoodOrBad(staffs16, image, demo)
     drawStaffs(staffs16, 1, (255, 0, 0), demo)
-    val staffsNew = improveStaffs(staffs16, wavelen5s16, image, demo)
+    val staffsNew = improveStaffs(staffs16, image, demo)
     drawStaffs(staffsNew, 1, (0, 255, 0), demo)
     demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
     
