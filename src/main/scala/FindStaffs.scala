@@ -711,7 +711,8 @@ object FindStaffs {
     (slope, intercept)
   }
 
-  def improveStaffs(staffs:List[Staff], image:GrayImage, demo:ColorImage) = {
+  def interpolateStaffs(
+      staffs:List[Staff], image:GrayImage, demo:ColorImage) = {
     val howClose = 10 // number of neighbors to the left and right to consider
     def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
       val leftPoints =
@@ -788,17 +789,89 @@ object FindStaffs {
             }
           }
 
-          List(-4, -2, 0, 2, 4).foreach { i =>
-            demo(x, Math.round(argmaxCenterY + argmaxWavelen5 * i/10.0f
-              ).intValue) = (255, 255, 0)
-          }
-
           newXToYs(x) = Math.round(argmaxCenterY).intValue
           newXToWavelen5s(x) = argmaxWavelen5 / 5.0f
-        }
-        // otherwise, leave the values at 0
+        } // else, leave values at zero
       } // next x
-      Staff(staff.staffName, staff.bounds, newXToYs, newXToWavelen5s)
+
+      val window = 10
+      val smoothedXToYs = (0 until newXToYs.size).map { x =>
+        val x0 = (x - window) max 0
+        val x1 = (x + window) min (newXToYs.size - 1)
+        var values = List[Int]()
+        (x0 to x1).foreach { xNeighbor =>
+          if (newXToYs(xNeighbor) != 0) {
+            values = newXToYs(xNeighbor) :: values
+          }
+        }
+        val sorted = values.toArray
+        Sorting.quickSort(sorted)
+        val median = sorted(sorted.size / 2)
+        median
+      }.toArray
+
+      val xToDifference = (0 until smoothedXToYs.size).map { x =>
+        val centerY = smoothedXToYs(x)
+        val wavelen5 = newXToWavelen5s(x)
+        if (centerY != 0) {
+          val insidePoints = List(-4, -2, 0, 2, 4).map { i =>
+            image(x, Math.floor(centerY + wavelen5 * i/2.0f).intValue) min
+            image(x, Math.floor(centerY + wavelen5 * i/2.0f).intValue + 1)
+          }.toArray
+          val meanInside = insidePoints.sum / insidePoints.size.toFloat
+          val outsidePoints = List(-5, -3, -1, 1, 3, 5).map { i =>
+            image(x, Math.floor(centerY + wavelen5 * i/2.0f).intValue) min
+            image(x, Math.floor(centerY + wavelen5 * i/2.0f).intValue + 1)
+          }.toArray
+          val meanOutside = outsidePoints.sum / outsidePoints.size.toFloat
+          meanOutside - meanInside
+        } else {
+          0.0f
+        }
+      }.toArray
+
+      val xToDifferenceSmoothed = (0 until smoothedXToYs.size).map { x =>
+        val x0 = (x - window) max 0
+        val x1 = (x + window) min (smoothedXToYs.size - 1)
+        var values = List[Float]()
+        (x0 to x1).foreach { xNeighbor =>
+          values = xToDifference(xNeighbor) :: values
+        }
+        val sorted = values.toArray
+        Sorting.quickSort(sorted)
+        val median = sorted(sorted.size / 2)
+        median
+      }
+
+      val differenceThreshold = 3.0f
+      var beginX = 0
+      var keepGoing = true
+      while (beginX < smoothedXToYs.size/2 && keepGoing) {
+        keepGoing = (xToDifferenceSmoothed(beginX) < differenceThreshold)
+        smoothedXToYs(beginX) = 0
+        beginX += 1
+      }
+
+      var endX = smoothedXToYs.size - 1
+      keepGoing = true
+      while (endX > smoothedXToYs.size/2 && keepGoing) {
+        keepGoing = (xToDifferenceSmoothed(endX) < differenceThreshold)
+        smoothedXToYs(endX) = 0
+        endX -= 1
+      }
+
+      (0 until smoothedXToYs.size).foreach { x =>
+        val centerY = smoothedXToYs(x)
+        val wavelen5 = newXToWavelen5s(x)
+        if (centerY != 0) {
+          List(-4, -2, 0, 2, 4).foreach { i =>
+            val y = centerY + wavelen5 * i/2.0f
+            demo(x, Math.round(y).intValue) = (255, 255, 0)
+          }
+        }
+      }
+
+      Staff(staff.staffName, staff.bounds, smoothedXToYs, newXToWavelen5s)
     } // next staff
   }
 
@@ -872,7 +945,7 @@ object FindStaffs {
         List[Staff]()
     val allStaffs = staffs16 ++ staffs4 ++ staffs1
     drawStaffs(allStaffs, (255, 0, 0), demo)
-    val allStaffsNew = improveStaffs(allStaffs, image, demo)
+    val allStaffsNew = interpolateStaffs(allStaffs, image, demo)
     drawStaffs(allStaffsNew, (0, 255, 0), demo)
     demo.saveTo(new File("demos/all_staffs.%s.png".format(caseName)))
 
