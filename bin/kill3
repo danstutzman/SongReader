@@ -1,0 +1,3 @@
+#!/bin/bash
+PID=`ps aux | grep Ocr4Music | grep java | awk '{print $2}'`
+kill -3 $PID
