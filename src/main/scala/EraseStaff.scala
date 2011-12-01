@@ -3,7 +3,8 @@ import java.lang.Math
 import scala.util.Sorting
 
 object EraseStaff {
-  def classifyGoodOrBad(staffs:List[Staff], image:GrayImage, demo:ColorImage) {
+  def classifyGoodOrBad(staffs:List[Staff], image:GrayImage, demo:ColorImage,
+      caseName:String) {
     val howClose = 20 // number of neighbors to the left and right to consider
     def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
       val leftPoints =
@@ -17,6 +18,7 @@ object EraseStaff {
       (closeLeftPoints, closeRightPoints)
     }
 
+    val prob = new GrayImage(image.w, image.h)
     staffs.foreach { staff =>
       val xToY = staff.midlineYs
       (0 until xToY.size).foreach { x =>
@@ -28,6 +30,8 @@ object EraseStaff {
           var stdDevWhiteVs = List[Float]()
           var meanBlackVs = List[Float]()
           var stdDevBlackVs = List[Float]()
+          var positionToVs:Array[List[Float]] =
+            (0 to wavelen5/2).map { i => List[Float]() }.toArray
           (leftPoints ++ rightPoints).foreach { xy =>
             var blackVs = List[Int]()
             var whiteVs = List[Int]()
@@ -59,6 +63,11 @@ object EraseStaff {
               stdDevWhiteVs = stdDevWhite :: stdDevWhiteVs
               meanBlackVs = meanBlack :: meanBlackVs
               stdDevBlackVs = stdDevBlack :: stdDevBlackVs
+              (-wavelen5/2 to wavelen5/2).foreach { offsetY =>
+                val y2 = centerY2 + offsetY
+                positionToVs(Math.abs(offsetY)) = image(x2, y2) ::
+                  positionToVs(Math.abs(offsetY))
+              }
             }
           }
           if (meanWhiteVs.size > 0) {
@@ -67,11 +76,21 @@ object EraseStaff {
             val meanBlack = meanBlackVs.sum / meanBlackVs.size.toFloat
             val stdDevBlack = stdDevBlackVs.sum / stdDevBlackVs.size.toFloat
 
-            val (slope, intercept) =
-              FindStaffs.linearRegression(leftPoints ++ rightPoints)
-            val predictedY = Math.round(slope * x + intercept).intValue
-            (-wavelen5/2 to wavelen5/2).foreach { yNeighbor =>
-              val staffYOver2 = yNeighbor * 5.0f / wavelen5
+            (-wavelen5/2 to wavelen5/2).foreach { offsetY =>
+              val vs = positionToVs(Math.abs(offsetY))
+              val meanV = vs.sum / vs.size
+              val varianceV =
+                vs.map { v => Math.pow(meanV - v, 2) }.sum / vs.size
+              val stdDevV = Math.sqrt(varianceV)
+              val y = centerY + offsetY
+              if (y >= 0 && y < image.h) {
+                prob(x, y) = 127 +
+                  ((image(x, y) - meanV) / stdDevV * 4).intValue
+              }
+//              if (image(x, y) < (meanV - stdDevV * 2).intValue) {
+//                demo(x, centerY + offsetY) = (255, 0, 0)
+//              }
+/*              val staffYOver2 = yNeighbor * 5.0f / wavelen5
               val closenessToLine =
                 Math.abs(staffYOver2 - Math.round(staffYOver2))
               val darkestExpectedV =
@@ -80,17 +99,22 @@ object EraseStaff {
               val y = predictedY + yNeighbor
               if (image(x, y) < darkestExpectedV) {
                 demo(x, y) = (255, 0, 0)
-              }
+              }*/
             }
           } // end if
         } // end if
       } // next x
     } // next staff
+    prob.saveTo(new File("demos/prob.%s.png".format(caseName)))
+
+(110 to 110).foreach { threshold =>
+    prob.binarize(threshold).saveTo(new File("demos/prob.%s.%03d.png".format(caseName, threshold)))
+}
   }
 
   def run(input:GrayImage, staffs:List[Staff], caseName:String) = {
     val demo = input.toColorImage
-    classifyGoodOrBad(staffs, input, demo)
+    classifyGoodOrBad(staffs, input, demo, caseName)
     demo.saveTo(new File("demos/goodbad.%s.png".format(caseName)))
 /*
     val output = input.copy
