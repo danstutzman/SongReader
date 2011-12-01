@@ -3,75 +3,97 @@ import java.lang.Math
 import scala.util.Sorting
 
 object EraseStaff {
-  def separateNotes(input:GrayImage, caseName:String) = {
-    val ceilings = new Array[Int](input.w)
-    (0 until input.w).foreach { x =>
-      val x0 = (x - 50) max 0
-      val x1 = (x + 50) min (input.w - 1)
-      val values = new Array[Int]((x1 - x0 + 1) * input.h)
-      var i = 0
-      (x0 to x1).foreach { xNeighbor =>
-        (0 until input.h).foreach { y =>
-          values(i) = input(xNeighbor, y)
-          i += 1
-        }
-      }
-      Sorting.quickSort(values)
-      ceilings(x) = values(values.length * 1/4)
+  def classifyGoodOrBad(staffs:List[Staff], image:GrayImage, demo:ColorImage) {
+    val howClose = 20 // number of neighbors to the left and right to consider
+    def getNeighborPoints(xToBestY:Array[Int], x:Int) = {
+      val leftPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeLeftPoints = leftPoints.slice(0, x
+        ).filter { _._2 != 0 }.takeRight(howClose).toList
+      val rightPoints =
+        xToBestY.zipWithIndex.map { yx => (yx._2, yx._1) }
+      val closeRightPoints = rightPoints.slice(x + 1, xToBestY.size
+        ).filter { _._2 != 0 }.take(howClose).toList
+      (closeLeftPoints, closeRightPoints)
     }
 
-    val floors = new Array[Int](input.w)
-    (0 until input.w).foreach { x =>
-      floors(x) = ceilings(x) * 1/2
-    }
-
-    val adjusted = new GrayImage(input.w, input.h)
-    (0 until input.w).foreach { x =>
-      (0 until input.h).foreach { y =>
-        val v = input(x, y)
-        val newV = (v - floors(x)) * 255 / (ceilings(x) - floors(x) + 1)
-        adjusted(x, y) = if (newV < 0) 0 else if (newV > 255) 255 else newV
-      }
-    }
-    //adjusted.saveTo(new File("demos/adjusted.%s.png".format(staffName)))
-
-    val augmentedBinaryNonStaff = new GrayImage(input.w, input.h)
-    (0 until input.w).foreach { x =>
-      (0 until input.h).foreach { y =>
-        val v = input(x, y)
-        val newV = (v - floors(x)) * 255 / (ceilings(x) - floors(x) + 1)
-        val x0 = (x - 1) max 0
-        val x1 = (x + 1) min (input.w - 1)
-        val y0 = (y - 1) max 0
-        val y1 = (y + 1) min (input.h - 1)
- 
-        val isCloseToFloor = (x0 to x1).exists { xNeighbor =>
-          (y0 to y1).exists { yNeighbor =>
-            input(xNeighbor, yNeighbor) <= floors(x)
+    staffs.foreach { staff =>
+      val xToY = staff.midlineYs
+      (0 until xToY.size).foreach { x =>
+        val centerY = xToY(x)
+        val wavelen5 = Math.round(staff.staffSeparations(x) * 5.0f).intValue
+        val (leftPoints, rightPoints) = getNeighborPoints(xToY, x)
+        if (leftPoints.size > 0 && rightPoints.size > 0) {
+          var meanWhiteVs = List[Float]()
+          var stdDevWhiteVs = List[Float]()
+          var meanBlackVs = List[Float]()
+          var stdDevBlackVs = List[Float]()
+          (leftPoints ++ rightPoints).foreach { xy =>
+            var blackVs = List[Int]()
+            var whiteVs = List[Int]()
+            val (x2, centerY2) = xy
+            List(-4, -2, 0, 2, 4).foreach { staffY =>
+              val y2 = centerY2 + Math.round(wavelen5 * staffY / 10).intValue
+              var minV = 999999
+              ((y2 - 2 max 0) to (y2 + 2 min image.h - 1)).foreach { y3 =>
+                val v = image(x2, y3)
+                if (v < minV)
+                  minV = v
+              }
+              blackVs = minV :: blackVs
+            }
+            List(-5, -3, -1, 1, 3, 5).foreach { staffY =>
+              val y2 = centerY2 + Math.round(wavelen5 * staffY / 10).intValue
+              whiteVs = image(x2, y2) :: whiteVs
+            }
+            val meanWhite = whiteVs.sum / whiteVs.size.toFloat
+            val varianceWhite = whiteVs.map { v =>
+              Math.pow(meanWhite - v, 2) }.sum / whiteVs.size.toFloat
+            val stdDevWhite = Math.sqrt(varianceWhite).toFloat
+            val meanBlack = blackVs.sum / blackVs.size.toFloat
+            val varianceBlack = blackVs.map { v =>
+              Math.pow(meanBlack - v, 2) }.sum / blackVs.size.toFloat
+            val stdDevBlack = Math.sqrt(varianceBlack).toFloat
+            if (stdDevWhite < 10) {
+              meanWhiteVs = meanWhite :: meanWhiteVs
+              stdDevWhiteVs = stdDevWhite :: stdDevWhiteVs
+              meanBlackVs = meanBlack :: meanBlackVs
+              stdDevBlackVs = stdDevBlack :: stdDevBlackVs
+            }
           }
-        }
+          if (meanWhiteVs.size > 0) {
+            val meanWhite = meanWhiteVs.sum / meanWhiteVs.size.toFloat
+            val stdDevWhite = stdDevWhiteVs.sum / stdDevWhiteVs.size.toFloat
+            val meanBlack = meanBlackVs.sum / meanBlackVs.size.toFloat
+            val stdDevBlack = stdDevBlackVs.sum / stdDevBlackVs.size.toFloat
 
-        augmentedBinaryNonStaff(x, y) = if (isCloseToFloor) 0 else 255
-      }
-    }
-    
-    val partiallyErased = new GrayImage(input.w, input.h)
-    (0 until input.w).foreach { x =>
-      (0 until input.h).foreach { y =>
-        partiallyErased(x, y) =
-          if (augmentedBinaryNonStaff(x, y) == 0) 255
-          else adjusted(x, y)
-      }
-    }
-    //partiallyErased.saveTo(new File(
-    //  "demos/partially_erased.%s.png".format(staffName)))
-
-    (adjusted, partiallyErased, augmentedBinaryNonStaff)
+            val (slope, intercept) =
+              FindStaffs.linearRegression(leftPoints ++ rightPoints)
+            val predictedY = Math.round(slope * x + intercept).intValue
+            (-wavelen5/2 to wavelen5/2).foreach { yNeighbor =>
+              val staffYOver2 = yNeighbor * 5.0f / wavelen5
+              val closenessToLine =
+                Math.abs(staffYOver2 - Math.round(staffYOver2))
+              val darkestExpectedV =
+                if (closenessToLine > 0.25) meanWhite - stdDevWhite * 3
+                else meanBlack - stdDevBlack * 2
+              val y = predictedY + yNeighbor
+              if (image(x, y) < darkestExpectedV) {
+                demo(x, y) = (255, 0, 0)
+              }
+            }
+          } // end if
+        } // end if
+      } // next x
+    } // next staff
   }
 
   def run(input:GrayImage, staffs:List[Staff], caseName:String) = {
+    val demo = input.toColorImage
+    classifyGoodOrBad(staffs, input, demo)
+    demo.saveTo(new File("demos/goodbad.%s.png".format(caseName)))
+/*
     val output = input.copy
-    val (_, _, whereNotesAre) = separateNotes(input, caseName)
 
     staffs.foreach { staff =>
       val maxStaffSpacing = staff.staffSeparations.max
@@ -169,24 +191,24 @@ object EraseStaff {
       //output.saveTo(new File("demos/erase.%s.png".format(staffName)))
   
       // Draw staff lines on image to see if they look right
-      /*val demo3 = new GrayImage(input.w, input.h)
-      (0 until input.h).foreach { y =>
-        (0 until input.w).foreach { x =>
-          demo3(x, y) = input(x, y)
-        }
-      }
-      (0 until input.w).foreach { x =>
-        val y = staff.midlineYs(x)
-        if (y > -1) {
-          (0 until halfStaffSpacing).foreach { yInner =>
-            demo3(x, y - yInner) = yNeighborToMedians(yInner)(x)
-            demo3(x, y + yInner) = yNeighborToMedians(yInner)(x)
-          }
-        }
-      }
-      demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))*/
-    }
+//      val demo3 = new GrayImage(input.w, input.h)
+//      (0 until input.h).foreach { y =>
+//        (0 until input.w).foreach { x =>
+//          demo3(x, y) = input(x, y)
+//        }
+//      }
+//      (0 until input.w).foreach { x =>
+//        val y = staff.midlineYs(x)
+//        if (y > -1) {
+//          (0 until halfStaffSpacing).foreach { yInner =>
+//            demo3(x, y - yInner) = yNeighborToMedians(yInner)(x)
+//            demo3(x, y + yInner) = yNeighborToMedians(yInner)(x)
+//          }
+//        }
+//      }
+//      demo3.saveTo(new File("demos/erase3.%s.png".format(caseName)))
+    }*/
 
-    output
+    input //output
   }
 }

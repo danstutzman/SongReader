@@ -1063,10 +1063,11 @@ object Ocr4Music {
     }
 
     val erasedPath = new File("output/erased/%s.jpeg".format(caseName))
+erasedPath.delete
     val justNotes = readOrGenerate(erasedPath, saveGrayImage, loadGrayImage) {
       () => EraseStaff.run(image, staffs, caseName)
     }
-
+/*
     val beamsPath = new File("output/beams/%s.json".format(caseName))
     val beams = readOrGenerate(beamsPath, saveBeams, loadBeams) { () =>
       FindBeams.run(justNotes, image, staffs, caseName)
@@ -1166,7 +1167,7 @@ object Ocr4Music {
     } // next staff
 
     writeToMidi(allStaffsPredictedNotes, caseName)
-
+*/
     casePerformance
   }
 
