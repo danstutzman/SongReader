@@ -936,11 +936,11 @@ object FindStaffs {
     val demo = image.toColorImage
     val image16 = quarterSize(quarterSize(image))
     val image4 = quarterSize(image)
-    val staffs16 = multiplyStaffs(detectStaffs(image16, caseName), 4)
-    val staffs4 = multiplyStaffs(detectStaffs(image4, caseName), 2)
+    val staffs16 = multiplyStaffs(detectStaffs(image16, caseName + ".4"), 4)
+    val staffs4 = multiplyStaffs(detectStaffs(image4, caseName + ".4"), 2)
     val staffs1 =
       if (image.w + image.h < 1500)
-        detectStaffs(image, caseName)
+        detectStaffs(image, caseName + ".1")
       else
         List[Staff]()
     val allStaffs = staffs16 ++ staffs4 ++ staffs1
