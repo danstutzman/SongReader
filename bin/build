@@ -4,10 +4,11 @@ COMMAND="/Applications/scala-2.8.1/bin/fsc -deprecation -encoding utf-8 -depende
 $COMMAND 2>stderr
 ERROR=$?
 STDERR=`cat stderr`
-if [ "$STDERR" == "Could not connect to compilation daemon." ]; then
+while [ "$STDERR" == "Could not connect to compilation daemon." ]; do
   echo "Rerunning because of 'could not connect' message"
-  $COMMAND
+  $COMMAND 2>stderr
   ERROR=$?
-fi
+  STDERR=`cat stderr`
+done
 rm -f stderr
 exit $ERROR
