@@ -6,6 +6,14 @@ MAIN=Ocr4Music
 #MAIN=FullPage
 DEFAULT_ARGS=
 
+for DIR in beams case_studies erased filled_boxes metrics midi midlines mp3 \
+           no_beams orthonormal_image orthonormal_transform slices staffs \
+           v_lines v_slope_range wav widths case_studies \
+           case_studies/44 case_studies/bass_clef case_studies/black_head \
+           case_studies/treble_clef case_studies/white_head; do
+  mkdir output/$DIR 2>/dev/null
+done
+
 cd `dirname $0`/..
 bin/build
 EXIT=$?
