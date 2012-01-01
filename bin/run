@@ -19,7 +19,7 @@ bin/build
 EXIT=$?
 if [ "$EXIT" == "0" ]; then
   echo Running...
-  java -Xmx1024M -Djava.awt.headless=true -cp build/classes:/Applications/scala-2.8.1/lib/scala-library.jar $MAIN $DEFAULT_ARGS "$@"
+  java -Xmx1024M -Djava.awt.headless=true -cp lib/sanselan-0.97-incubator.jar:build/classes:/Applications/scala-2.8.1/lib/scala-library.jar $MAIN $DEFAULT_ARGS "$@"
   EXIT=$?
   exit $EXIT
 else

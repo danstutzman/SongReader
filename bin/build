@@ -1,9 +1,9 @@
 #!/bin/bash
 cd `dirname $0`/..
 echo Compiling...
-COMMAND="/Applications/scala-2.8.1/bin/fsc -deprecation -encoding utf-8 -dependencyfile build/scala_dependencies -d build/classes -make:transitivenocp -classpath build/classes:lib/junit-4.9.jar src/main/scala/*.scala"
 mkdir build 2>/dev/null
 mkdir build/classes 2>/dev/null
+COMMAND="/Applications/scala-2.8.1/bin/fsc -deprecation -encoding utf-8 -dependencyfile build/scala_dependencies -d build/classes -make:transitivenocp -classpath build/classes:lib/junit-4.9.jar:lib/sanselan-0.97-incubator.jar src/main/scala/*.scala"
 $COMMAND 2>stderr
 ERROR=$?
 STDERR=`cat stderr`
