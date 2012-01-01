@@ -54,7 +54,12 @@ non_done_handler = Proc.new { |resp|
 
 # Add handler (before select, so we can catch EXISTS)
 @imap.add_response_handler(non_done_handler)
-@imap.select 'INBOX'
+begin
+  @imap.select 'INBOX'
+rescue Net::IMAP::NoResponseError => e
+  p e
+  exit 0
+end
 @imap.remove_response_handler(non_done_handler)
 
 done_handler = Proc.new { |resp|
